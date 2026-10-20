@@ -235,4 +235,16 @@ class ReaderSessionTest {
         assertEquals(before, store.positions["h"]!!)
         assertEquals(1, s.pageIndex)
     }
+
+    @Test
+    fun `canTurn is false only at the ends of the book`() = runTest {
+        val s = session(FakeStore())
+        s.ensureView(VIEWPORT, SETTINGS)
+        assertEquals(false, s.canTurn(-1))
+        assertEquals(true, s.canTurn(1))
+
+        s.jumpToBookPage(s.bookTotalPages())
+        assertEquals(true, s.canTurn(-1))
+        assertEquals(false, s.canTurn(1))
+    }
 }

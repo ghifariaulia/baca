@@ -47,8 +47,12 @@ class ArrowKeyPagingTest {
             }
         fun waitForPage(n: Int) = rule.waitUntil(10_000) { currentPage() == n }
         rule.waitUntil(10_000) { currentPage() != null }
+        // let the debounced first layout settle (it moves from the cover to the text)
+        rule.mainClock.advanceTimeBy(1_000)
+        rule.waitForIdle()
+        val start = assertNotNull(currentPage())
         rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
-        waitForPage(2)
+        waitForPage(start + 1)
 
         // pick a theme, then close the Display sheet: the focused chip leaves
         // composition with the sheet and used to take keyboard focus with it

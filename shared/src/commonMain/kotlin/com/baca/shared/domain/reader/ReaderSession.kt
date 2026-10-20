@@ -104,6 +104,13 @@ class ReaderSession(
         onChange()
     }
 
+    /** False at the book's first page going back and its last page going forward. */
+    fun canTurn(delta: Int): Boolean = if (delta < 0) {
+        chapterIndex > 0 || pageIndex > 0
+    } else {
+        chapterIndex < chapters.lastIndex || pageIndex < layoutFor(chapterIndex).pageCount() - 1
+    }
+
     /**
      * Book-wide counting: chapter layouts all get built (they are cheap once
      * measured), so "Page 30 of 300" is exact, not estimated.

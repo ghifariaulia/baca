@@ -1,5 +1,31 @@
 package com.baca.app.reader
 
+import kotlin.math.abs
+
+import kotlinx.coroutines.sync.withLock
+
+import kotlinx.coroutines.sync.Mutex
+
+import kotlinx.coroutines.coroutineScope
+
+import androidx.compose.ui.layout.onSizeChanged
+
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+
+import androidx.compose.ui.graphics.graphicsLayer
+
+import androidx.compose.runtime.rememberUpdatedState
+
+import androidx.compose.animation.core.tween
+
+import androidx.compose.animation.core.spring
+
+import androidx.compose.animation.core.LinearOutSlowInEasing
+
+import androidx.compose.animation.core.FastOutLinearInEasing
+
+import androidx.compose.animation.core.Animatable
+
 import androidx.compose.foundation.layout.windowInsetsPadding
 
 import androidx.compose.foundation.layout.safeDrawing
@@ -226,7 +252,47 @@ fun ReaderScreen(
     val page = layout.pages[pageNo]
 
 
-    val pageTurn: (Int) -> Unit = { delta -> scope.launch { session.turnPage(delta) } }
+    // Page turns slide: the page moves out toward the turn and fades, the next
+    // one slides in from the other side. A swipe drags the page first.
+    val pageShift = remember { Animatable(0f) }
+    val pageAlpha = remember { Animatable(1f) }
+    val turnLock = remember { Mutex() }
+    var pageWidthPx by remember { mutableIntStateOf(0) }
+
+    val pageTurn: (Int) -> Unit = { delta ->
+        scope.launch {
+            turnLock.withLock {
+                if (!session.canTurn(delta)) {
+                    pageShift.animateTo(0f, spring())
+                    return@withLock
+                }
+                val toward = if (delta > 0) -1f else 1f // next page: content leaves to the left
+                val travel = maxOf(abs(pageShift.value), pageWidthPx * TURN_TRAVEL)
+                coroutineScope {
+                    launch { pageShift.animateTo(toward * travel, tween(TURN_MS, easing = FastOutLinearInEasing)) }
+                    launch { pageAlpha.animateTo(0f, tween(TURN_MS)) }
+                }
+                session.turnPage(delta)
+                pageShift.snapTo(-toward * pageWidthPx * TURN_TRAVEL)
+                coroutineScope {
+                    launch { pageShift.animateTo(0f, tween(TURN_MS, easing = LinearOutSlowInEasing)) }
+                    launch { pageAlpha.animateTo(1f, tween(TURN_MS)) }
+                }
+            }
+        }
+    }
+
+    // released swipe: turn when dragged far enough or flicked, else spring back
+    val swipeEnded: (velocityX: Float) -> Unit = { velocityX ->
+        val dragged = pageShift.value
+        val delta = when {
+            dragged < -pageWidthPx * SWIPE_FRACTION || velocityX < -FLING_VELOCITY -> 1
+            dragged > pageWidthPx * SWIPE_FRACTION || velocityX > FLING_VELOCITY -> -1
+            else -> 0
+        }
+        if (delta == 0) scope.launch { pageShift.animateTo(0f, spring()) } else pageTurn(delta)
+    }
+    val currentSwipeEnded by rememberUpdatedState(swipeEnded)
 
     // resolved through the layout so a bookmark stays on its page after reflow
     val pageBookmarks = remember(annotations, layout, pageNo) {
@@ -363,7 +429,28 @@ fun ReaderScreen(
                     }
                 }
 
-                BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+                BoxWithConstraints(
+                    Modifier.fillMaxWidth().weight(1f)
+                        .onSizeChanged { pageWidthPx = it.width }
+                        .then(
+                            if (tapZonesForPageTurnEnabled) {
+                                Modifier.pointerInput(Unit) {
+                                    val velocity = VelocityTracker()
+                                    detectHorizontalDragGestures(
+                                        onDragStart = { velocity.resetTracking() },
+                                        onDragEnd = { currentSwipeEnded(velocity.calculateVelocity().x) },
+                                        onDragCancel = { currentSwipeEnded(0f) },
+                                    ) { change, dragAmount ->
+                                        velocity.addPosition(change.uptimeMillis, change.position)
+                                        change.consume()
+                                        scope.launch { pageShift.snapTo(pageShift.value + dragAmount) }
+                                    }
+                                }
+                            } else {
+                                Modifier
+                            },
+                        ),
+                ) {
                     val desktopColumn = maxWidth >= 900.dp
                     val columnWidthPx = with(density) {
                         val limit = if (desktopColumn) 680.dp.roundToPx() else constraints.maxWidth
@@ -376,7 +463,10 @@ fun ReaderScreen(
                     LaunchedEffect(inner) { viewport = inner }
 
                         Column(
-                            Modifier.fillMaxSize(),
+                            Modifier.fillMaxSize().graphicsLayer {
+                                translationX = pageShift.value
+                                alpha = pageAlpha.value
+                            },
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                         Column(
@@ -447,13 +537,14 @@ fun ReaderScreen(
                     }
 
                     if (tapZonesForPageTurnEnabled) {
+                        // plain taps: a clickable's ripple flashed like a button press
                         Box(
                             Modifier.fillMaxHeight().fillMaxWidth(0.33f).align(Alignment.CenterStart)
-                                .clickable { pageTurn(-1) },
+                                .pointerInput(Unit) { detectTapGestures { pageTurn(-1) } },
                         )
                         Box(
                             Modifier.fillMaxHeight().fillMaxWidth(0.33f).align(Alignment.CenterEnd)
-                                .clickable { pageTurn(1) },
+                                .pointerInput(Unit) { detectTapGestures { pageTurn(1) } },
                         )
                     }
                 }
@@ -1268,6 +1359,12 @@ private fun justified(
         gaps.forEach { addStyle(SpanStyle(letterSpacing = spacing), it, it + 1) }
     }
 }
+
+private const val TURN_MS = 160
+// how far (fraction of page width) a turning page slides while it fades
+private const val TURN_TRAVEL = 0.3f
+private const val SWIPE_FRACTION = 0.2f
+private const val FLING_VELOCITY = 800f // px/s
 
 private const val JUSTIFY_SLACK_PX = 2
 // a line this short before a break isn't worth stretching into rivers
