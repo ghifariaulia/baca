@@ -10,3 +10,6 @@ captures/
 .kotlin/
 # local library databases (desktop baca.db)
 *.db
+keystore.properties
+*.jks
+*.keystore
