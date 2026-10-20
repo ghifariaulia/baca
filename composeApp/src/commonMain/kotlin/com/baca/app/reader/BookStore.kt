@@ -123,7 +123,8 @@ class BookImporter(
             return repo.byHash(bookHash)?.let { Imported(it, isNew = true) }
         }
 
-        val parsed = BookFormats.parse(dest, format) ?: error("unreadable $fileName")
+        // the original, not the hash-named copy: TXT titles come from the file name
+        val parsed = BookFormats.parse(source, format) ?: error("unreadable $fileName")
 
         // Real cover when the EPUB manifest names one; null otherwise (design
         // fallback: flat color + title/author). Some EPUBs point the cover meta

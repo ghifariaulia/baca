@@ -1,5 +1,11 @@
 package com.baca.app.reader
 
+import androidx.compose.foundation.layout.windowInsetsPadding
+
+import androidx.compose.foundation.layout.safeDrawing
+
+import androidx.compose.foundation.layout.WindowInsets
+
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.filled.FormatAlignJustify
 import androidx.compose.material.icons.filled.Close
@@ -267,7 +273,9 @@ fun ReaderScreen(
     // reader chrome (bars/sheets/panels) follows the READING theme, not the
     // app shell's system theme; light reading themes get light chrome with
     // AA-contrast text (ink 15:1+, muted 5.4:1+ on paper)
-    AppTheme(dark = display.theme == "black" || display.theme == "dim") {
+    val darkReading = display.theme == "black" || display.theme == "dim"
+    SystemBarsAppearance(darkBackground = darkReading)
+    AppTheme(dark = darkReading) {
     Surface(
         Modifier
             .fillMaxSize()
@@ -290,7 +298,8 @@ fun ReaderScreen(
         // content color and would inherit the system-themed shell's ink
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
-        BoxWithConstraints(Modifier.fillMaxSize()) {
+        // page color fills behind the system bars; content stays clear of them
+        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         val isDesktop = maxWidth >= 900.dp
         var panelOpen by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { focusRequester.requestFocus() }

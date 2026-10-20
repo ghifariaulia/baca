@@ -65,6 +65,17 @@ class BookImporterTest {
     }
 
     @Test
+    fun txtTitleComesFromTheOriginalFileName() {
+        val (importer, _) = importer()
+        val dir = java.nio.file.Files.createTempDirectory("import-txt").toFile()
+        val file = java.io.File(dir, "Short Story.txt").apply { writeText("Once upon a time.") }
+
+        val imported = assertNotNull(importer.import(file.absolutePath))
+
+        assertEquals("Short Story", imported.row.title)
+    }
+
+    @Test
     fun cbzImportUsesFirstPageAsCover() {
         val (importer, repo) = importer()
         val zip = java.io.File.createTempFile("import-cbz", ".cbz")

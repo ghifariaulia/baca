@@ -1,5 +1,7 @@
 package com.baca.app.reader
 
+import androidx.documentfile.provider.DocumentFile
+
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -38,35 +40,48 @@ actual fun rememberBookPicker(onPicked: (List<String>) -> Unit): () -> Unit {
 }
 
 @Composable
-actual fun rememberFolderPicker(onPicked: (List<String>) -> Unit): () -> Unit =
-    // SAF tree enumeration needs DocumentFile; ships with step 11 (sync folder).
-    remember { { onPicked(emptyList()) } }
+actual fun rememberFolderPicker(onPicked: (List<String>) -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val scope = remember { CoroutineScope(Dispatchers.Main) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree: Uri? ->
+        if (tree == null) {
+            onPicked(emptyList())
+        } else {
+            scope.launch {
+                val paths = withContext(Dispatchers.IO) {
+                    DocumentFile.fromTreeUri(context, tree)?.listFiles().orEmpty()
+                        .filter { it.isFile && it.name?.let(BookFormats::of) != null }
+                        .mapNotNull { copyToCache(context, it.uri) }
+                }
+                onPicked(paths)
+            }
+        }
+    }
+    return remember(launcher) { { launcher.launch(null) } }
+}
 
 internal fun copyToCache(context: Context, uri: Uri): String? = runCatching {
     context.contentResolver.openInputStream(uri)?.use { input ->
-        val ext = guessExt(context, uri)
-        val file = File(context.cacheDir, "open-${System.nanoTime()}.$ext")
+        // keep the real name: the format comes from it (".fb2.zip" isn't ".zip")
+        val name = displayName(context, uri)?.replace('/', '_') ?: "book.${guessExt(context, uri)}"
+        // own folder per copy, so the file keeps its exact name
+        val file = File(File(context.cacheDir, "open-${System.nanoTime()}").apply { mkdirs() }, name)
         file.outputStream().use { output -> input.copyTo(output) }
         file.absolutePath
     }
 }.getOrNull()
 
-private fun guessExt(context: Context, uri: Uri): String {
-    val name = runCatching {
-        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-            if (idx >= 0 && cursor.moveToFirst() && cursor.getString(idx) != null) {
-                val n = cursor.getString(idx)
-                n.substringAfterLast('.', "").lowercase()
-            } else null
-        }
-    }.getOrNull()
-    if (name != null && name.length in 1..5) return name
-    return when (context.contentResolver.getType(uri)) {
+private fun displayName(context: Context, uri: Uri): String? = runCatching {
+    context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+        ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+}.getOrNull()
+
+/** Extension from the MIME type, for providers that don't report a name. */
+private fun guessExt(context: Context, uri: Uri): String =
+    when (context.contentResolver.getType(uri)) {
         "application/epub+zip" -> "epub"
         "application/zip" -> "fb2.zip"
         "text/plain" -> "txt"
         "application/xml", "text/xml" -> "fb2"
         else -> "epub"
     }
-}

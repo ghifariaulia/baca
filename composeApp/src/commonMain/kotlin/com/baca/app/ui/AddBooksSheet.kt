@@ -84,14 +84,16 @@ fun ImportProgressSheet(
             }
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
-                // Cancel while running; Done once finished (design page).
-                Box(
-                    Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(22.dp))
-                        .background(MaterialTheme.colorScheme.surface)
-                        .clickable(onClick = if (running) onCancel else onDone),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(if (running) "Cancel" else "Done", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                // Cancel while running; once finished only Done remains (design page)
+                if (running) {
+                    Box(
+                        Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(22.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .clickable(onClick = onCancel),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("Cancel", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
                 Box(
                     Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(22.dp))

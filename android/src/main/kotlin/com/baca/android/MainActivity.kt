@@ -4,12 +4,15 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import com.baca.app.App
 import com.baca.shared.db.Baca
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Android 15+ forces this; opting in gives older versions the same layout
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         com.baca.app.reader.AndroidContexts.current = applicationContext
         val driver = AndroidSqliteDriver(Baca.Schema, applicationContext, "baca.db")

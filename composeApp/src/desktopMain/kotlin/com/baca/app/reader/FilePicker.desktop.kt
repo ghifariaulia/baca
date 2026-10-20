@@ -14,7 +14,7 @@ import javax.swing.JFileChooser
  * AWT FileDialog blocks until the user picks or cancels; it runs its own event
  * pump, so calling from a Compose desktop click handler (EDT) is safe.
  * Desktop picks one file (multi-select needs the JFileChooser path later);
- * folder pick returns the chosen directory itself.
+ * folder pick returns the supported files directly inside the chosen folder.
  */
 @Composable
 actual fun rememberBookPicker(onPicked: (List<String>) -> Unit): () -> Unit {
@@ -48,7 +48,10 @@ actual fun rememberFolderPicker(onPicked: (List<String>) -> Unit): () -> Unit {
                 chooser.dialogTitle = "Add a folder of books"
                 val result = chooser.showOpenDialog(null as Frame?)
                 val dir = if (result == JFileChooser.APPROVE_OPTION) chooser.selectedFile else null
-                onPicked(dir?.let { listOf(it.absolutePath) } ?: emptyList())
+                val books = dir?.listFiles()
+                    ?.filter { it.isFile && BookFormats.of(it.name) != null }
+                    ?.map { it.absolutePath }
+                onPicked(books.orEmpty())
             } finally {
                 busy = false
             }

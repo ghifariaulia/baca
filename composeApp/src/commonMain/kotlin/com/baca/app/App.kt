@@ -39,6 +39,10 @@ import com.baca.app.reader.rememberFolderPicker
 import com.baca.app.reader.rememberSyncFolderPicker
 import com.baca.app.reader.rememberSyncTransport
 import com.baca.app.reader.rememberBackupOpener
+import com.baca.app.reader.SystemBarsAppearance
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import com.baca.app.reader.rememberBackupSaver
 import com.baca.shared.backup.LibraryBackup
 import androidx.compose.material3.AlertDialog
@@ -250,14 +254,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
         }
 
         val pick = rememberBookPicker { paths -> runImport(paths) }
-        val pickFolder = rememberFolderPicker { dirs ->
-            dirs.firstOrNull()?.let { dir ->
-                val files = fs.list(dir.toPath())
-                    .filter { BookFormats.of(it.name) != null }
-                    .map { it.toString() }
-                runImport(files)
-            }
-        }
+        val pickFolder = rememberFolderPicker { paths -> if (paths.isNotEmpty()) runImport(paths) }
         // --- backup / restore (Sync screen) ---
         val backups = remember(db) { LibraryBackup(db) }
         var backupBusy by remember { mutableStateOf(false) }
@@ -407,7 +404,18 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
             }
         }
 
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        // Android draws behind the status and navigation bars: the background
+        // fills them, content stays clear of them. The reflow reader pads itself
+        // so its page color reaches the edges and sets the bar icons from the
+        // reading theme.
+        val readingReflow = (screenState as? Screen.Reader)?.book is OpenBook.Reflow
+        if (!readingReflow) SystemBarsAppearance(darkBackground = dark)
+        Surface(
+            Modifier.fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .then(if (readingReflow) Modifier else Modifier.windowInsetsPadding(WindowInsets.safeDrawing)),
+            color = MaterialTheme.colorScheme.background,
+        ) {
             when (val current = screenState) {
                 is Screen.Reader -> {
                     when (val book = current.book) {
