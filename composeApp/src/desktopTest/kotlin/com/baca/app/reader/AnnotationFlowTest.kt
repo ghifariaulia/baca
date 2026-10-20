@@ -1,0 +1,80 @@
+package com.baca.app.reader
+
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.printToLog
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.click
+import com.baca.shared.db.DbAnnotationRepository
+import com.baca.shared.db.Baca
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.baca.shared.parser.parseEpub
+import okio.FileSystem
+import okio.Path.Companion.toPath
+import org.junit.Rule
+import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+private val AStore = object : com.baca.shared.domain.reader.PositionStore {
+    override val deviceId = "test"
+    override fun loadPosition(bookHash: String) = null
+    override fun savePosition(bookHash: String, locator: com.baca.shared.domain.Locator) {}
+    override fun getLocal(key: String): String? = null
+    override fun putLocal(key: String, value: String) {}
+}
+
+/** Long-press → toolbar → Note → Save round trip through the repository. */
+class AnnotationFlowTest {
+
+    @get:Rule
+    val rule = createComposeRule()
+
+    @Test
+    fun longPressCreatesHighlightWithNote() {
+        val bytes = javaClass.classLoader.getResourceAsStream("books/frankenstein.epub")!!.readBytes()
+        val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "annot-test.epub"
+        FileSystem.SYSTEM.write(path) { write(bytes) }
+        val book = parseEpub(path)
+        val driver = JdbcSqliteDriver("jdbc:sqlite:")
+        Baca.Schema.create(driver)
+        val repo = DbAnnotationRepository(Baca(driver), now = { 1L })
+
+        rule.setContent {
+            ReaderScreen(
+                book = book,
+                bookPath = path.toString(),
+                bookHash = "hash",
+                store = AStore,
+                onBack = {},
+                annotations = repo.forBookDetailed("hash").map { it.entry },
+                onAnnotationUpsert = { entry -> repo.upsert(entry, "hash") },
+                onAnnotationDelete = {},
+            )
+        }
+        // wait for the reader + first real page layout (reflow lands after the
+        // 150ms viewport debounce)
+        rule.waitUntil(20_000) {
+            rule.onAllNodesWithText("Title:", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        // long press somewhere over body text
+        rule.onNodeWithText("Title: Frankenstein", substring = true)
+            .performTouchInput { longClick(center) }
+        // toolbar appears
+        rule.waitForIdle()
+        rule.onNodeWithText("Note").assertExists()
+        rule.onNodeWithText("Note").performTouchInput { click(center) }
+        // editor opens with the quoted text; type a note and save
+        rule.waitForIdle()
+        rule.onRoot().printToLog("EDITOR")
+        rule.onNodeWithText("Save").performClick()
+        val stored = repo.forBookDetailed("hash")
+        assertEquals(1, stored.size)
+        assertTrue(stored.first().entry.text.isNotBlank(), "highlight anchors to the block text")
+        assertEquals("highlight", stored.first().entry.kind)
+    }
+}

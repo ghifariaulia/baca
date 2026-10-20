@@ -1,0 +1,13 @@
+CREATE TABLE settings_local (
+    key TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+setLocal:
+INSERT OR REPLACE INTO settings_local(key, value) VALUES (?, ?);
+
+getLocal:
+SELECT * FROM settings_local WHERE key = ?;
+
+selectLocalByPrefix:
+SELECT * FROM settings_local WHERE key LIKE ? || '%';

@@ -1,0 +1,14 @@
+CREATE TABLE settings_synced (
+    key TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL,
+    lamport INTEGER NOT NULL
+);
+
+putSynced:
+INSERT OR REPLACE INTO settings_synced(key, value, lamport) VALUES (?, ?, ?);
+
+selectSynced:
+SELECT * FROM settings_synced WHERE key = ?;
+
+selectSyncedAll:
+SELECT * FROM settings_synced;

@@ -1,0 +1,1396 @@
+package com.baca.app.reader
+
+import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.FormatAlignJustify
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.baca.app.ui.LocalAppFonts
+import com.baca.app.ui.AppTheme
+import com.baca.app.ui.ReaderThemes
+import com.baca.app.ui.Type
+import com.baca.shared.domain.DisplaySettings
+import com.baca.shared.domain.reader.PositionStore
+import com.baca.shared.domain.reader.indexOfChapter
+import com.baca.shared.domain.reader.Viewport
+import com.baca.shared.domain.decodeDisplay
+import com.baca.shared.domain.loadDisplay
+import com.baca.shared.domain.saveDisplay
+import com.baca.shared.domain.encode
+import com.baca.shared.domain.reader.ReaderSession
+import com.baca.shared.parser.Block
+import com.baca.shared.parser.BlockKind
+import com.baca.shared.parser.Chapter
+import com.baca.shared.parser.ParsedEpub
+import com.baca.shared.sync.PointDto
+import com.baca.shared.sync.ReflowAnchorDto
+import com.baca.shared.render.ReflowLayout
+import com.baca.shared.render.ReflowSettings
+import kotlinx.coroutines.launch
+
+/** Provided to page rendering so image blocks can be decoded and drawn. */
+val LocalBookImages = compositionLocalOf<BookImages?> { null }
+
+/**
+ * Reader screen (docs/TECH.md 10.4): top bar, paged text column, footer
+ * progress, tap zones, Aa settings panel. Business logic lives in
+ * [ReaderSession]; this composable only wires UI state to it.
+ */
+@Composable
+fun ReaderScreen(
+    book: ParsedEpub,
+    bookPath: String,
+    bookHash: String,
+    store: PositionStore,
+    onBack: () -> Unit,
+    openContents: Boolean = false,
+    /** This book's annotations (highlights + notes), synced via M4. */
+    annotations: List<com.baca.shared.sync.AnnotationEntry> = emptyList(),
+    /** annotation id → originating device label (notes meta line). */
+    deviceLabels: Map<String, String> = emptyMap(),
+    onAnnotationUpsert: (com.baca.shared.sync.AnnotationEntry) -> Unit = {},
+    onAnnotationDelete: (id: String) -> Unit = {},
+    /** Open the reader straight on an annotation anchor (Notes list). */
+    jumpToAnchor: AnchorJump? = null,
+) {
+    var display by remember { mutableStateOf(store.loadDisplay()) }
+    var sheet by remember { mutableStateOf(if (openContents) SheetKind.CONTENTS else SheetKind.NONE) }
+    var sheetTab by remember { mutableStateOf(ContentsTab.CONTENTS) }
+    var viewport by remember { mutableStateOf<Viewport?>(null) }
+    var tick by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
+
+    // "Reader selection" toolbar: blockIndex long-pressed + screen offset
+    var toolbarAt by remember { mutableStateOf<Pair<Int, Offset>?>(null) }
+    // Note editor sheet (new or existing annotation)
+    var editing by remember { mutableStateOf<EditorState?>(null) }
+
+    val appFonts = LocalAppFonts.current
+    val images = rememberBookImages(bookPath)
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+
+    val session = remember(bookHash) {
+        ReaderSession(
+            bookHash = bookHash,
+            chapters = book.chapters,
+            repo = store,
+            layoutFactory = { index, vp, settings ->
+                ReflowLayout(
+                    blocks = book.chapters[index].blocks,
+                    metrics = ComposeTextMetrics(textMeasurer, density) { name ->
+                        name?.let { readerFontFamily(it, appFonts) }
+                    },
+                    settings = settings,
+                    columnWidthPx = vp.columnWidthPx,
+                    pageHeightPx = vp.pageHeightPx,
+                    imageHeight = { img: Block.Image ->
+                        images.preload(img.src)?.let { bitmap ->
+                            if (bitmap.width <= 0) return@let null
+                            val fillWidth = vp.columnWidthPx * bitmap.height / bitmap.width
+                            // inline figures keep room for text on their page; portrait
+                            // artwork (covers) may take the whole page
+                            val cap = if (bitmap.height > bitmap.width) vp.pageHeightPx
+                            else (vp.pageHeightPx * 0.6f).toInt()
+                            fillWidth.coerceAtMost(cap)
+                        }
+                    },
+                )
+            },
+            onChange = { tick++ },
+        )
+    }
+
+    LaunchedEffect(jumpToAnchor) {
+        jumpToAnchor?.let { jump ->
+            session.jumpToAnchor(jump.href, jump.blockIndex, jump.charOffset)
+        }
+    }
+
+    LaunchedEffect(display) { store.saveDisplay(display) }
+    // debounce so continuous window drags do not re-layout every frame
+    LaunchedEffect(viewport, display) {
+        val vp = viewport ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(150)
+        scope.launch { session.ensureView(vp, reflowSettingsOf(display, density)) }
+    }
+
+    val colors = ReaderThemes.forTheme(display.theme)
+    val margin = marginDpOf(display.margins)
+
+    val chapterIndex = session.chapterIndex.coerceIn(0, book.chapters.lastIndex)
+    val chapter = book.chapters[chapterIndex]
+    val layout = remember(chapterIndex, tick) { session.layoutFor(chapterIndex) }
+    val accent = MaterialTheme.colorScheme.primary
+    // block text with highlight background styles merged in per line (TECH 10.3)
+    val bookAnnotations = remember(annotations) {
+        annotations.filter { !it.deleted && it.reflowAnchor?.href == chapter.href }
+    }
+    val blockStrings = remember(chapter, display.theme, display.font, accent, bookAnnotations) {
+        chapter.blocks.map { block -> annotatedOf(block, colors.ink, accent) }
+    }
+    val pageCount = layout.pageCount()
+    val pageNo = session.pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+    val page = layout.pages[pageNo]
+
+
+    val pageTurn: (Int) -> Unit = { delta -> scope.launch { session.turnPage(delta) } }
+
+    // resolved through the layout so a bookmark stays on its page after reflow
+    val pageBookmarks = remember(annotations, layout, pageNo) {
+        annotations.filter { entry ->
+            val anchor = entry.reflowAnchor
+            !entry.deleted && entry.kind == KIND_BOOKMARK && anchor != null && anchor.href == chapter.href &&
+                layout.pageForPosition(anchor.start.blockIndex, anchor.start.charOffset, anchor.quote)?.pageIndex == pageNo
+        }
+    }
+    // Contents / Notes tab body, shared by the phone sheet and the desktop panel
+    @Composable
+    fun ContentsTabBody(tab: ContentsTab, onJumped: () -> Unit) {
+        when (tab) {
+            ContentsTab.CONTENTS -> ContentsList(book, session, tick, accent, colors.ink) { href ->
+                scope.launch { session.jumpToHref(href) }
+                onJumped()
+            }
+            ContentsTab.NOTES, ContentsTab.BOOKMARKS -> AnnotationCards(
+                entries = annotations.filter { !it.deleted && (it.kind == KIND_BOOKMARK) == (tab == ContentsTab.BOOKMARKS) },
+                book = book,
+                ink = colors.ink,
+                onTap = { entry ->
+                    scope.launch {
+                        val anchor = entry.reflowAnchor ?: return@launch
+                        session.jumpToAnchor(anchor.href, anchor.start.blockIndex, anchor.start.charOffset)
+                    }
+                    onJumped()
+                },
+                onEdit = { entry -> editing = EditorState(existing = entry) },
+            )
+        }
+    }
+
+    val toggleBookmark = {
+        if (pageBookmarks.isEmpty()) {
+            onAnnotationUpsert(newBookmarkEntry(chapter.href, layout.positionForPage(pageNo)))
+        } else {
+            pageBookmarks.forEach { onAnnotationDelete(it.id) }
+        }
+    }
+
+    // key events reach the composition only through a focused node (TECH 13.3)
+    val focusRequester = remember { FocusRequester() }
+    // reader chrome (bars/sheets/panels) follows the READING theme, not the
+    // app shell's system theme; light reading themes get light chrome with
+    // AA-contrast text (ink 15:1+, muted 5.4:1+ on paper)
+    AppTheme(dark = display.theme == "black" || display.theme == "dim") {
+    Surface(
+        Modifier
+            .fillMaxSize()
+            .focusRequester(focusRequester)
+            // a focused control that leaves composition (closed sheet, toolbar)
+            // drops focus entirely and arrow keys stop; take it back. Launched
+            // so it never runs once the screen itself is disposed.
+            .onFocusChanged { if (!it.hasFocus) scope.launch { focusRequester.requestFocus() } }
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.key) {
+                    Key.DirectionRight, Key.PageDown -> { pageTurn(1); true }
+                    Key.DirectionLeft, Key.PageUp -> { pageTurn(-1); true }
+                    else -> false
+                }
+            },
+        color = colors.background,
+        // reading colors aren't in the color scheme, so Surface can't derive
+        // content color and would inherit the system-themed shell's ink
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+        val isDesktop = maxWidth >= 900.dp
+        var panelOpen by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) { focusRequester.requestFocus() }
+        Box(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize()) {
+                // Top bar: back · centered title · contents + Aa (design file 'Reader')
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 4.dp).height(56.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(0.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.widthIn(max = 132.dp).weight(1f),
+                    ) {
+                        IconButton(onClick = onBack) {
+                            androidx.compose.material3.Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        IconButton(onClick = toggleBookmark) {
+                            val marked = pageBookmarks.isNotEmpty()
+                            androidx.compose.material3.Icon(
+                                imageVector = if (marked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                                contentDescription = if (marked) "Remove bookmark" else "Add bookmark",
+                                tint = if (marked) accent else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                    Text(
+                        book.title.ifBlank { com.baca.shared.AppInfo.name },
+                        style = Type.body,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1.6f),
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        IconButton(onClick = {
+                            if (isDesktop) panelOpen = !panelOpen else sheet = SheetKind.CONTENTS
+                        }) {
+                            androidx.compose.material3.Icon(
+                                imageVector = Icons.Filled.FormatAlignJustify,
+                                contentDescription = "Contents",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        IconButton(onClick = {
+                            if (sheet == SheetKind.DISPLAY) sheet = SheetKind.NONE else sheet = SheetKind.DISPLAY
+                        }) {
+                            Text("Aa", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.semantics { contentDescription = "Display settings" })
+                        }
+                    }
+                }
+
+                BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+                    val desktopColumn = maxWidth >= 900.dp
+                    val columnWidthPx = with(density) {
+                        val limit = if (desktopColumn) 680.dp.roundToPx() else constraints.maxWidth
+                        (limit - margin.roundToPx() * 2).coerceAtLeast(0)
+                    }
+                    val inner = Viewport(
+                        columnWidthPx = columnWidthPx,
+                        pageHeightPx = constraints.maxHeight,
+                    )
+                    LaunchedEffect(inner) { viewport = inner }
+
+                        Column(
+                            Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                        Column(
+                            Modifier.width(with(density) { (columnWidthPx + margin.roundToPx() * 2).toDp() })
+                                .padding(horizontal = margin),
+                        ) {
+                            var prevBlock: Int = -1
+                            var firstOnPage = true
+                            page.forEach { line ->
+                                if (line.blockIndex != prevBlock && !firstOnPage) {
+                                    // packPages counts the paragraph gap; render it too
+                                    Spacer(Modifier.height((display.fontSizeSp * 0.35f).dp))
+                                }
+                                prevBlock = line.blockIndex
+                                firstOnPage = false
+                                when {
+                                    line.isImage -> ImageLine(chapter, line.blockIndex, line.heightPx)
+                                    else -> {
+                                        val block = chapter.blocks[line.blockIndex] as Block.Text
+                                        val ranges = highlightRangesOf(
+                                            bookAnnotations,
+                                            chapter.href,
+                                            line.blockIndex,
+                                            line.start,
+                                            line.endExclusive,
+                                        )
+                                        val style = lineStyle(block, display, colors.ink)
+                                        val body = block.kind != BlockKind.HEADING
+                                        // same indent ReflowLayout measured the first line with
+                                        val indentPx = if (body && line.start == 0) paragraphIndentPxOf(display, density) else 0
+                                        val lineText = highlighted(
+                                            blockStrings[line.blockIndex],
+                                            ranges,
+                                            line.start,
+                                            line.endExclusive,
+                                        ).let { text ->
+                                            if (body && endsMidParagraph(block.text, line.endExclusive)) {
+                                                justified(text, style, columnWidthPx - indentPx, textMeasurer, density)
+                                            } else {
+                                                text
+                                            }
+                                        }
+                                        Box(Modifier.padding(start = with(density) { indentPx.toDp() })) {
+                                            if (block.spans.any { it.href != null }) {
+                                                LinkText(
+                                                    lineText,
+                                                    style,
+                                                    onLink = { href ->
+                                                        if (href.startsWith("http")) openExternalLink(href)
+                                                        else scope.launch { session.jumpToHref(href) }
+                                                    },
+                                                )
+                                            } else {
+                                                TappableText(
+                                                    lineText,
+                                                    style,
+                                                    ranges,
+                                                    line.start,
+                                                    onTapAnnotation = { entry -> editing = EditorState(existing = entry) },
+                                                    onLongPress = { pos -> toolbarAt = line.blockIndex to pos },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (tapZonesForPageTurnEnabled) {
+                        Box(
+                            Modifier.fillMaxHeight().fillMaxWidth(0.33f).align(Alignment.CenterStart)
+                                .clickable { pageTurn(-1) },
+                        )
+                        Box(
+                            Modifier.fillMaxHeight().fillMaxWidth(0.33f).align(Alignment.CenterEnd)
+                                .clickable { pageTurn(1) },
+                        )
+                    }
+                }
+
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    SeekBar(
+                        fraction = progressFractionOf(session),
+                        onSeek = { fraction ->
+                            scope.launch {
+                                session.jumpToBookPage(1 + (fraction * (session.bookTotalPages() - 1)).toInt())
+                            }
+                        },
+                        onSeekEnd = { scope.launch { session.commitPosition() } },
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    val total = session.bookTotalPages().coerceAtLeast(1)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(
+                            "Page ${session.bookPageNumber()} of $total",
+                            style = Type.caption,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        // Same formula as the contents rows' chapter percents, so a
+                        // contents jump makes the footer number match the clicked row.
+                        val percent = (session.bookPageNumber() - 1) * 100 / (total - 1).coerceAtLeast(1)
+                        Text(
+                            "${percent}%",
+                            style = Type.caption,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            if (isDesktop && panelOpen) {
+                // Dismiss layer: click anywhere outside the panel closes it
+                Box(
+                    Modifier.fillMaxSize().pointerInput(Unit) {
+                        detectTapGestures { panelOpen = false }
+                    },
+                )
+                // Right panel (TECH 10.4): 340 wide, floating rounded card
+                // (same treatment as the display popover); as tall as its
+                // content, scrolling once it reaches the window bottom
+                Column(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(end = 12.dp, top = 64.dp, bottom = 12.dp)
+                        .width(340.dp)
+                        .shadow(elevation = 8.dp, shape = RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(vertical = 12.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Contents", style = Type.cardTitle, fontSize = 18.sp)
+                        IconButton(onClick = { panelOpen = false }) {
+                            androidx.compose.material3.Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Close",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Box(Modifier.padding(horizontal = 20.dp)) {
+                        ContentsTabs(sheetTab, annotations) { sheetTab = it }
+                    }
+                    Column(
+                        Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                            .padding(horizontal = 20.dp),
+                    ) {
+                        // the panel stays open after a jump, like before
+                        ContentsTabBody(sheetTab) {}
+                    }
+                }
+            }
+            if (isDesktop && sheet == SheetKind.DISPLAY) {
+                // Dismiss layer for the popover too
+                Box(
+                    Modifier.fillMaxSize().pointerInput(Unit) {
+                        detectTapGestures { sheet = SheetKind.NONE }
+                    },
+                )
+                // Popover from Aa (design 'Desktop Display settings')
+                Column(
+                    Modifier.width(320.dp).align(Alignment.TopEnd)
+                        .padding(top = 64.dp, end = 16.dp)
+                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
+                        .padding(20.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Display", style = Type.cardTitle, fontSize = 18.sp)
+                        Text(
+                            "This device only",
+                            style = Type.caption,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    DisplayContent(display) { display = it }
+                }
+            }
+            if (!isDesktop && sheet != SheetKind.NONE) {
+                Box(
+                    Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f))
+                        .clickable { sheet = SheetKind.NONE },
+                )
+                Column(
+                    Modifier.fillMaxWidth().align(Alignment.BottomCenter)
+                        .background(MaterialTheme.colorScheme.surface, SheetShape)
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                        .heightIn(max = 560.dp),
+                ) {
+                    Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp, bottom = 12.dp)) {
+                        Box(
+                            Modifier.width(36.dp).height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(MaterialTheme.colorScheme.outline),
+                        )
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(
+                            if (sheet == SheetKind.CONTENTS) "Contents" else "Display",
+                            style = Type.cardTitle,
+                            fontSize = 18.sp,
+                        )
+                        TextButton(onClick = { sheet = SheetKind.NONE }) {
+                            Text("Done", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    if (sheet == SheetKind.CONTENTS) {
+                        ContentsTabs(sheetTab, annotations) { sheetTab = it }
+                        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                            ContentsTabBody(sheetTab) { sheet = SheetKind.NONE }
+                        }
+                    } else {
+                        DisplayContent(display) { display = it }
+                    }
+                }
+            }
+
+            // "Reader selection" toolbar (design page): long-press a paragraph
+            toolbarAt?.let { (blockIndex, pos) ->
+                val copyBlock = rememberCopyToClipboard()
+                Box(Modifier.fillMaxSize()) {
+                    Box(
+                        Modifier.fillMaxSize().pointerInput(Unit) {
+                            detectTapGestures { toolbarAt = null }
+                        },
+                    )
+                    val block = book.chapters[chapterIndex].blocks.getOrNull(blockIndex) as? Block.Text
+                    if (block != null) {
+                        SelectionToolbar(
+                            onColor = { colorName ->
+                                onAnnotationUpsert(newHighlightEntry(book, chapterIndex, blockIndex, colorName))
+                                toolbarAt = null
+                            },
+                            onNote = {
+                                editing = EditorState(blockIndex = blockIndex)
+                                toolbarAt = null
+                            },
+                            onCopy = {
+                                copyBlock(block.text)
+                                toolbarAt = null
+                            },
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .offset(
+                                    x = with(density) { pos.x.toDp() } - 40.dp,
+                                    y = with(density) { pos.y.toDp() } - 56.dp,
+                                ),
+                        )
+                    } else {
+                        toolbarAt = null
+                    }
+                }
+            }
+
+            // Note editor sheet (design 'Note editor')
+            editing?.let { editor ->
+                val existing = editor.existing
+                val block = if (editor.blockIndex >= 0) {
+                    book.chapters[chapterIndex].blocks.getOrNull(editor.blockIndex) as? Block.Text
+                } else {
+                    null
+                }
+                NoteEditorSheet(
+                    quote = existing?.text ?: block?.text.orEmpty(),
+                    color = editor.color,
+                    note = editor.note,
+                    onColor = { editing = editor.copy(color = it) },
+                    onNoteChange = { editing = editor.copy(note = it) },
+                    onCancel = { editing = null },
+                    onSave = {
+                        val anchor = if (existing != null) {
+                            existing.reflowAnchor
+                        } else {
+                            block?.let {
+                                ReflowAnchorDto(
+                                    href = book.chapters[chapterIndex].href,
+                                    start = PointDto(blockIndex = editor.blockIndex, charOffset = 0),
+                                    end = PointDto(blockIndex = editor.blockIndex, charOffset = it.text.length),
+                                    quote = it.text.take(64),
+                                )
+                            }
+                        }
+                        if (anchor != null) {
+                            onAnnotationUpsert(
+                                (existing ?: newHighlightEntry(book, chapterIndex, editor.blockIndex, editor.color)).copy(
+                                    color = editor.color,
+                                    note = editor.note,
+                                    reflowAnchor = anchor,
+                                    text = existing?.text ?: block?.text.orEmpty(),
+                                ),
+                            )
+                        }
+                        editing = null
+                    },
+                    onDelete = if (existing != null) {
+                        {
+                            onAnnotationDelete(existing.id)
+                            editing = null
+                        }
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
+        }
+    }
+    }
+}
+
+/** Annotation colors (design toolbar: yellow/green/blue/pink). */
+object HighlightColors {
+    fun of(name: String): Color = when (name) {
+        "green" -> Color(0xFF8CC98F)
+        "blue" -> Color(0xFFA8C8F0)
+        "pink" -> Color(0xFFF2AFC7)
+        else -> Color(0xFFF6D860) // yellow, TECH token `highlight`
+    }
+}
+
+private enum class ContentsTab { CONTENTS, NOTES, BOOKMARKS }
+
+/** Open-the-reader-on-an-anchor parameter (Notes list entry points). */
+data class AnchorJump(val href: String, val blockIndex: Int, val charOffset: Int)
+
+/** State for the note editor sheet; [existing] null = creating. */
+private data class EditorState(
+    val existing: com.baca.shared.sync.AnnotationEntry? = null,
+    val blockIndex: Int = -1,
+    val color: String = "yellow",
+    val note: String = "",
+) {
+    constructor(existing: com.baca.shared.sync.AnnotationEntry) : this(
+        existing = existing,
+        blockIndex = existing.reflowAnchor?.start?.blockIndex ?: -1,
+        color = existing.color,
+        note = existing.note,
+    )
+}
+
+/** Text copy for the selection toolbar's Copy action. */
+@Composable
+expect fun rememberCopyToClipboard(): (String) -> Unit
+
+private fun newHighlightEntry(
+    book: ParsedEpub,
+    chapterIndex: Int,
+    blockIndex: Int,
+    colorName: String,
+): com.baca.shared.sync.AnnotationEntry {
+    val chapter = book.chapters[chapterIndex]
+    val block = chapter.blocks[blockIndex] as Block.Text
+    return com.baca.shared.sync.AnnotationEntry(
+        id = kotlin.uuid.Uuid.random().toString(),
+        kind = "highlight",
+        reflowAnchor = ReflowAnchorDto(
+            href = chapter.href,
+            start = PointDto(blockIndex = blockIndex, charOffset = 0),
+            end = PointDto(blockIndex = blockIndex, charOffset = block.text.length),
+            quote = block.text.take(64),
+        ),
+        text = block.text,
+        color = colorName,
+        createdAt = 0L, // repository stamps wall time via now()
+        lamport = 0L,
+    )
+}
+
+private data class HighlightRange(val start: Int, val end: Int, val colorName: String, val entry: com.baca.shared.sync.AnnotationEntry)
+
+internal const val KIND_BOOKMARK = "bookmark"
+
+/** Bookmark at a page's first position; start == end so it never paints a highlight. */
+private fun newBookmarkEntry(chapterHref: String, at: ReflowLayout.BlockPosition) =
+    com.baca.shared.sync.AnnotationEntry(
+        id = kotlin.uuid.Uuid.random().toString(),
+        kind = KIND_BOOKMARK,
+        reflowAnchor = ReflowAnchorDto(
+            href = chapterHref,
+            start = PointDto(blockIndex = at.blockIndex, charOffset = at.charOffset),
+            end = PointDto(blockIndex = at.blockIndex, charOffset = at.charOffset),
+            quote = at.quote,
+        ),
+        text = at.quote,
+        createdAt = 0L,
+        lamport = 0L,
+    )
+
+private fun highlightRangesOf(
+    annotations: List<com.baca.shared.sync.AnnotationEntry>,
+    chapterHref: String,
+    blockIndex: Int,
+    lineStart: Int,
+    lineEnd: Int,
+): List<HighlightRange> {
+    val out = mutableListOf<HighlightRange>()
+    annotations.forEach { ann ->
+        val anchor = ann.reflowAnchor ?: return@forEach
+        if (anchor.href != chapterHref) return@forEach
+        if (anchor.start.blockIndex > blockIndex || anchor.end.blockIndex < blockIndex) return@forEach
+        val start = if (anchor.start.blockIndex == blockIndex) anchor.start.charOffset else 0
+        val end = if (anchor.end.blockIndex == blockIndex) anchor.end.charOffset else Int.MAX_VALUE
+        val s = maxOf(start, lineStart)
+        val e = minOf(end, lineEnd)
+        if (e > s) out.add(HighlightRange(s - lineStart, e - lineStart, ann.color, ann))
+    }
+    return out
+}
+
+private fun highlighted(base: AnnotatedString, ranges: List<HighlightRange>, lineStart: Int, lineEnd: Int): AnnotatedString =
+    if (ranges.isEmpty()) base.subSequence(lineStart, lineEnd) else buildAnnotatedString {
+        append(base.subSequence(lineStart, lineEnd))
+        ranges.forEach { r ->
+            addStyle(SpanStyle(background = HighlightColors.of(r.colorName)), r.start, r.end)
+        }
+    }
+
+/** Text line with annotation gestures: tap on a highlight opens the editor. */
+@Composable
+private fun TappableText(
+    text: AnnotatedString,
+    style: TextStyle,
+    ranges: List<HighlightRange>,
+    lineStart: Int,
+    onTapAnnotation: (com.baca.shared.sync.AnnotationEntry) -> Unit,
+    onLongPress: (Offset) -> Unit,
+) {
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var positionInRoot by remember { mutableStateOf(Offset.Zero) }
+    // foundation BasicText: M3's Text merges LocalTextStyle (bodyLarge's
+    // lineHeight wins over ours — the compressed-line-height bug)
+    androidx.compose.foundation.text.BasicText(
+        text = text,
+        style = style,
+        softWrap = false,
+        maxLines = 1,
+        onTextLayout = { layout = it },
+        modifier = Modifier
+            .onGloballyPositioned { positionInRoot = it.positionInRoot() }
+            .pointerInput(text, ranges, lineStart) {
+                detectTapGestures(
+                    onTap = { pos ->
+                        val l = layout ?: return@detectTapGestures
+                        val offset = l.getOffsetForPosition(pos)
+                        ranges.firstOrNull { offset >= it.start && offset < it.end }?.let { r ->
+                            onTapAnnotation(r.entry)
+                        }
+                    },
+                    // report ROOT coordinates so overlays can position themselves
+                    onLongPress = { pos -> onLongPress(positionInRoot + pos) },
+                )
+            },
+    )
+}
+
+/** Floating pill over the long-pressed paragraph (design 'Reader selection'). */
+@Composable
+private fun SelectionToolbar(
+    onColor: (String) -> Unit,
+    onNote: () -> Unit,
+    onCopy: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val pill = Color(0xFF15181E)
+    Row(
+        modifier
+            .clip(RoundedCornerShape(24.dp))
+            .background(pill)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        listOf("yellow", "green", "blue", "pink").forEach { name ->
+            val selected = false
+            Box(
+                Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(HighlightColors.of(name))
+                    .then(
+                        if (selected) Modifier.border(2.dp, Color.White, CircleShape) else Modifier.border(1.dp, pill, CircleShape)
+                    )
+                    .clickable { onColor(name) },
+            )
+        }
+        Text("|", color = Color.White.copy(alpha = 0.3f))
+        Text(
+            "Note",
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable(onClick = onNote).padding(horizontal = 4.dp),
+        )
+        Text(
+            "Copy",
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable(onClick = onCopy).padding(horizontal = 4.dp),
+        )
+    }
+}
+
+/** Note editor sheet (design 'Note editor'): quote card, color, note, delete. */
+@Composable
+private fun NoteEditorSheet(
+    quote: String,
+    color: String,
+    note: String,
+    onColor: (String) -> Unit,
+    onNoteChange: (String) -> Unit,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+    onDelete: (() -> Unit)?,
+) {
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).clickable(onClick = onCancel))
+        Column(
+        Modifier.fillMaxWidth().align(Alignment.BottomCenter)
+            .background(MaterialTheme.colorScheme.surface, SheetShape)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+    ) {
+        Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp, bottom = 12.dp)) {
+            Box(Modifier.width(36.dp).height(4.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.outline))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(onClick = onCancel) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Text("Note", style = Type.cardTitle, fontSize = 18.sp)
+            TextButton(onClick = onSave) { Text("Save", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }
+        }
+        Column(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.background)
+                .padding(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.size(12.dp).clip(RoundedCornerShape(3.dp)).background(HighlightColors.of(color)).padding(top = 2.dp))
+                Text(quote, style = TextStyle(fontSize = 15.sp, fontFamily = FontFamily.Serif, lineHeight = 21.sp))
+            }
+        }
+        SheetSection("COLOR") {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                listOf("yellow", "green", "blue", "pink").forEach { name ->
+                    val selected = name == color
+                    Box(
+                        Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(HighlightColors.of(name))
+                            .clickable { onColor(name) }
+                            .then(
+                                if (selected) {
+                                    Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape).padding(4.dp)
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                    )
+                }
+            }
+        }
+        SheetSection("NOTE") {
+            Box(
+                Modifier.fillMaxWidth().heightIn(min = 96.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp))
+                    .padding(12.dp),
+            ) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = note,
+                    onValueChange = onNoteChange,
+                    textStyle = Type.body,
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                ) { inner ->
+                    if (note.isEmpty()) {
+                        Text("Add a note…", style = Type.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        inner()
+                    }
+                }
+            }
+        }
+        Text(
+            "Notes sync to your other devices.",
+            style = Type.caption,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(16.dp))
+        if (onDelete != null) {
+            Text(
+                "Delete highlight",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFB3261E),
+                modifier = Modifier.align(Alignment.CenterHorizontally).clickable(onClick = onDelete).padding(8.dp),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+    }
+}
+
+/** Annotation cards for the contents-panel Notes tab and the Notes screen. */
+@Composable
+internal fun AnnotationCards(
+    entries: List<com.baca.shared.sync.AnnotationEntry>,
+    book: ParsedEpub?,
+    ink: Color,
+    deviceLabels: Map<String, String> = emptyMap(),
+    onTap: (com.baca.shared.sync.AnnotationEntry) -> Unit = {},
+    onEdit: (com.baca.shared.sync.AnnotationEntry) -> Unit = {},
+) {
+    Column(Modifier.fillMaxWidth()) {
+        entries.forEach { entry ->
+            val anchor = entry.reflowAnchor
+            val chapterIdx = anchor?.let { indexOfChapter(it.href, book?.chapters ?: emptyList()) } ?: -1
+            // without the parsed book (Notes screen) we can't check — assume locatable
+            val fixedPage = entry.fixedAnchor?.pageIndex
+            val locatable = book == null || fixedPage != null ||
+                (anchor != null && chapterIdx >= 0 &&
+                    anchor.start.blockIndex < (book.chapters[chapterIdx].blocks.size))
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.background)
+                    .then(if (locatable) Modifier.clickable { onTap(entry) } else Modifier)
+                    .padding(12.dp),
+            ) {
+                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (entry.kind == KIND_BOOKMARK) {
+                        androidx.compose.material3.Icon(
+                            Icons.Filled.Bookmark,
+                            contentDescription = "Bookmark",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    } else {
+                        Box(Modifier.size(12.dp).padding(top = 2.dp).clip(RoundedCornerShape(3.dp)).background(HighlightColors.of(entry.color)))
+                    }
+                    Text(
+                        // a bookmark on an image-only page has no quote
+                        entry.text.ifBlank { anchor?.quote.orEmpty() }
+                            .ifBlank { if (entry.kind == KIND_BOOKMARK) "Bookmark" else "" },
+                        style = TextStyle(fontSize = 15.sp, fontFamily = FontFamily.Serif, lineHeight = 21.sp),
+                        color = ink,
+                    )
+                }
+                if (entry.note.isNotBlank()) {
+                    Text(entry.note, style = Type.body, modifier = Modifier.padding(top = 4.dp))
+                }
+                if (!locatable) {
+                    Text(
+                        "⚠ Can't locate in text",
+                        style = Type.caption,
+                        color = Color(0xFFB25000),
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                Text(
+                    buildString {
+                        if (fixedPage != null) append("Page ${fixedPage + 1}")
+                        else if (chapterIdx >= 0) append("Chapter ${chapterIdx + 1}")
+                        val device = deviceLabels[entry.id]
+                        if (device != null) append(if (isNotEmpty()) " · $device" else device)
+                    },
+                    style = Type.caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                if (entry.note.isNotBlank()) {
+                    Text(
+                        "Edit note",
+                        style = Type.caption,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.align(Alignment.End).clickable { onEdit(entry) }.padding(top = 6.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+    }
+}
+
+/** Contents | Notes (n) | Bookmarks (n) tab toggle at the top of the contents sheet. */
+@Composable
+private fun ContentsTabs(
+    current: ContentsTab,
+    annotations: List<com.baca.shared.sync.AnnotationEntry>,
+    onSelect: (ContentsTab) -> Unit,
+) {
+    val live = annotations.filter { !it.deleted }
+    val bookmarkCount = live.count { it.kind == KIND_BOOKMARK }
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        listOf(
+            ContentsTab.CONTENTS to "Contents",
+            ContentsTab.NOTES to "Notes (${live.size - bookmarkCount})",
+            ContentsTab.BOOKMARKS to "Bookmarks ($bookmarkCount)",
+        ).forEach { (tab, label) ->
+            val selected = tab == current
+            Box(
+                Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+                    .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.background)
+                    .clickable { onSelect(tab) }
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label,
+                    fontSize = 14.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+    }
+}
+
+/** Draws one image block; falls back to empty space when decode fails. */
+@Composable
+private fun ImageLine(chapter: Chapter, blockIndex: Int, reservedHeightPx: Int?) {
+    val images = LocalBookImages.current
+    val block = chapter.blocks[blockIndex] as Block.Image
+    val bitmap = images?.image(block.src)
+    if (bitmap != null) {
+        val density = LocalDensity.current
+        val boxHeight = with(density) { (reservedHeightPx ?: 96.dp.roundToPx()).toDp() }
+        Box(
+            Modifier.fillMaxWidth().height(boxHeight),
+            contentAlignment = Alignment.Center,
+        ) {
+            androidx.compose.foundation.Image(
+                painter = BitmapPainter(bitmap),
+                contentDescription = block.alt.ifBlank { "image" },
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    } else {
+        Box(Modifier.fillMaxWidth().height(96.dp)) {}
+    }
+}
+
+/**
+ * Contents rows shared by the phone sheet and the desktop panel: toc title
+ * left, chapter percent right; current chapter accent-bold with a dot and
+ * "You are here". [onJump] receives the entry href (matching uses the shared
+ * tolerant resolver).
+ */
+@Composable
+private fun ContentsList(
+    book: ParsedEpub,
+    session: ReaderSession,
+    tick: Int,
+    accent: Color,
+    ink: Color,
+    onJump: (String) -> Unit,
+) {
+    book.toc.forEach { entry ->
+        val chapterAt = chapterIndexOf(book.chapters, entry.href)
+        // tick is read here on purpose: it bumps on every position change, so
+        // the accent dot moves as soon as the chapter/page changes
+        val isCurrent = tick >= 0 && chapterAt == session.chapterIndex && chapterAt >= 0
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = { onJump(entry.href) }).padding(vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (isCurrent) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(accent))
+                }
+                Text(
+                    entry.title,
+                    style = Type.body,
+                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isCurrent) accent else ink,
+                )
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    }
+}
+
+
+/**
+ * Tolerant toc-href → chapter-index resolution: exact zip path first, then
+ * fragment/query-stripped, then case-insensitive. Toc hrefs and chapter hrefs
+ * are normally identical, but some EPUBs differ in fragments or casing.
+ */
+// reuse the shared tolerant matcher; the local alias keeps the call sites short
+private fun chapterIndexOf(chapters: List<Chapter>, tocHref: String): Int =
+    indexOfChapter(tocHref, chapters)
+
+/** Sheet building blocks per design file 'Display settings' page. */
+private val SheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+
+
+
+/** Single chip; filled state uses accent fill with white text (design file). */
+
+private enum class SheetKind { NONE, DISPLAY, CONTENTS }
+
+// --- helpers ---
+
+@Composable
+private fun lineStyle(block: Block.Text, display: DisplaySettings, ink: Color): TextStyle {
+    val fonts = com.baca.app.ui.LocalAppFonts.current
+    val family = readerFontFamily(display.font, fonts)
+    val ratio = display.lineRatio()
+    return when (block.kind) {
+        BlockKind.HEADING -> TextStyle(
+            fontSize = (display.fontSizeSp * DisplaySettings.HEADING_SCALE).sp,
+            lineHeight = (display.fontSizeSp * DisplaySettings.HEADING_SCALE * ratio).sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = family,
+            color = ink,
+            lineHeightStyle = PageLineHeightStyle,
+        )
+        BlockKind.QUOTE -> TextStyle(
+            fontSize = display.fontSizeSp.sp,
+            lineHeight = (display.fontSizeSp * ratio).sp,
+            fontStyle = FontStyle.Italic,
+            fontFamily = family,
+            color = ink,
+            lineHeightStyle = PageLineHeightStyle,
+        )
+        BlockKind.PARAGRAPH -> TextStyle(
+            fontSize = display.fontSizeSp.sp,
+            lineHeight = (display.fontSizeSp * ratio).sp,
+            fontFamily = family,
+            color = ink,
+            lineHeightStyle = PageLineHeightStyle,
+        )
+    }
+}
+
+// Each page line is its own Text; Compose's default trims the line spacing off
+// single-line text, so lines would draw shorter than ReflowLayout reserved and
+// leave the page bottom blank. Keep the full line height, glyphs centered.
+private val PageLineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
+
+/** One mapping for measuring and drawing, so page breaks match the drawn text. */
+private fun readerFontFamily(key: String, fonts: com.baca.app.ui.UiFonts): FontFamily = when (key) {
+    "sans" -> fonts.sans
+    "mono" -> FontFamily.Monospace
+    "libron" -> fonts.libron
+    else -> fonts.serif
+}
+
+// Body paragraphs: 1em first-line indent and both edges flush (Librera's
+// defaults); headings stay ragged and unindented.
+private fun paragraphIndentPxOf(display: DisplaySettings, density: Density): Int =
+    with(density) { display.fontSizeSp.sp.roundToPx() }
+
+/** A paragraph's last line and lines before a <br> stay ragged. */
+private fun endsMidParagraph(text: String, lineEnd: Int): Boolean =
+    lineEnd < text.length && text[lineEnd - 1] != '\n' && text[lineEnd] != '\n'
+
+/**
+ * Full justification for one drawn line: the gap to the column edge is spread
+ * over its spaces as letter spacing. Each line is its own Text, where
+ * TextAlign.Justify does nothing (a single line is always a "last line").
+ */
+private fun justified(
+    text: AnnotatedString,
+    style: TextStyle,
+    widthPx: Int,
+    measurer: TextMeasurer,
+    density: Density,
+): AnnotatedString {
+    val gaps = text.indices.filter { text[it] == ' ' }
+    if (gaps.isEmpty()) return text
+    val natural = measurer.measure(text, style, softWrap = false, maxLines = 1).size.width
+    // a hair of slack: rounding must never push the line into a second row
+    val extra = widthPx - natural - JUSTIFY_SLACK_PX
+    if (extra <= 0 || extra > widthPx * MAX_JUSTIFY_STRETCH) return text
+    val spacing = with(density) { (extra.toFloat() / gaps.size).toSp() }
+    return buildAnnotatedString {
+        append(text)
+        gaps.forEach { addStyle(SpanStyle(letterSpacing = spacing), it, it + 1) }
+    }
+}
+
+private const val JUSTIFY_SLACK_PX = 2
+// a line this short before a break isn't worth stretching into rivers
+private const val MAX_JUSTIFY_STRETCH = 0.35f
+
+private fun reflowSettingsOf(display: DisplaySettings, density: Density): ReflowSettings = with(density) {
+    val fontPx = display.fontSizeSp.sp.roundToPx()
+    ReflowSettings(
+        fontSizePx = fontPx,
+        lineHeightRatio = display.lineRatio(),
+        paragraphGapPx = (display.fontSizeSp * 0.35f).sp.roundToPx(),
+        paragraphIndentPx = paragraphIndentPxOf(display, density),
+        headingScale = DisplaySettings.HEADING_SCALE,
+        imageHeightPx = (display.fontSizeSp * 6f).sp.roundToPx(),
+        fontFamily = display.font,
+    )
+}
+
+private fun marginDpOf(name: String): Dp = when (name) {
+    "narrow" -> 8.dp
+    "medium" -> 16.dp
+    "wide" -> 32.dp
+    else -> 16.dp
+}
+
+private const val TAG_LINK = "baca.href"
+
+private fun annotatedOf(block: Block, ink: Color, accent: Color): AnnotatedString = when (block) {
+    is Block.Image -> AnnotatedString("")
+    is Block.Text -> buildAnnotatedString {
+        block.spans.forEach { span ->
+            if (span.href != null) {
+                pushStringAnnotation(TAG_LINK, span.href!!)
+                pushStyle(
+                    SpanStyle(
+                        color = accent,
+                        textDecoration = TextDecoration.Underline,
+                        fontWeight = if (span.bold) FontWeight.Bold else null,
+                        fontStyle = if (span.italic) FontStyle.Italic else null,
+                    ),
+                )
+            } else {
+                pushStyle(
+                    SpanStyle(
+                        fontWeight = if (span.bold) FontWeight.Bold else null,
+                        fontStyle = if (span.italic) FontStyle.Italic else null,
+                        color = ink,
+                    ),
+                )
+            }
+            append(span.text)
+            pop()
+            if (span.href != null) pop()
+        }
+    }
+}
+
+/** Text with tappable internal/external links; part of text selection downstream. */
+@Composable
+private fun LinkText(text: AnnotatedString, style: TextStyle, onLink: (String) -> Unit) {
+    var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    androidx.compose.foundation.text.BasicText(
+        text = text,
+        style = style,
+        softWrap = false,
+        maxLines = 1,
+        onTextLayout = { layout = it },
+        modifier = Modifier.pointerInput(text) {
+            detectTapGestures { pos ->
+                layout?.let { l ->
+                    val offset = l.getOffsetForPosition(pos)
+                    text.getStringAnnotations(TAG_LINK, offset, offset).firstOrNull()?.let { ann ->
+                        onLink(ann.item)
+                    }
+                }
+            }
+        },
+    )
+}
+
+/**
+ * Invisible 24dp touch strip; the visible track is 3px until hovered (desktop)
+ * or grabbed. Tap or drag anywhere in the strip to jump.
+ */
+private fun progressFractionOf(session: ReaderSession): Float {
+    val total = session.bookTotalPages()
+    if (total <= 1) return 0f
+    return ((session.bookPageNumber() - 1) / (total - 1).toFloat()).coerceIn(0f, 1f)
+}
+
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@Composable
+internal fun SeekBar(fraction: Float, onSeek: (Float) -> Unit, onSeekEnd: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    var dragging by remember { mutableStateOf(false) }
+    val barHeight = if (expanded || dragging) 12.dp else 1.5.dp
+    val accent = MaterialTheme.colorScheme.primary
+    val track = MaterialTheme.colorScheme.outline
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(24.dp)
+            .seekHover({ expanded = true }, { expanded = false })
+            .pointerInput(Unit) {
+                detectTapGestures { pos ->
+                    onSeek(((pos.x / size.width).coerceIn(0f, 1f)))
+                }
+            }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { dragging = true },
+                    onDragEnd = { onSeekEnd(); dragging = false },
+                    onDragCancel = { onSeekEnd(); dragging = false },
+                ) { change, _ ->
+                    dragging = true
+                    onSeek(((change.position.x / size.width).coerceIn(0f, 1f)))
+                    change.consume()
+                }
+            },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        // Track and fill are siblings measured at barHeight; a wrapping Box
+        // would inherit the strip's exact 24dp height constraints and the
+        // fill's fillMaxHeight would blow it up to full strip height.
+        Box(
+            Modifier.fillMaxWidth().height(barHeight)
+                .clip(RoundedCornerShape(barHeight / 2)).background(track),
+        )
+        Box(
+            Modifier.fillMaxWidth(fraction).height(barHeight)
+                .clip(RoundedCornerShape(barHeight / 2)).background(accent),
+        )
+    }
+}

@@ -1,0 +1,33 @@
+CREATE TABLE books (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    book_hash TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    author TEXT NOT NULL,
+    path TEXT NOT NULL,
+    format TEXT NOT NULL,
+    cover_path TEXT,
+    added_at INTEGER NOT NULL,
+    lamport INTEGER NOT NULL,
+    deleted INTEGER NOT NULL DEFAULT 0
+);
+
+-- Lamport comparison happens in the merge functions; repository stores what
+-- it is told. INSERT OR REPLACE keeps rows in sync with the winning record.
+insertBook:
+INSERT OR REPLACE INTO books(book_hash, title, author, path, format, cover_path, added_at, lamport, deleted)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectBookByHash:
+SELECT * FROM books WHERE book_hash = ?;
+
+updateBookLamport:
+UPDATE books SET lamport = ? WHERE book_hash = ?;
+
+selectBooks:
+SELECT * FROM books WHERE deleted = 0 ORDER BY added_at DESC;
+
+tombstoneBook:
+UPDATE books SET deleted = 1, lamport = ? WHERE book_hash = ?;
+
+selectBooksAll:
+SELECT * FROM books;

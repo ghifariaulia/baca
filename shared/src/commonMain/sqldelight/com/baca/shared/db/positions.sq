@@ -1,0 +1,17 @@
+CREATE TABLE positions (
+    book_hash TEXT NOT NULL PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    locator TEXT NOT NULL,
+    lamport INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+setPosition:
+INSERT OR REPLACE INTO positions(book_hash, device_id, locator, lamport, updated_at)
+VALUES (?, ?, ?, ?, ?);
+
+selectPosition:
+SELECT * FROM positions WHERE book_hash = ?;
+
+selectPositions:
+SELECT * FROM positions;

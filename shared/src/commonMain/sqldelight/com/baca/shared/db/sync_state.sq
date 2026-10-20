@@ -1,0 +1,13 @@
+CREATE TABLE sync_state (
+    device_id TEXT NOT NULL PRIMARY KEY,
+    last_seen_counter INTEGER NOT NULL,
+    own_counter INTEGER NOT NULL,
+    own_lamport INTEGER NOT NULL
+);
+
+upsertSyncState:
+INSERT OR REPLACE INTO sync_state(device_id, last_seen_counter, own_counter, own_lamport)
+VALUES (?, ?, ?, ?);
+
+selectSyncStateAll:
+SELECT * FROM sync_state;
