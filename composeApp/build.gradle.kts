@@ -13,6 +13,12 @@ kotlin {
         compileSdk = 37
         minSdk = 26
 
+        // off by default with this plugin: without it the bundled fonts never
+        // reach the APK and Android falls back to the system font
+        androidResources {
+            enable = true
+        }
+
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
         }
