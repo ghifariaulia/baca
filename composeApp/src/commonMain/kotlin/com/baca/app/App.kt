@@ -38,6 +38,11 @@ import com.baca.app.reader.rememberBookStoreDir
 import com.baca.app.reader.rememberFolderPicker
 import com.baca.app.reader.rememberSyncFolderPicker
 import com.baca.app.reader.rememberSyncTransport
+import com.baca.app.reader.rememberBackupOpener
+import com.baca.app.reader.rememberBackupSaver
+import com.baca.shared.backup.LibraryBackup
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import com.baca.app.reader.AnchorJump
 import com.baca.app.sync.SyncCoordinator
 import com.baca.app.sync.SyncTriggerStore
@@ -253,6 +258,32 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                 runImport(files)
             }
         }
+        // --- backup / restore (Sync screen) ---
+        val backups = remember(db) { LibraryBackup(db) }
+        var backupBusy by remember { mutableStateOf(false) }
+        var backupMessage by remember { mutableStateOf<String?>(null) }
+        var pendingRestore by remember { mutableStateOf<String?>(null) }
+
+        fun runBackupTask(done: String, task: () -> Unit, afterSuccess: () -> Unit = {}) {
+            backupBusy = true
+            scope.launch {
+                backupMessage = try {
+                    withContext(Dispatchers.IO) { task() }
+                    afterSuccess()
+                    done
+                } catch (e: Exception) {
+                    e.message ?: "Backup failed"
+                } finally {
+                    backupBusy = false
+                }
+            }
+        }
+
+        val saveBackup = rememberBackupSaver { open ->
+            if (open != null) runBackupTask("Backup saved.", task = { open().use { backups.create(it) } })
+        }
+        val openBackup = rememberBackupOpener { path -> pendingRestore = path }
+
         val pickSyncFolder = rememberSyncFolderPicker { path ->
             if (path != null) {
                 syncFolderPath = path
@@ -484,11 +515,15 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                             lastSyncAt = lastSyncAt,
                             banner = banner,
                             devices = deviceRows,
+                            backupBusy = backupBusy,
+                            backupMessage = backupMessage,
                         ),
                         onBack = { screenState = Screen.Library },
                         onChooseFolder = pickSyncFolder,
                         onSyncNow = { dirtySinceSync = false; runSync() },
                         onUndo = { undoPositionChange() },
+                        onCreateBackup = saveBackup,
+                        onRestoreBackup = openBackup,
                     )
                 }
                 Screen.Settings -> NavShell(NavItem.SETTINGS, navTo) {
@@ -556,6 +591,35 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                         }
                     }
                 }
+            }
+            pendingRestore?.let { archive ->
+                AlertDialog(
+                    onDismissRequest = { pendingRestore = null },
+                    title = { Text("Replace your library?") },
+                    text = {
+                        Text(
+                            "Books, positions, notes, bookmarks and settings on this device are replaced by the backup. " +
+                                "The current library is saved as ${LibraryBackup.SAFETY_COPY} first.",
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            pendingRestore = null
+                            runBackupTask(
+                                "Library restored.",
+                                task = { backups.restore(archive.toPath(), storeDir) },
+                                // screens hold the replaced library in memory
+                                afterSuccess = {
+                                    libraryTick++
+                                    annotTick++
+                                    appTheme = AppThemeChoice.of(store.getLocal(AppThemeChoice.STORE_KEY))
+                                    dirtySinceSync = true
+                                },
+                            )
+                        }) { Text("Replace") }
+                    },
+                    dismissButton = { TextButton(onClick = { pendingRestore = null }) { Text("Cancel") } },
+                )
             }
             openingTitle?.let { title ->
                 Box(

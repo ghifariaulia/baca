@@ -20,3 +20,6 @@ SELECT * FROM annotations WHERE book_hash = ? AND deleted = 0 ORDER BY created_a
 
 selectAnnotationsAll:
 SELECT * FROM annotations;
+
+deleteAnnotationsAll:
+DELETE FROM annotations;

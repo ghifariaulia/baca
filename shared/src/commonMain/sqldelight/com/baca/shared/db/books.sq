@@ -31,3 +31,6 @@ UPDATE books SET deleted = 1, lamport = ? WHERE book_hash = ?;
 
 selectBooksAll:
 SELECT * FROM books;
+
+deleteBooksAll:
+DELETE FROM books;

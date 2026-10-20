@@ -209,6 +209,12 @@ Self-hosted HTTP server: **out of scope** (2026-10-14, user decision — sync is
 
 LAN direct peer sync: out of scope until asked for.
 
+### 6.7 Backup and restore
+
+Separate from sync, on the Sync screen. **Create backup** writes one zip: `library.json` (every table: books, positions, annotations, synced and local settings) plus the imported book files and covers under `books/`. Paths are stored as file names, so a backup restores on any device or platform.
+
+**Restore** replaces the library after a confirmation. It first saves the current library as `before-restore.zip` next to the books folder, copies the book files, then swaps the tables in one transaction; an archive without `library.json` changes nothing. This device's identity (`device_id`), its sync folder and last-sync time are kept, and its Lamport clock is advanced past the restored records so the next local edit wins (6.1). Code: `shared/backup/LibraryBackup.kt`.
+
 ## 7. Licensing
 
 - KOReader itself: AGPL-3 — not used directly (it is a Lua application, not a renderer library).

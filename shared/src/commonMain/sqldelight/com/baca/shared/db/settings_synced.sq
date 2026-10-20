@@ -12,3 +12,6 @@ SELECT * FROM settings_synced WHERE key = ?;
 
 selectSyncedAll:
 SELECT * FROM settings_synced;
+
+deleteSyncedAll:
+DELETE FROM settings_synced;

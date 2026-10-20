@@ -15,3 +15,6 @@ SELECT * FROM positions WHERE book_hash = ?;
 
 selectPositions:
 SELECT * FROM positions;
+
+deletePositionsAll:
+DELETE FROM positions;

@@ -4,6 +4,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.baca.shared.db.DbAnnotationRepository.AnnotWithDevice
 import com.baca.shared.db.BookRow
 import com.baca.shared.sync.AnnotationEntry
@@ -95,5 +96,30 @@ class ShellScreensTest {
         assertTrue(rule.onAllNodesWithText("Undo", substring = true).fetchSemanticsNodes().isNotEmpty())
         rule.onNodeWithText("Sync now").performClick()
         rule.waitForIdle()
+    }
+
+    @Test
+    fun `sync screen offers backup and restore`() {
+        var created = 0
+        var restored = 0
+        var data by mutableStateOf(
+            SyncScreenData(folderPath = null, busy = false, error = null, lastSyncAt = null, banner = null, devices = emptyList()),
+        )
+        rule.setContent {
+            AppTheme {
+                SyncScreen(
+                    data, onBack = {}, onChooseFolder = {}, onSyncNow = {}, onUndo = {},
+                    onCreateBackup = { created++ }, onRestoreBackup = { restored++ },
+                )
+            }
+        }
+        rule.onNodeWithText("Create backup").performScrollTo().performClick()
+        rule.onNodeWithText("Restore…").performScrollTo().performClick()
+        rule.waitForIdle()
+        assertTrue(created == 1 && restored == 1)
+
+        data = data.copy(backupMessage = "Backup saved.")
+        rule.waitForIdle()
+        rule.onNodeWithText("Backup saved.").assertExists()
     }
 }

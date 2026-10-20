@@ -39,6 +39,9 @@ data class SyncScreenData(
     val lastSyncAt: Long?,
     val banner: MergeBanner?,
     val devices: List<DeviceRow>,
+    val backupBusy: Boolean = false,
+    /** result of the last backup or restore, shown under the buttons */
+    val backupMessage: String? = null,
 )
 
 data class MergeBanner(val bookTitle: String, val fromDevice: String, val percent: Int)
@@ -52,6 +55,8 @@ fun SyncScreen(
     onChooseFolder: () -> Unit,
     onSyncNow: () -> Unit,
     onUndo: () -> Unit,
+    onCreateBackup: () -> Unit = {},
+    onRestoreBackup: () -> Unit = {},
 ) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
@@ -226,6 +231,48 @@ fun SyncScreen(
                     }
                 }
             }
+
+            Spacer(Modifier.height(20.dp))
+            Text("BACKUP", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "One file with your library, positions, notes, bookmarks, settings and book files.",
+                style = Type.body,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                PillButton("Create backup", filled = true, enabled = !data.backupBusy, onClick = onCreateBackup)
+                PillButton("Restore…", filled = false, enabled = !data.backupBusy, onClick = onRestoreBackup)
+            }
+            (if (data.backupBusy) "Working…" else data.backupMessage)?.let { message ->
+                Spacer(Modifier.height(8.dp))
+                Text(message, style = Type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
+    }
+}
+
+@Composable
+private fun PillButton(label: String, filled: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val background = when {
+        !enabled -> MaterialTheme.colorScheme.outline
+        filled -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.surface
+    }
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(22.dp))
+            .background(background)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (filled && enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+        )
     }
 }

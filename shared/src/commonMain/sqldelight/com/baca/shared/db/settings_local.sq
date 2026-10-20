@@ -11,3 +11,10 @@ SELECT * FROM settings_local WHERE key = ?;
 
 selectLocalByPrefix:
 SELECT * FROM settings_local WHERE key LIKE ? || '%';
+
+selectLocalAll:
+SELECT * FROM settings_local;
+
+-- everything except the keys that describe this device itself
+deleteLocalExcept:
+DELETE FROM settings_local WHERE key NOT IN ?;
