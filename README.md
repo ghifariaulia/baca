@@ -32,7 +32,7 @@ Tests:
 ./gradlew :composeApp:compileAndroidMain   # Android code compiles
 ```
 
-On desktop, the library database is `baca.db` in the working directory, and imported books are stored in `~/.baca/books`.
+On desktop, the library database is `~/.baca/baca.db`, and imported books are stored in `~/.baca/books`.
 
 ## Project layout
 

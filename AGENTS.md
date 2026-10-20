@@ -53,7 +53,7 @@ Compose screen → domain logic (shared) → repository → SQLDelight → DB
 ## Toolchain
 
 - Build with the Gradle wrapper only (`./gradlew`), JDK 17 or newer (code targets JVM 17). No Docker.
-- Desktop data: `baca.db` in the working directory, imported books in `~/.baca/books`.
+- Desktop data: `~/.baca/baca.db` and imported books in `~/.baca/books`.
 - A running `./gradlew :desktop:run` holds the Gradle lock; other Gradle commands wait until the app window closes.
 
 ### Commands

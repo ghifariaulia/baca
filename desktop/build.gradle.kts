@@ -19,6 +19,12 @@ compose.desktop.application {
     nativeDistributions {
         targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
         packageName = "Baca"
+        // the bundled runtime only has the JDK modules listed here (suggestRuntimeModules)
+        modules("java.instrument", "java.sql", "jdk.unsupported")
         packageVersion = "0.1.0"
+        macOS {
+            // macOS rejects app versions whose first number is 0
+            packageVersion = "1.0.0"
+        }
     }
 }
