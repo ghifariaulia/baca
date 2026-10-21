@@ -58,6 +58,19 @@ class EpubParserTest {
     }
 
     @Test
+    fun `printed page numbers are left out of the text`() {
+        val blocks = parseXhtml(
+            """<html xmlns:epub="http://www.idpf.org/2007/ops"><body>""" +
+                """<p>One<span class="pagenum"><a id="Page_12">[Pg 12]</a></span> two</p>""" +
+                """<p><span epub:type="pagebreak" title="13">13</span>Three</p>""" +
+                """<div role="doc-pagebreak" aria-label="14">14</div>""" +
+                """<p class="page-number">xv</p>""" +
+                """<p>Four</p></body></html>""",
+        )
+        assertEquals(listOf("One two", "Three", "Four"), blocks.map { it.text })
+    }
+
+    @Test
     fun `unique identifier is read from the opf`() {
         assertEquals("http://www.gutenberg.org/84", parse(realEpub("books/frankenstein.epub")).identifier)
         assertEquals(null, parse(tempEpub(tinyEpubOf(xhtmlOf("<p>x</p>")))).identifier)

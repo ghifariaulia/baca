@@ -313,6 +313,19 @@ internal fun collapseWhitespace(spans: List<FormattedSpan>): List<FormattedSpan>
     }
 }
 
+/**
+ * The printed book's page numbers ("12", "[Pg 12]", "xv"), marked by EPUB 3
+ * `epub:type="pagebreak"`, ARIA `doc-pagebreak` or the usual class names.
+ * They belong to the paper layout, not the text.
+ */
+private fun isPageMarker(reader: XmlReader): Boolean {
+    if (reader.attrOrEmpty("type").split(' ').contains("pagebreak")) return true
+    if (reader.attrOrEmpty("role") == "doc-pagebreak") return true
+    return reader.attrOrEmpty("class").split(' ').any { it.lowercase() in PAGE_NUMBER_CLASSES }
+}
+
+private val PAGE_NUMBER_CLASSES = setOf("pagenum", "pageno", "page-number", "pagenumber", "page_number", "pagebreak")
+
 internal fun parseXhtml(xhtml: String, resolveSrc: (String) -> String = { it }): List<Block> {
     val reader = newXmlReader(xhtml)
     val blocks = mutableListOf<Block>()
@@ -324,6 +337,8 @@ internal fun parseXhtml(xhtml: String, resolveSrc: (String) -> String = { it }):
     var quoteDepth = 0
     var linkDepth = 0
     var linkHref: String? = null
+    // inside a printed-page marker: its element depth, 0 when not skipping
+    var pageMarkerDepth = 0
 
     fun openBlock(k: BlockKind, level: Int) {
         kind = if (quoteDepth > 0 && k == BlockKind.PARAGRAPH) BlockKind.QUOTE else k
@@ -355,6 +370,18 @@ internal fun parseXhtml(xhtml: String, resolveSrc: (String) -> String = { it }):
 
     while (reader.hasNext()) {
         val event = reader.next()
+        if (pageMarkerDepth > 0) {
+            when (event) {
+                EventType.START_ELEMENT -> pageMarkerDepth++
+                EventType.END_ELEMENT -> pageMarkerDepth--
+                else -> {}
+            }
+            continue
+        }
+        if (event == EventType.START_ELEMENT && isPageMarker(reader)) {
+            pageMarkerDepth = 1
+            continue
+        }
         when (event) {
             EventType.START_ELEMENT -> when (reader.localName) {
                 in boldTags -> bold++

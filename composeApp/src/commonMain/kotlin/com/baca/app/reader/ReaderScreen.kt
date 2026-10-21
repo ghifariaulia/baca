@@ -1,5 +1,29 @@
 package com.baca.app.reader
 
+import androidx.compose.ui.zIndex
+
+import androidx.compose.ui.graphics.luminance
+
+import androidx.compose.ui.input.pointer.PointerEventPass
+
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+
+import androidx.compose.foundation.gestures.awaitFirstDown
+
+import androidx.compose.foundation.gestures.awaitEachGesture
+
+import androidx.compose.animation.animateColorAsState
+
+import androidx.compose.animation.slideOutVertically
+
+import androidx.compose.animation.slideInVertically
+
+import androidx.compose.animation.fadeOut
+
+import androidx.compose.animation.fadeIn
+
+import androidx.compose.animation.AnimatedVisibility
+
 import kotlin.math.abs
 
 import kotlinx.coroutines.sync.withLock
@@ -337,6 +361,14 @@ fun ReaderScreen(
     val focusRequester = remember { FocusRequester() }
     // reader chrome (bars, sheets, panels) follows the app theme like every
     // other screen; only the page area takes the reading theme's colors
+    // top bar and footer float over the page and hide on a center tap; the
+    // page keeps its size, so hiding them never re-paginates the book
+    var barsVisible by remember { mutableStateOf(true) }
+    val appDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val darkReading = display.theme == "black" || display.theme == "dim"
+    SystemBarsAppearance(darkBackground = if (barsVisible) appDark else darkReading)
+    // the status bar strip continues whatever is at the top: the bar or the page
+    val edgeColor by animateColorAsState(if (barsVisible) MaterialTheme.colorScheme.surface else colors.background)
     Surface(
         Modifier
             .fillMaxSize()
@@ -354,18 +386,26 @@ fun ReaderScreen(
                     else -> false
                 }
             },
-        color = MaterialTheme.colorScheme.surface,
+        color = edgeColor,
+        contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
-        // chrome color fills behind the system bars; content stays clear of them
+        // the edge color fills behind the system bars; content stays clear of them
         BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         val isDesktop = maxWidth >= 900.dp
         var panelOpen by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { focusRequester.requestFocus() }
         Box(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize()) {
                 // Top bar: back · centered title · contents + Aa (design file 'Reader')
+                AnimatedVisibility(
+                    visible = barsVisible,
+                    modifier = Modifier.align(Alignment.TopCenter).zIndex(1f),
+                    enter = fadeIn() + slideInVertically { -it },
+                    exit = fadeOut() + slideOutVertically { -it },
+                ) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 4.dp).height(56.dp),
+                    Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 4.dp).height(56.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -420,11 +460,24 @@ fun ReaderScreen(
                         }
                     }
                 }
+                }
 
                 BoxWithConstraints(
-                    Modifier.fillMaxWidth().weight(1f)
+                    Modifier.fillMaxSize()
                         .background(colors.background)
                         .onSizeChanged { pageWidthPx = it.width }
+                        // center tap toggles the bars; watched without consuming so
+                        // text taps, long presses and swipes keep working
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                                if (down.position.x < size.width / 3f || down.position.x > size.width * 2f / 3f) return@awaitEachGesture
+                                val up = waitForUpOrCancellation(pass = PointerEventPass.Initial) ?: return@awaitEachGesture
+                                val moved = (up.position - down.position).getDistance() > viewConfiguration.touchSlop
+                                val held = up.uptimeMillis - down.uptimeMillis > viewConfiguration.longPressTimeoutMillis
+                                if (!moved && !held) barsVisible = !barsVisible
+                            }
+                        }
                         .then(
                             if (tapZonesForPageTurnEnabled) {
                                 Modifier.pointerInput(Unit) {
@@ -542,8 +595,15 @@ fun ReaderScreen(
                     }
                 }
 
+                AnimatedVisibility(
+                    visible = barsVisible,
+                    modifier = Modifier.align(Alignment.BottomCenter).zIndex(1f),
+                    enter = fadeIn() + slideInVertically { it },
+                    exit = fadeOut() + slideOutVertically { it },
+                ) {
                 Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
                     SeekBar(
                         fraction = progressFractionOf(session),
@@ -571,6 +631,7 @@ fun ReaderScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                }
                 }
             }
 
