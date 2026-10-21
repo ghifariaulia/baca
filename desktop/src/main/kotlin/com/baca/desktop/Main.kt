@@ -1,5 +1,8 @@
 package com.baca.desktop
 
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
@@ -31,12 +34,19 @@ fun main(args: Array<String>) {
     application {
         Window(
             title = AppInfo.name,
+            // window and dock icon while running unpackaged (gradle run)
+            icon = remember { appIcon() },
             state = rememberWindowState(width = 900.dp, height = 640.dp),
             onCloseRequest = ::exitApplication,
         ) {
             App(db, initialBookPath = initialBook)
         }
     }
+}
+
+private fun appIcon(): BitmapPainter {
+    val stream = checkNotNull(object {}.javaClass.getResourceAsStream("/baca.png")) { "baca.png missing from resources" }
+    return BitmapPainter(stream.use { javax.imageio.ImageIO.read(it) }.toComposeImageBitmap())
 }
 
 private fun createDesktopDb(file: File): Baca {

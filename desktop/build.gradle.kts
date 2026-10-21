@@ -25,6 +25,13 @@ compose.desktop.application {
         macOS {
             // macOS rejects app versions whose first number is 0
             packageVersion = "1.0.0"
+            iconFile.set(project.file("icons/baca.icns"))
+        }
+        windows {
+            iconFile.set(project.file("icons/baca.ico"))
+        }
+        linux {
+            iconFile.set(project.file("icons/baca.png"))
         }
     }
 }

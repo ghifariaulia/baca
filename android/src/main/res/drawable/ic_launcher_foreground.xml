@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Open book on the 108dp adaptive grid; shapes match desktop/icons (same coordinates). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- launchers show only the middle of the 108dp grid: keep the book in the 66dp safe circle -->
+    <group
+        android:pivotX="54"
+        android:pivotY="55"
+        android:scaleX="0.75"
+        android:scaleY="0.75">
+        <path
+            android:fillColor="#F7F3EA"
+            android:pathData="M52.5,41 Q40,33.5 25,36 L25,71 Q40,68.5 52.5,76 Z" />
+        <path
+            android:fillColor="#F7F3EA"
+            android:pathData="M55.5,41 Q68,33.5 83,36 L83,71 Q68,68.5 55.5,76 Z" />
+        <!-- shade toward the spine -->
+        <path
+            android:fillColor="#E3DCCB"
+            android:pathData="M52.5,41 Q49.5,39.4 46.5,38.3 L46.5,73 Q49.5,74.2 52.5,76 Z" />
+        <path
+            android:fillColor="#E3DCCB"
+            android:pathData="M55.5,41 Q58.5,39.4 61.5,38.3 L61.5,73 Q58.5,74.2 55.5,76 Z" />
+        <!-- bookmark ribbon -->
+        <path
+            android:fillColor="#F6D860"
+            android:pathData="M68,36.6 L74,35.7 L74,56 L71,53 L68,56 Z" />
+    </group>
+</vector>
