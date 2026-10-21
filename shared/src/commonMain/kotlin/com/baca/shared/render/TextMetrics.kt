@@ -14,7 +14,13 @@ package com.baca.shared.render
  */
 interface TextMetrics {
     /** One styled span range inside the block text. */
-    data class StyleRange(val start: Int, val endExclusive: Int, val bold: Boolean, val italic: Boolean)
+    data class StyleRange(
+        val start: Int,
+        val endExclusive: Int,
+        val bold: Boolean,
+        val italic: Boolean,
+        val smallCaps: Boolean = false,
+    )
 
     /** [fontFamily]: "serif" | "sans" | "mono" | "libron" | null = system default. */
     fun layoutLines(

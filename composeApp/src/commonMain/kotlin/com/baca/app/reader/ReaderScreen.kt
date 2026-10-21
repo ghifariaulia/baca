@@ -1,5 +1,13 @@
 package com.baca.app.reader
 
+import kotlin.math.ceil
+
+import com.baca.shared.render.takesIndent
+
+import com.baca.shared.render.fontScale
+
+import com.baca.shared.parser.TextAlign as BookAlign
+
 import androidx.compose.ui.input.pointer.PointerInputChange
 
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
@@ -564,9 +572,10 @@ fun ReaderScreen(
                                             line.endExclusive,
                                         )
                                         val style = lineStyle(block, display, colors.ink)
-                                        val body = block.kind != BlockKind.HEADING
+                                        // book CSS centred/right lines and headings stay unjustified
+                                        val body = block.kind != BlockKind.HEADING && block.align == BookAlign.START
                                         // same indent ReflowLayout measured the first line with
-                                        val indentPx = if (body && line.start == 0) paragraphIndentPxOf(display, density) else 0
+                                        val indentPx = if (block.takesIndent() && line.start == 0) paragraphIndentPxOf(display, density) else 0
                                         val lineText = highlighted(
                                             blockStrings[line.blockIndex],
                                             ranges,
@@ -579,7 +588,14 @@ fun ReaderScreen(
                                                 text
                                             }
                                         }
-                                        Box(Modifier.padding(start = with(density) { indentPx.toDp() })) {
+                                        Box(
+                                            Modifier.fillMaxWidth().padding(start = with(density) { indentPx.toDp() }),
+                                            contentAlignment = when (block.align) {
+                                                BookAlign.CENTER -> Alignment.TopCenter
+                                                BookAlign.END -> Alignment.TopEnd
+                                                BookAlign.START -> Alignment.TopStart
+                                            },
+                                        ) {
                                             if (block.spans.any { it.href != null }) {
                                                 LinkText(
                                                     lineText,
@@ -1355,29 +1371,18 @@ private enum class SheetKind { NONE, DISPLAY, CONTENTS }
 @Composable
 private fun lineStyle(block: Block.Text, display: DisplaySettings, ink: Color): TextStyle {
     val fonts = com.baca.app.ui.LocalAppFonts.current
-    val family = readerFontFamily(display.font, fonts)
-    val ratio = display.lineRatio()
-    return when (block.kind) {
-        BlockKind.HEADING -> TextStyle(
-            fontSize = (display.fontSizeSp * DisplaySettings.HEADING_SCALE).sp,
-            lineHeight = (display.fontSizeSp * DisplaySettings.HEADING_SCALE * ratio).sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = family,
-            color = ink,
-            lineHeightStyle = PageLineHeightStyle,
-        )
-        BlockKind.QUOTE -> TextStyle(
-            fontSize = display.fontSizeSp.sp,
-            lineHeight = (display.fontSizeSp * ratio).sp,
-            fontStyle = FontStyle.Italic,
-            fontFamily = family,
-            color = ink,
-            lineHeightStyle = PageLineHeightStyle,
-        )
-        BlockKind.PARAGRAPH -> TextStyle(
-            fontSize = display.fontSizeSp.sp,
-            lineHeight = (display.fontSizeSp * ratio).sp,
-            fontFamily = family,
+    val density = LocalDensity.current
+    // exactly the pixel size and line height ReflowLayout measured with, so a
+    // drawn line is never wider or taller than the one that was paginated
+    val fontPx = with(density) { (display.fontSizeSp.sp.roundToPx() * block.fontScale(DisplaySettings.HEADING_SCALE)).toInt() }
+    val lineHeightPx = ceil(fontPx * display.lineRatio())
+    return with(density) {
+        TextStyle(
+            fontSize = fontPx.toFloat().toSp(),
+            lineHeight = lineHeightPx.toSp(),
+            fontWeight = if (block.kind == BlockKind.HEADING) FontWeight.Bold else null,
+            fontStyle = if (block.kind == BlockKind.QUOTE) FontStyle.Italic else null,
+            fontFamily = readerFontFamily(display.font, fonts),
             color = ink,
             lineHeightStyle = PageLineHeightStyle,
         )
@@ -1483,6 +1488,7 @@ private fun annotatedOf(block: Block, ink: Color, accent: Color): AnnotatedStrin
                         textDecoration = TextDecoration.Underline,
                         fontWeight = if (span.bold) FontWeight.Bold else null,
                         fontStyle = if (span.italic) FontStyle.Italic else null,
+                        fontFeatureSettings = if (span.smallCaps) SMALL_CAPS else null,
                     ),
                 )
             } else {
@@ -1490,6 +1496,7 @@ private fun annotatedOf(block: Block, ink: Color, accent: Color): AnnotatedStrin
                     SpanStyle(
                         fontWeight = if (span.bold) FontWeight.Bold else null,
                         fontStyle = if (span.italic) FontStyle.Italic else null,
+                        fontFeatureSettings = if (span.smallCaps) SMALL_CAPS else null,
                         color = ink,
                     ),
                 )

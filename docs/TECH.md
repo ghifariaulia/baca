@@ -52,6 +52,16 @@ Phase 2:
 - **PDF** — deferred. Not part of the current plan; add later behind a renderer interface when needed.
 - **DjVu** — only if a real need appears. **MOBI/AZW3** — not planned.
 
+### 3.1 Book CSS (EPUB)
+
+EPUB chapters keep part of their own styling, following Librera's policy: the book's CSS applies, but the reader's font, size, line spacing, paragraph indent and justification always win. Stylesheets come from `<link rel="stylesheet">`, `<style>` and `style=""` (`shared/parser/BookCss.kt`).
+
+- **Applied:** `text-align: center/right`; `float: right` (its content becomes its own right-aligned line); `text-indent: 0` (no first-line indent); `font-variant: small-caps`; `font-weight` / `font-style`; `display: none`; relative `font-size` (`em`, `%`, keywords), clamped to 0.75–2× body text.
+- **Ignored:** `text-align: left/justify` (the reader justifies), margins and padding, absolute font sizes, colors, fonts.
+- **Book-wide body rules** (`p`, `div`, `span`, `li`, `body` with no class) cannot change indent or alignment, as Librera's overrides do. Classes and inline styles can (e.g. `.firstpara { text-indent: 0 }`).
+- **Selectors:** `tag`, `.class`, `tag.class` only, cascaded by specificity then order; descendant, child, sibling, attribute, id and pseudo selectors are skipped.
+- Whitespace follows HTML (3.x parser notes); a paragraph holding only `&nbsp;` is a blank line, as books use it for scene breaks.
+
 ## 4. Rendering
 
 Two paths, decided per format:

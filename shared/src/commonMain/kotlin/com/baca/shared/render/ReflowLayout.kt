@@ -2,6 +2,7 @@ package com.baca.shared.render
 
 import com.baca.shared.parser.Block
 import com.baca.shared.parser.BlockKind
+import com.baca.shared.parser.TextAlign
 import kotlin.math.ceil
 
 /**
@@ -19,6 +20,12 @@ data class ReflowSettings(
     /** "serif" | "sans" | "mono" | "libron" — must match the renderer's font. */
     val fontFamily: String? = null,
 )
+
+/** Font size relative to body text: the book's CSS size, else the heading default. Shared by layout and renderer. */
+fun Block.Text.fontScale(headingScale: Float): Float = scale ?: if (kind == BlockKind.HEADING) headingScale else 1f
+
+/** Whether the block's first line takes the reader's paragraph indent. Shared by layout and renderer. */
+fun Block.Text.takesIndent(): Boolean = kind != BlockKind.HEADING && indent && align == TextAlign.START
 
 /** One visible line (or image placeholder) placed on a page. */
 data class PageLine(
@@ -105,17 +112,11 @@ class ReflowLayout(
         page.any { it.blockIndex == line.blockIndex && it.start == line.start }
     }
 
-    private fun fontPxOf(block: Block.Text): Int = when (block.kind) {
-        BlockKind.HEADING -> (settings.fontSizePx * settings.headingScale).toInt()
-        else -> settings.fontSizePx
-    }
+    private fun fontPxOf(block: Block.Text): Int = (settings.fontSizePx * block.fontScale(settings.headingScale)).toInt()
 
     // round up: the renderer draws the exact fractional height, so rounding
     // down would let a full page overflow and clip its last line
-    private fun lineHeightPxOf(block: Block.Text): Int = when (block.kind) {
-        BlockKind.HEADING -> ceil(fontPxOf(block) * settings.lineHeightRatio).toInt()
-        else -> ceil(settings.fontSizePx * settings.lineHeightRatio).toInt()
-    }
+    private fun lineHeightPxOf(block: Block.Text): Int = ceil(fontPxOf(block) * settings.lineHeightRatio).toInt()
 
     private fun buildLines(): List<PageLine> {
         val result = mutableListOf<PageLine>()
@@ -139,6 +140,7 @@ class ReflowLayout(
                                     offset + span.text.length,
                                     span.bold || headingBold,
                                     span.italic,
+                                    span.smallCaps,
                                 ),
                             )
                             offset += span.text.length
@@ -152,7 +154,7 @@ class ReflowLayout(
                             columnWidthPx,
                             settings.fontFamily,
                             styleRanges,
-                            if (block.kind == BlockKind.HEADING) 0 else settings.paragraphIndentPx,
+                            if (block.takesIndent()) settings.paragraphIndentPx else 0,
                         )
                         .filter { it.endExclusive > it.start }
                         .forEach { span ->

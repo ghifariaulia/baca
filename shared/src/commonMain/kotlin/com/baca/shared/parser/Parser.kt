@@ -15,14 +15,28 @@ data class FormattedSpan(
     val italic: Boolean,
     /** Internal links carry the target document's zip path; external carry the URL. */
     val href: String? = null,
+    /** book CSS `font-variant: small-caps` */
+    val smallCaps: Boolean = false,
 )
+
+/** Horizontal alignment a book's CSS gives a block; START leaves it to the reader's justification. */
+enum class TextAlign { START, CENTER, END }
 
 enum class BlockKind { PARAGRAPH, HEADING, QUOTE }
 
 sealed class Block {
     abstract val text: String
 
-    data class Text(val spans: List<FormattedSpan>, val kind: BlockKind, val headingLevel: Int) : Block() {
+    data class Text(
+        val spans: List<FormattedSpan>,
+        val kind: BlockKind,
+        val headingLevel: Int,
+        /** from book CSS (TECH 3.1); the defaults are plain body text */
+        val align: TextAlign = TextAlign.START,
+        val indent: Boolean = true,
+        /** book CSS font size relative to body text; null when the book sets none */
+        val scale: Float? = null,
+    ) : Block() {
         override val text: String get() = spans.joinToString("") { it.text }
     }
 
@@ -79,6 +93,9 @@ fun parseEpub(path: Path): ParsedEpub {
         }.getOrDefault(emptyList())
     } ?: emptyList()
     val titles = toc.associate { it.href to it.title }
+    // one book usually shares a stylesheet across chapters: read each file once
+    val cssFiles = mutableMapOf<Path, String?>()
+    fun css(path: Path): String? = cssFiles.getOrPut(path) { runCatching { zip.read(path) { readUtf8() } }.getOrNull() }
     val chapters = opf.spine.mapNotNull { idref ->
         val href = opf.manifest[idref] ?: return@mapNotNull null
         val chapterPath = (base / href.toPath()).normalized()
@@ -90,9 +107,11 @@ fun parseEpub(path: Path): ParsedEpub {
         Chapter(
             href = chapterPath.toString(),
             title = titles[chapterPath.toString()],
-            blocks = parseXhtml(xhtml) { src ->
-                (chapterDir / src.toPath()).normalized().toString()
-            },
+            blocks = parseXhtml(
+                xhtml,
+                resolveSrc = { src -> (chapterDir / src.toPath()).normalized().toString() },
+                loadCss = { href -> css((chapterDir / href.substringBefore('#').toPath()).normalized()) },
+            ),
         )
     }
     // Normalize the cover href like spine hrefs: it is relative to the OPF dir
@@ -326,23 +345,41 @@ private fun isPageMarker(reader: XmlReader): Boolean {
 
 private val PAGE_NUMBER_CLASSES = setOf("pagenum", "pageno", "page-number", "pagenumber", "page_number", "pagebreak")
 
-internal fun parseXhtml(xhtml: String, resolveSrc: (String) -> String = { it }): List<Block> {
+internal fun parseXhtml(
+    xhtml: String,
+    resolveSrc: (String) -> String = { it },
+    /** stylesheet text for a `<link>` href, relative to this document */
+    loadCss: (String) -> String? = { null },
+): List<Block> {
     val reader = newXmlReader(xhtml)
     val blocks = mutableListOf<Block>()
+    val stylesheet = Stylesheet()
     var spans: MutableList<FormattedSpan>? = null
     var kind = BlockKind.PARAGRAPH
     var headingLevel = 0
-    var bold = 0
-    var italic = 0
+    var blockAlign = TextAlign.START
+    var blockIndent = true
+    var blockScale: Float? = null
     var quoteDepth = 0
     var linkDepth = 0
     var linkHref: String? = null
-    // inside a printed-page marker: its element depth, 0 when not skipping
-    var pageMarkerDepth = 0
+    // inside a printed-page marker or a display:none element: its depth, 0 when not skipping
+    var skipDepth = 0
+    // inside a <style> element: its text, collected for the stylesheet
+    var styleText: StringBuilder? = null
+    // float:right content inside a paragraph gets its own right-aligned line;
+    // the depth of the floated element, 0 when not inside one
+    var floatDepth = 0
+    // computed (inherited) style of each open element, innermost last
+    val styles = ArrayDeque<Computed>().apply { add(Computed()) }
 
     fun openBlock(k: BlockKind, level: Int) {
+        val style = styles.last()
         kind = if (quoteDepth > 0 && k == BlockKind.PARAGRAPH) BlockKind.QUOTE else k
         headingLevel = level
+        blockAlign = style.align
+        blockIndent = !style.noIndent
+        blockScale = style.scale.takeIf { it != 1f }
         spans = mutableListOf()
     }
 
@@ -352,7 +389,7 @@ internal fun parseXhtml(xhtml: String, resolveSrc: (String) -> String = { it }):
         val merged = mutableListOf<FormattedSpan>()
         for (s in list) {
             val last = merged.lastOrNull()
-            if (last != null && last.bold == s.bold && last.italic == s.italic && last.href == s.href) {
+            if (last != null && last.bold == s.bold && last.italic == s.italic && last.href == s.href && last.smallCaps == s.smallCaps) {
                 merged[merged.lastIndex] = last.copy(text = last.text + s.text)
             } else {
                 merged.add(s)
@@ -362,63 +399,122 @@ internal fun parseXhtml(xhtml: String, resolveSrc: (String) -> String = { it }):
         // not isNotBlank: a lone &nbsp; survives collapsing and draws an empty
         // line, as in HTML (books use <p>&nbsp;</p> for scene breaks)
         if (collapsed.any { it.text.isNotEmpty() }) {
-            blocks.add(Block.Text(collapsed, kind, headingLevel))
+            blocks.add(Block.Text(collapsed, kind, headingLevel, blockAlign, blockIndent, blockScale))
         }
     }
 
     fun appendText(t: String) {
-        spans?.add(FormattedSpan(t, bold > 0, italic > 0, linkHref))
+        val style = styles.last()
+        spans?.add(FormattedSpan(t, style.bold, style.italic, linkHref, style.smallCaps))
     }
 
     while (reader.hasNext()) {
         val event = reader.next()
-        if (pageMarkerDepth > 0) {
+        if (skipDepth > 0) {
             when (event) {
-                EventType.START_ELEMENT -> pageMarkerDepth++
-                EventType.END_ELEMENT -> pageMarkerDepth--
+                EventType.START_ELEMENT -> skipDepth++
+                EventType.END_ELEMENT -> skipDepth--
                 else -> {}
             }
             continue
         }
-        if (event == EventType.START_ELEMENT && isPageMarker(reader)) {
-            pageMarkerDepth = 1
-            continue
-        }
         when (event) {
-            EventType.START_ELEMENT -> when (reader.localName) {
-                in boldTags -> bold++
-                in italicTags -> italic++
-                "a" -> {
-                    if (linkDepth == 0) linkHref = reader.attr("href")?.let { asLink(it, resolveSrc) }
-                    linkDepth++
+            EventType.START_ELEMENT -> {
+                val tag = reader.localName.lowercase()
+                if (tag == "link" && reader.attrOrEmpty("rel").contains("stylesheet")) {
+                    reader.attr("href")?.let(loadCss)?.let { stylesheet.add(it) }
                 }
-                "blockquote" -> quoteDepth++
-                "img" -> blocks.add(
-                    Block.Image(reader.attr("alt") ?: "", reader.attr("src")?.let(resolveSrc) ?: ""),
-                )
-                "br" -> appendText(BR_MARK.toString())
-                "p", "li" -> openBlock(BlockKind.PARAGRAPH, 0)
-                in headingTags -> openBlock(BlockKind.HEADING, reader.localName[1].digitToInt())
+                if (tag == "style") styleText = StringBuilder()
+                val declared = stylesheet.styleFor(tag, reader.attrOrEmpty("class").split(' ').filter { it.isNotEmpty() }.toSet(), reader.attr("style"))
+                if (isPageMarker(reader) || declared.hidden == true) {
+                    skipDepth = 1
+                    continue
+                }
+                val style = styles.last().inherit(tag, declared)
+                styles.addLast(style)
+                if (declared.floatRight == true && spans != null && floatDepth == 0) {
+                    closeBlock()
+                    floatDepth = styles.size
+                    val (k, level) = kind to headingLevel
+                    openBlock(k, level)
+                    blockAlign = TextAlign.END
+                    blockIndent = false
+                }
+                when (tag) {
+                    "a" -> {
+                        if (linkDepth == 0) linkHref = reader.attr("href")?.let { asLink(it, resolveSrc) }
+                        linkDepth++
+                    }
+                    "blockquote" -> quoteDepth++
+                    "img" -> blocks.add(
+                        Block.Image(reader.attr("alt") ?: "", reader.attr("src")?.let(resolveSrc) ?: ""),
+                    )
+                    "br" -> appendText(BR_MARK.toString())
+                    "p", "li" -> openBlock(BlockKind.PARAGRAPH, 0)
+                    in headingTags -> openBlock(BlockKind.HEADING, tag[1].digitToInt())
+                }
             }
             // whitespace-only text (e.g. <i> </i> between words) arrives as
             // IGNORABLE_WHITESPACE; it is real text in XHTML
-            EventType.TEXT, EventType.CDSECT, EventType.ENTITY_REF, EventType.IGNORABLE_WHITESPACE -> appendText(reader.text)
-            EventType.END_ELEMENT -> when (reader.localName) {
-                in boldTags -> bold--
-                in italicTags -> italic--
-                "a" -> {
-                    linkDepth--
-                    if (linkDepth == 0) linkHref = null
+            EventType.TEXT, EventType.CDSECT, EventType.ENTITY_REF, EventType.IGNORABLE_WHITESPACE ->
+                styleText?.append(reader.text) ?: appendText(reader.text)
+            EventType.END_ELEMENT -> {
+                val tag = reader.localName.lowercase()
+                if (floatDepth == styles.size) {
+                    // the floated part ends: what follows continues the paragraph, unindented
+                    floatDepth = 0
+                    val (k, level) = kind to headingLevel
+                    val (align, scale) = styles[styles.size - 2].align to blockScale
+                    closeBlock()
+                    openBlock(k, level)
+                    blockAlign = align
+                    blockScale = scale
+                    blockIndent = false
                 }
-                "blockquote" -> quoteDepth--
-                "p", "li" -> closeBlock()
-                in headingTags -> closeBlock()
+                when (tag) {
+                    "style" -> {
+                        styleText?.let { stylesheet.add(it.toString()) }
+                        styleText = null
+                    }
+                    "a" -> {
+                        linkDepth--
+                        if (linkDepth == 0) linkHref = null
+                    }
+                    "blockquote" -> quoteDepth--
+                    "p", "li" -> closeBlock()
+                    in headingTags -> closeBlock()
+                }
+                if (styles.size > 1) styles.removeLast()
             }
             else -> {}
         }
     }
     return blocks
 }
+
+/** An element's inherited style: tag defaults, then the book's CSS for it. */
+private data class Computed(
+    val bold: Boolean = false,
+    val italic: Boolean = false,
+    val smallCaps: Boolean = false,
+    val align: TextAlign = TextAlign.START,
+    val noIndent: Boolean = false,
+    /** font size relative to body text */
+    val scale: Float = 1f,
+) {
+    fun inherit(tag: String, declared: CssStyle) = Computed(
+        bold = declared.bold ?: (bold || tag in boldTags),
+        italic = declared.italic ?: (italic || tag in italicTags),
+        smallCaps = declared.smallCaps ?: smallCaps,
+        align = declared.align ?: align,
+        noIndent = declared.noIndent ?: noIndent,
+        scale = (scale * (declared.fontScale ?: 1f)).coerceIn(MIN_SCALE, MAX_SCALE),
+    )
+}
+
+// a book's tiny print or poster-size headings shouldn't overrule the reader's size
+private const val MIN_SCALE = 0.75f
+private const val MAX_SCALE = 2f
 
 private fun asLink(raw: String, resolveSrc: (String) -> String): String? {
     val withoutFragment = raw.substringBefore('#')

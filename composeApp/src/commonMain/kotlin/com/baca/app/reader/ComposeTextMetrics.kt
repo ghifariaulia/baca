@@ -56,6 +56,7 @@ class ComposeTextMetrics(
                         SpanStyle(
                             fontWeight = if (range.bold) FontWeight.Bold else null,
                             fontStyle = if (range.italic) FontStyle.Italic else null,
+                            fontFeatureSettings = if (range.smallCaps) SMALL_CAPS else null,
                         ),
                         range.start,
                         range.endExclusive,
@@ -78,3 +79,6 @@ class ComposeTextMetrics(
         }
     }
 }
+
+/** OpenType small caps; fonts without them draw normal lowercase. Measured and drawn the same way. */
+internal const val SMALL_CAPS = "smcp"
