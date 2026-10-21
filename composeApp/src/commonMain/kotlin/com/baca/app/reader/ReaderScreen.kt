@@ -1,12 +1,15 @@
 package com.baca.app.reader
 
+import androidx.compose.ui.input.pointer.PointerInputChange
+
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+
 import androidx.compose.ui.zIndex
 
 import androidx.compose.ui.graphics.luminance
 
 import androidx.compose.ui.input.pointer.PointerEventPass
 
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 
 import androidx.compose.foundation.gestures.awaitFirstDown
 
@@ -364,6 +367,9 @@ fun ReaderScreen(
     // top bar and footer float over the page and hide on a center tap; the
     // page keeps its size, so hiding them never re-paginates the book
     var barsVisible by remember { mutableStateOf(true) }
+    // set when a tap opened a highlight or link, so the page tap skips it;
+    // a remembered holder, not state: read and written within one gesture
+    val textUsedTap = remember { booleanArrayOf(false) }
     val appDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val darkReading = display.theme == "black" || display.theme == "dim"
     SystemBarsAppearance(darkBackground = if (barsVisible) appDark else darkReading)
@@ -466,16 +472,24 @@ fun ReaderScreen(
                     Modifier.fillMaxSize()
                         .background(colors.background)
                         .onSizeChanged { pageWidthPx = it.width }
-                        // center tap toggles the bars; watched without consuming so
-                        // text taps, long presses and swipes keep working
-                        .pointerInput(Unit) {
+                        // Page taps, watched in the final pass so the text below keeps
+                        // its own gestures: only a quick, still tap the text didn't
+                        // use counts. Edges turn the page (phones, unless switched
+                        // off), the middle shows or hides the bars.
+                        .pointerInput(display.tapToTurn) {
                             awaitEachGesture {
-                                val down = awaitFirstDown(pass = PointerEventPass.Initial)
-                                if (down.position.x < size.width / 3f || down.position.x > size.width * 2f / 3f) return@awaitEachGesture
-                                val up = waitForUpOrCancellation(pass = PointerEventPass.Initial) ?: return@awaitEachGesture
+                                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Final)
+                                textUsedTap[0] = false
+                                val up = awaitUp(PointerEventPass.Final) ?: return@awaitEachGesture
                                 val moved = (up.position - down.position).getDistance() > viewConfiguration.touchSlop
                                 val held = up.uptimeMillis - down.uptimeMillis > viewConfiguration.longPressTimeoutMillis
-                                if (!moved && !held) barsVisible = !barsVisible
+                                if (moved || held || textUsedTap[0]) return@awaitEachGesture
+                                val edgeTurns = tapZonesForPageTurnEnabled && display.tapToTurn
+                                when {
+                                    down.position.x < size.width / 3f -> if (edgeTurns) pageTurn(-1)
+                                    down.position.x > size.width * 2f / 3f -> if (edgeTurns) pageTurn(1)
+                                    else -> barsVisible = !barsVisible
+                                }
                             }
                         }
                         .then(
@@ -561,6 +575,7 @@ fun ReaderScreen(
                                                     lineText,
                                                     style,
                                                     onLink = { href ->
+                                                        textUsedTap[0] = true
                                                         if (href.startsWith("http")) openExternalLink(href)
                                                         else scope.launch { session.jumpToHref(href) }
                                                     },
@@ -571,7 +586,10 @@ fun ReaderScreen(
                                                     style,
                                                     ranges,
                                                     line.start,
-                                                    onTapAnnotation = { entry -> editing = EditorState(existing = entry) },
+                                                    onTapAnnotation = { entry ->
+                                                        textUsedTap[0] = true
+                                                        editing = EditorState(existing = entry)
+                                                    },
                                                     onLongPress = { pos -> toolbarAt = line.blockIndex to pos },
                                                 )
                                             }
@@ -582,17 +600,6 @@ fun ReaderScreen(
                         }
                     }
 
-                    if (tapZonesForPageTurnEnabled) {
-                        // plain taps: a clickable's ripple flashed like a button press
-                        Box(
-                            Modifier.fillMaxHeight().fillMaxWidth(0.33f).align(Alignment.CenterStart)
-                                .pointerInput(Unit) { detectTapGestures { pageTurn(-1) } },
-                        )
-                        Box(
-                            Modifier.fillMaxHeight().fillMaxWidth(0.33f).align(Alignment.CenterEnd)
-                                .pointerInput(Unit) { detectTapGestures { pageTurn(1) } },
-                        )
-                    }
                 }
 
                 AnimatedVisibility(
@@ -1411,6 +1418,14 @@ private fun justified(
     return buildAnnotatedString {
         append(text)
         gaps.forEach { addStyle(SpanStyle(letterSpacing = spacing), it, it + 1) }
+    }
+}
+
+/** Next pointer event in [pass] that lifts the finger, consumed or not; null if the gesture ends otherwise. */
+private suspend fun AwaitPointerEventScope.awaitUp(pass: PointerEventPass): PointerInputChange? {
+    while (true) {
+        val change = awaitPointerEvent(pass).changes.firstOrNull() ?: return null
+        if (!change.pressed) return change
     }
 }
 

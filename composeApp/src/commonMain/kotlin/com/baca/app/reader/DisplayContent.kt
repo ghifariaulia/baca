@@ -105,6 +105,14 @@ internal fun DisplayContent(display: DisplaySettings, onChange: (DisplaySettings
                 selected = display.margins,
             ) { onChange(display.copy(margins = it)) }
         }
+        if (tapZonesForPageTurnEnabled) {
+            SheetSection("PAGE TURN") {
+                SegmentedRow(
+                    options = listOf("tap" to "Tap & swipe", "swipe" to "Swipe only"),
+                    selected = if (display.tapToTurn) "tap" else "swipe",
+                ) { onChange(display.copy(tapToTurn = it == "tap")) }
+            }
+        }
         Text(
             "Display settings stay on this device and are not synced.",
             style = Type.caption,

@@ -39,4 +39,13 @@ class ModelsTest {
             AnnotationRecord(id = "a", bookHash = "h", createdAt = 1, lamport = 1, deviceId = "d")
         }
     }
+
+    @Test
+    fun displaySettingsSavedBeforeTapToTurnKeepEdgeTapsOn() {
+        val old = """{"fontSizeSp":21,"font":"serif","theme":"dim","lineSpacing":"normal","margins":"wide"}"""
+        val decoded = decodeDisplay(old)
+        assertEquals(21, decoded.fontSizeSp)
+        assertEquals(true, decoded.tapToTurn)
+        assertEquals(false, decodeDisplay(decoded.copy(tapToTurn = false).encode()).tapToTurn)
+    }
 }

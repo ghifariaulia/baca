@@ -13,6 +13,8 @@ data class DisplaySettings(
     val theme: String = "paper",     // paper | white | dim | black
     val lineSpacing: String = "normal", // compact | normal | relaxed
     val margins: String = "medium",  // narrow | medium | wide
+    /** phones: tapping the page's left/right edge turns the page (swipes always do) */
+    val tapToTurn: Boolean = true,
 ) {
     init {
         require(font in FONTS) { "unknown font: $font" }
