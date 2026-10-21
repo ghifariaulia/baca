@@ -406,10 +406,9 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
 
         // Android draws behind the status and navigation bars: the background
         // fills them, content stays clear of them. The reflow reader pads itself
-        // so its page color reaches the edges and sets the bar icons from the
-        // reading theme.
+        // inside its own surface.
         val readingReflow = (screenState as? Screen.Reader)?.book is OpenBook.Reflow
-        if (!readingReflow) SystemBarsAppearance(darkBackground = dark)
+        SystemBarsAppearance(darkBackground = dark)
         Surface(
             Modifier.fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)

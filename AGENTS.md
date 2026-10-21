@@ -77,7 +77,7 @@ These come from bugs already fixed here; keep them true.
 - **HTML whitespace collapses** in the EPUB parser; only `<br>` is a hard line break.
 - **Sync writes only to the device's own folder** (`devices/<id>/`). Merges order by `(lamport, device_id)`. New fields in sync DTOs must be optional with defaults, so older app versions can still read the files.
 - **No schema changes to existing tables.** Desktop has no migration path yet (`Schema.create` ignores "already exists"). Add new queries freely; for new per-book data, a `settings_local` key (like `progress:<hash>`, `work:<hash>`) avoids a migration. Adding real migrations is its own task.
-- **Reader chrome follows the reading theme**, not the app theme. Reading colors aren't in the Material color scheme, so set content colors explicitly.
+- **Reader chrome follows the app theme; only the page area takes the reading theme.** Bars, sheets and panels use the Material color scheme; page text and background use `ReaderThemes` colors explicitly, since those aren't in the color scheme.
 - **Bundled fonts need their OFL license** in `docs/licenses/`.
 
 ## Testing

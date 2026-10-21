@@ -124,7 +124,6 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.baca.app.ui.LocalAppFonts
-import com.baca.app.ui.AppTheme
 import com.baca.app.ui.ReaderThemes
 import com.baca.app.ui.Type
 import com.baca.shared.domain.DisplaySettings
@@ -306,14 +305,14 @@ fun ReaderScreen(
     @Composable
     fun ContentsTabBody(tab: ContentsTab, onJumped: () -> Unit) {
         when (tab) {
-            ContentsTab.CONTENTS -> ContentsList(book, session, tick, accent, colors.ink) { href ->
+            ContentsTab.CONTENTS -> ContentsList(book, session, tick, accent, MaterialTheme.colorScheme.onSurface) { href ->
                 scope.launch { session.jumpToHref(href) }
                 onJumped()
             }
             ContentsTab.NOTES, ContentsTab.BOOKMARKS -> AnnotationCards(
                 entries = annotations.filter { !it.deleted && (it.kind == KIND_BOOKMARK) == (tab == ContentsTab.BOOKMARKS) },
                 book = book,
-                ink = colors.ink,
+                ink = MaterialTheme.colorScheme.onSurface,
                 onTap = { entry ->
                     scope.launch {
                         val anchor = entry.reflowAnchor ?: return@launch
@@ -336,12 +335,8 @@ fun ReaderScreen(
 
     // key events reach the composition only through a focused node (TECH 13.3)
     val focusRequester = remember { FocusRequester() }
-    // reader chrome (bars/sheets/panels) follows the READING theme, not the
-    // app shell's system theme; light reading themes get light chrome with
-    // AA-contrast text (ink 15:1+, muted 5.4:1+ on paper)
-    val darkReading = display.theme == "black" || display.theme == "dim"
-    SystemBarsAppearance(darkBackground = darkReading)
-    AppTheme(dark = darkReading) {
+    // reader chrome (bars, sheets, panels) follows the app theme like every
+    // other screen; only the page area takes the reading theme's colors
     Surface(
         Modifier
             .fillMaxSize()
@@ -359,12 +354,9 @@ fun ReaderScreen(
                     else -> false
                 }
             },
-        color = colors.background,
-        // reading colors aren't in the color scheme, so Surface can't derive
-        // content color and would inherit the system-themed shell's ink
-        contentColor = MaterialTheme.colorScheme.onSurface,
+        color = MaterialTheme.colorScheme.surface,
     ) {
-        // page color fills behind the system bars; content stays clear of them
+        // chrome color fills behind the system bars; content stays clear of them
         BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         val isDesktop = maxWidth >= 900.dp
         var panelOpen by remember { mutableStateOf(false) }
@@ -431,6 +423,7 @@ fun ReaderScreen(
 
                 BoxWithConstraints(
                     Modifier.fillMaxWidth().weight(1f)
+                        .background(colors.background)
                         .onSizeChanged { pageWidthPx = it.width }
                         .then(
                             if (tapZonesForPageTurnEnabled) {
@@ -780,7 +773,6 @@ fun ReaderScreen(
             }
         }
         }
-    }
     }
 }
 
@@ -1232,7 +1224,7 @@ private fun ContentsList(
     ink: Color,
     onJump: (String) -> Unit,
 ) {
-    book.toc.forEach { entry ->
+    book.toc.forEachIndexed { index, entry ->
         val chapterAt = chapterIndexOf(book.chapters, entry.href)
         // tick is read here on purpose: it bumps on every position change, so
         // the accent dot moves as soon as the chapter/page changes
@@ -1256,7 +1248,8 @@ private fun ContentsList(
                 )
             }
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+        // dividers separate rows; none under the last one
+        if (index != book.toc.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outline)
     }
 }
 

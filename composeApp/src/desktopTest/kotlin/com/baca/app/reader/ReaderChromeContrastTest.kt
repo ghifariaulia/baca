@@ -10,27 +10,30 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.text.TextLayoutResult
 import com.baca.app.ui.AppTheme
-import com.baca.app.ui.Tokens
+import com.baca.app.ui.ReaderThemes
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.onRoot
 import com.baca.shared.parser.parseEpub
 import okio.FileSystem
 import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
 
-/** Regression: on a light reading theme, sheet text must not inherit the dark shell's light ink. */
+/** Reader chrome (bars, sheets) follows the app theme; only the page takes the reading theme. */
 class ReaderChromeContrastTest {
 
     @get:Rule
     val rule = createComposeRule()
 
     @Test
-    fun `paper theme sheet titles use dark ink under a dark system theme`() {
+    fun `dark app theme gives dark chrome around a Paper page`() {
         val bytes = javaClass.classLoader.getResourceAsStream("books/frankenstein.epub")!!.readBytes()
         val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "contrast-test.epub"
         FileSystem.SYSTEM.write(path) { write(bytes) }
         val book = parseEpub(path)
         rule.setContent {
-            // same nesting as App: system-dark shell around the reader
+            // same nesting as App: dark shell around the reader
             AppTheme(dark = true) {
                 Surface {
                     ReaderScreen(
@@ -44,10 +47,17 @@ class ReaderChromeContrastTest {
             }
         }
         rule.waitUntil(10_000) { rule.onAllNodesWithText("Page", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        rule.waitForIdle()
+        val image = rule.onRoot().captureToImage()
+        val pixel = IntArray(1)
+        image.readPixels(pixel, 5, 5, 1, 1) // top bar
+        assertEquals(DARK_SURFACE.toArgb(), pixel[0], "top bar should use the dark app surface")
+        image.readPixels(pixel, image.width - 20, image.height / 2, 1, 1) // page margin
+        assertEquals(ReaderThemes.PAPER.background.toArgb(), pixel[0], "page should keep the Paper reading color")
+
         rule.onNodeWithText("Aa").performClick()
         rule.waitUntil(5_000) { rule.onAllNodesWithText("Display").fetchSemanticsNodes().isNotEmpty() }
-
-        assertEquals(Tokens.Ink, textColor("Display"))
+        assertEquals(DARK_INK, textColor("Display"))
     }
 
     private fun textColor(text: String): Color {
@@ -65,3 +75,7 @@ private class ContrastTestStore : com.baca.shared.domain.reader.PositionStore {
     override fun getLocal(key: String): String? = null
     override fun putLocal(key: String, value: String) {}
 }
+
+// dark color scheme surface and onSurface (AppTheme)
+private val DARK_SURFACE = Color(0xFF1A1E26)
+private val DARK_INK = Color(0xFFE7E9EE)
