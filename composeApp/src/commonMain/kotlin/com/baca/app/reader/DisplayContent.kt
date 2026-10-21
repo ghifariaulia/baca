@@ -112,6 +112,12 @@ internal fun DisplayContent(display: DisplaySettings, onChange: (DisplaySettings
                     selected = if (display.tapToTurn) "tap" else "swipe",
                 ) { onChange(display.copy(tapToTurn = it == "tap")) }
             }
+            SheetSection("FULL SCREEN") {
+                SegmentedRow(
+                    options = listOf("on" to "Hide status bar", "off" to "Keep status bar"),
+                    selected = if (display.fullScreen) "on" else "off",
+                ) { onChange(display.copy(fullScreen = it == "on")) }
+            }
         }
         Text(
             "Display settings stay on this device and are not synced.",

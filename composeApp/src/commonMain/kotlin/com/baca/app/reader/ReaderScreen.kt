@@ -418,7 +418,7 @@ fun ReaderScreen(
         // the edge color fills behind the system bars; content stays clear of them
         // Focus mode: the phone's status and navigation bars hide with the reader's bars.
         // The page keeps the room they take when shown, so hiding them never re-paginates.
-        FullScreen(enabled = !barsVisible)
+        FullScreen(enabled = display.fullScreen && !barsVisible)
         BoxWithConstraints(
             Modifier.fillMaxSize().windowInsetsPadding(stableReaderInsets()),
         ) {

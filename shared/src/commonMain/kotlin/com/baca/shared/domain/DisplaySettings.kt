@@ -15,6 +15,8 @@ data class DisplaySettings(
     val margins: String = "medium",  // narrow | medium | wide
     /** phones: tapping the page's left/right edge turns the page (swipes always do) */
     val tapToTurn: Boolean = true,
+    /** phones: the status and navigation bars hide with the reader's bars (focus mode) */
+    val fullScreen: Boolean = true,
 ) {
     init {
         require(font in FONTS) { "unknown font: $font" }
