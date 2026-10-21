@@ -67,4 +67,23 @@ class LibraryScreenTest {
         // "Meditations" hidden by the Finished filter
         assertTrue(rule.onAllNodesWithText("Meditations").fetchSemanticsNodes().isEmpty())
     }
+
+    @Test
+    fun `books marked finished leave Reading and the continue card`() {
+        val books = listOf(
+            LibraryBook(row("h1", "Moby-Dick", "H. Melville"), 0.40f, lastReadAt = 1L),
+            LibraryBook(row("h2", "Meditations", "M. Aurelius"), 0.55f, lastReadAt = 10L, finished = true),
+        )
+        rule.setContent { AppTheme { LibraryScreen(books = books, onAdd = {}, onOpen = {}, onResume = {}, onDelete = {}) } }
+
+        // continue card skips the finished book even though it was read last
+        rule.onNodeWithText("40%", substring = true).assertExists()
+        rule.onNodeWithText("Reading").performClick()
+        rule.waitForIdle()
+        assertTrue(rule.onAllNodesWithText("Meditations").fetchSemanticsNodes().isEmpty())
+        rule.onNodeWithText("Finished").performClick()
+        rule.waitForIdle()
+        assertTrue(rule.onAllNodesWithText("Meditations").fetchSemanticsNodes().isNotEmpty())
+        assertTrue(rule.onAllNodesWithText("Moby-Dick").fetchSemanticsNodes().isEmpty())
+    }
 }

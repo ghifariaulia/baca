@@ -536,6 +536,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                 is Screen.Detail -> {
                     val progress = booksRepo.progressFor(current.row.bookHash)
                     val lastRead = booksRepo.lastReadAt(current.row.bookHash)
+                    val finished = remember(current.row.bookHash, libraryTick) { booksRepo.isFinished(current.row.bookHash) }
                     BookDetailScreen(
                         row = current.row,
                         progress = progress,
@@ -548,6 +549,12 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                             booksRepo.tombstone(current.row.bookHash)
                             dirtySinceSync = true
                             screenState = Screen.Library
+                            libraryTick++
+                        },
+                        finished = finished,
+                        onToggleFinished = {
+                            booksRepo.setFinished(current.row.bookHash, !finished)
+                            dirtySinceSync = true
                             libraryTick++
                         },
                     )
@@ -606,6 +613,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                             row = row,
                             progress = booksRepo.progressFor(row.bookHash),
                             lastReadAt = booksRepo.lastReadAt(row.bookHash),
+                            finished = booksRepo.isFinished(row.bookHash),
                         )
                     }
                     Column(Modifier.fillMaxSize()) {

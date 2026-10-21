@@ -37,9 +37,8 @@ import com.baca.shared.db.BookRow
 
 /**
  * Book detail (design file 'Book detail'): centered cover, title/author,
- * progress card with Continue reading, metadata list, remove action.
- * "Mark as finished"/"Highlights" wait for their backing data (annotations,
- * a finished flag) and are not built yet.
+ * progress card with Start/Continue reading, metadata list, mark-finished and
+ * remove actions.
  */
 @Composable
 fun BookDetailScreen(
@@ -51,6 +50,8 @@ fun BookDetailScreen(
     onBack: () -> Unit,
     onContinue: () -> Unit,
     onRemove: () -> Unit,
+    finished: Boolean = false,
+    onToggleFinished: () -> Unit = {},
 ) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -101,7 +102,11 @@ fun BookDetailScreen(
                         style = Type.body,
                     )
                     Text(
-                        if (lastReadAt == null) "Not started" else "Last read ${relativeTime(lastReadAt)}",
+                        when {
+                            finished -> "Finished"
+                            lastReadAt == null -> "Not started"
+                            else -> "Last read ${relativeTime(lastReadAt)}"
+                        },
                         style = Type.caption,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -131,7 +136,7 @@ fun BookDetailScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    "Continue reading",
+                    if (lastReadAt == null) "Start reading" else "Continue reading",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = onAccent,
@@ -150,6 +155,13 @@ fun BookDetailScreen(
             }
 
             Spacer(Modifier.height(24.dp))
+            Text(
+                if (finished) "Mark as not finished" else "Mark as finished",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable(onClick = onToggleFinished).padding(8.dp),
+            )
             Text(
                 "Remove from library",
                 fontSize = 15.sp,

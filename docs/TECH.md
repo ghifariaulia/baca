@@ -165,11 +165,14 @@ Field shapes:
 
 // devices/<id>/library.json
 { "books": [ { "book_hash": "...", "title": "...", "added_at": 1712345678,
-               "lamport": 700, "deleted": false } ] }
+               "lamport": 700, "deleted": false,
+               "workKey": "...", "finished": true } ] }   // last two optional
 
 // devices/<id>/settings.json — synced allowlist only
 { "settings": { "dictionary": { "value": "...", "lamport": 650 } } }
 ```
+
+`finished` is the reader's "Mark as finished" flag, kept locally as `finished:<book_hash>`; changing it bumps the book's Lamport value so the newest choice wins like any library change. Files from older versions omit `workKey` and `finished`, and a missing value keeps what the device already knows.
 
 `meta.json` holds the device's counter, bumped on every write batch. A peer detects "this device has new data" by comparing `counter` with its locally stored `last_seen_counter` for that device (`sync_state`), with no cross-device timestamp comparison. This replaces the shared `sync/journal.json`, which every device would have written on every change.
 

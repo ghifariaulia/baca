@@ -53,7 +53,13 @@ import androidx.compose.ui.zIndex
 import com.baca.shared.db.BookRow
 
 /** Row + its saved reading progress (0..1) and last-read wall time. */
-data class LibraryBook(val row: BookRow, val progress: Float?, val lastReadAt: Long? = null)
+data class LibraryBook(
+    val row: BookRow,
+    val progress: Float?,
+    val lastReadAt: Long? = null,
+    /** marked finished by the reader, whatever the progress says */
+    val finished: Boolean = false,
+)
 
 enum class LibraryFilter { ALL, READING, FINISHED }
 
@@ -97,14 +103,14 @@ private fun filterPredicate(query: String, filter: LibraryFilter): (LibraryBook)
     (query.isBlank() || r.title.contains(query, true) || r.author.contains(query, true)) &&
         when (filter) {
             LibraryFilter.ALL -> true
-            LibraryFilter.READING -> lib.progress != null && lib.progress < 0.98f
-            LibraryFilter.FINISHED -> lib.progress != null && lib.progress >= 0.98f
+            LibraryFilter.READING -> !lib.finished && lib.progress != null && lib.progress < 0.98f
+            LibraryFilter.FINISHED -> lib.finished || (lib.progress != null && lib.progress >= 0.98f)
         }
 }
 
 /** Most-recently-read unfinished book, or null. */
 private fun continueBook(visible: List<LibraryBook>): LibraryBook? =
-    visible.filter { it.progress != null && it.progress in 0.001f..0.98f }
+    visible.filter { !it.finished && it.progress != null && it.progress in 0.001f..0.98f }
         .maxByOrNull { it.lastReadAt ?: 0L }
 
 @Composable

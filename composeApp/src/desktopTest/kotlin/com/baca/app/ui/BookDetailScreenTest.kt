@@ -4,6 +4,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.baca.shared.db.BookRow
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -53,5 +56,29 @@ class BookDetailScreenTest {
         assertEquals(1, continued)
         rule.onNodeWithText("Remove from library").performClick()
         assertEquals(1, removed)
+    }
+
+    @Test
+    fun `unread book says Start reading and can be marked finished`() {
+        val r = row()
+        var finished by mutableStateOf(false)
+        rule.setContent {
+            AppTheme {
+                BookDetailScreen(
+                    row = r, progress = null, lastReadAt = null, addedAt = r.addedAt, sizeBytes = 1,
+                    onBack = {}, onContinue = {}, onRemove = {},
+                    finished = finished, onToggleFinished = { finished = !finished },
+                )
+            }
+        }
+        rule.onNodeWithText("Start reading").assertExists()
+        rule.onNodeWithText("Not started").assertExists()
+
+        rule.onNodeWithText("Mark as finished").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("Finished").assertExists()
+        rule.onNodeWithText("Mark as not finished").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("Mark as finished").assertExists()
     }
 }

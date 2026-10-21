@@ -127,6 +127,8 @@ data class LibraryEntry(
     val deleted: Boolean = false,
     /** Links other files of the same edition (workKeyOf); absent from older peers. */
     val workKey: String? = null,
+    /** Marked finished by the reader; absent from older peers (null keeps what we know). */
+    val finished: Boolean? = null,
 )
 
 @Serializable

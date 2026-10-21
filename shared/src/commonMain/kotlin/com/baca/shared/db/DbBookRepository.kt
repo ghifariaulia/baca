@@ -13,6 +13,9 @@ import kotlin.uuid.Uuid
  */
 internal const val WORK_KEY_PREFIX = "work:"
 
+/** settings_local key prefix for "the reader marked this book finished"; it travels in library.json. */
+internal const val FINISHED_PREFIX = "finished:"
+
 /** [bookHash] first, then every other book hash sharing its work key. */
 internal fun linkedBookHashes(db: Baca, bookHash: String): List<String> {
     val key = db.settings_localQueries.getLocal(WORK_KEY_PREFIX + bookHash).executeAsOneOrNull()?.value_
@@ -98,6 +101,17 @@ class DbBookRepository(
     /** Where the book's file now lives; local only, not a synced change. */
     fun updatePath(bookHash: String, path: String) {
         db.booksQueries.updateBookPath(path, bookHash)
+    }
+
+    fun isFinished(bookHash: String): Boolean =
+        db.settings_localQueries.getLocal(FINISHED_PREFIX + bookHash).executeAsOneOrNull()?.value_ == "true"
+
+    /** Marks or unmarks the book finished; bumps its clock so the change syncs (TECH 6.3). */
+    fun setFinished(bookHash: String, finished: Boolean) {
+        db.transaction {
+            db.settings_localQueries.setLocal(FINISHED_PREFIX + bookHash, finished.toString())
+            db.booksQueries.updateBookLamport(bumpLamport(), bookHash)
+        }
     }
 
     /** Stored paths of every row, removed ones included. */

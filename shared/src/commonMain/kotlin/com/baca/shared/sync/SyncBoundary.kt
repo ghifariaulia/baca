@@ -3,6 +3,7 @@ package com.baca.shared.sync
 import com.baca.shared.db.Baca
 import com.baca.shared.db.LOCAL_ANNOTATION_DEVICE
 import com.baca.shared.db.WORK_KEY_PREFIX
+import com.baca.shared.db.FINISHED_PREFIX
 import kotlinx.serialization.encodeToString
 
 /**
@@ -204,6 +205,7 @@ class SyncBoundary(
             )
             // an older peer's entry carries no key; keep the one we know
             entry.workKey?.let { db.settings_localQueries.setLocal(WORK_KEY_PREFIX + entry.bookHash, it) }
+            entry.finished?.let { db.settings_localQueries.setLocal(FINISHED_PREFIX + entry.bookHash, it.toString()) }
             libWrites++
         }
 
@@ -227,7 +229,9 @@ class SyncBoundary(
         db.booksQueries.selectBooksAll().executeAsList().map { row ->
             val workKey = db.settings_localQueries.getLocal(WORK_KEY_PREFIX + row.book_hash).executeAsOneOrNull()
                 ?.value_?.takeIf { it.isNotEmpty() }
-            LibraryEntry(row.book_hash, row.title, row.added_at, row.lamport, row.deleted != 0L, workKey)
+            val finished = db.settings_localQueries.getLocal(FINISHED_PREFIX + row.book_hash).executeAsOneOrNull()
+                ?.value_?.toBooleanStrictOrNull()
+            LibraryEntry(row.book_hash, row.title, row.added_at, row.lamport, row.deleted != 0L, workKey, finished)
         },
     )
 
