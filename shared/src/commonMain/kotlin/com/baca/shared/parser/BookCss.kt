@@ -38,6 +38,8 @@ internal data class CssStyle(
     /** left margin and padding in em; only an element with a left border uses them */
     val marginLeft: Float? = null,
     val paddingLeft: Float? = null,
+    /** `height` in em; an image this short sits in its line of text */
+    val heightEm: Float? = null,
 ) {
     /** [other]'s set values win. */
     fun overriddenBy(other: CssStyle) = CssStyle(
@@ -60,6 +62,7 @@ internal data class CssStyle(
         borderLeft = other.borderLeft ?: borderLeft,
         marginLeft = other.marginLeft ?: marginLeft,
         paddingLeft = other.paddingLeft ?: paddingLeft,
+        heightEm = other.heightEm ?: heightEm,
     )
 }
 
@@ -246,6 +249,7 @@ private fun CssStyle.declare(name: String, value: String): CssStyle = when (name
     "margin-bottom" -> copy(marginBottom = lengthEm(value) ?: marginBottom)
     "padding-top" -> copy(paddingTop = lengthEm(value) ?: paddingTop)
     "padding-bottom" -> copy(paddingBottom = lengthEm(value) ?: paddingBottom)
+    "height" -> copy(heightEm = lengthEm(value) ?: heightEm)
     "text-decoration", "text-decoration-line" -> copy(underline = value.contains("underline"))
     else -> this
 }

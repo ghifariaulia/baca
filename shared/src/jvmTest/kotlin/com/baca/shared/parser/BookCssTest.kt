@@ -203,4 +203,18 @@ class BookCssTest {
         assertNull(after.leftRule)
         assertEquals(0f, after.insetEm)
     }
+
+    @Test
+    fun `a letter-sized image stays in its line of text, in place`() {
+        val all = parseXhtml(
+            """<html><head><style>img.inline { height: 1em; vertical-align: -0.1em }</style></head><body>""" +
+                """<p>This is <span class="c"><img class="inline" src="white2.jpg"/></span> [the name].</p>""" +
+                """<p>Caption <img src="map.jpg"/></p></body></html>""",
+        )
+        val line = all[0] as Block.Text
+        assertEquals("This is $INLINE_IMAGE [the name].", line.text)
+        assertEquals(listOf(InlineImage("white2.jpg", 1f)), line.spans.mapNotNull { it.image })
+        // without a text-sized height an image is still a figure of its own
+        assertEquals("map.jpg", all.filterIsInstance<Block.Image>().single().src)
+    }
 }

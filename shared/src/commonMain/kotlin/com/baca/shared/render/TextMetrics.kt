@@ -1,5 +1,7 @@
 package com.baca.shared.render
 
+import com.baca.shared.parser.InlineImage
+
 /**
  * Text measurement abstraction for the layout engine. Implementations:
  * - ComposeTextMetrics (composeApp): wraps Compose TextMeasurer for real rendering
@@ -24,6 +26,8 @@ interface TextMetrics {
         val scale: Float = 1f,
         /** drawn in the reader's sans font */
         val sans: Boolean = false,
+        /** an image in the line instead of the range's one char */
+        val image: InlineImage? = null,
     )
 
     /** [fontFamily]: "serif" | "sans" | "mono" | "libron" | null = system default. */

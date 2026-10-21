@@ -145,7 +145,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
@@ -243,7 +246,7 @@ fun ReaderScreen(
             layoutFactory = { index, vp, settings ->
                 ReflowLayout(
                     blocks = book.chapters[index].blocks,
-                    metrics = ComposeTextMetrics(textMeasurer, density) { name ->
+                    metrics = ComposeTextMetrics(textMeasurer, density, imageAspect = { images.aspect(it) }) { name ->
                         name?.let { readerFontFamily(it, appFonts) }
                     },
                     settings = settings,
@@ -295,6 +298,7 @@ fun ReaderScreen(
     val blockStrings = remember(chapter, display.theme, display.font, accent, bookAnnotations) {
         chapter.blocks.map { block -> annotatedOf(block, colors.ink, accent, appFonts.sans) }
     }
+    val inlineImages = rememberInlineImages(chapter, images, colors.ink)
     val pageCount = layout.pageCount()
     val pageNo = session.pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
     val page = layout.pages[pageNo]
@@ -651,7 +655,10 @@ fun ReaderScreen(
                                             if (breaksWord(block.text, line.endExclusive)) text + AnnotatedString("-") else text
                                         }.let { text ->
                                             if (body && endsMidParagraph(block.text, line.endExclusive)) {
-                                                justified(text, style, columnWidthPx - indentPx, textMeasurer, density)
+                                                justified(
+                                                    text, style, columnWidthPx - indentPx, textMeasurer, density,
+                                                    inlinePlaceholders(block, line.start, line.endExclusive, images),
+                                                )
                                             } else {
                                                 text
                                             }
@@ -670,6 +677,7 @@ fun ReaderScreen(
                                                 LinkText(
                                                     lineText,
                                                     style,
+                                                    inlineImages,
                                                     onPlaced = { textLayout, topLeft ->
                                                         lineGeometry[line.blockIndex to line.start] =
                                                             LineGeometry(line.blockIndex, line.start, line.endExclusive, textLayout, topLeft)
@@ -684,6 +692,7 @@ fun ReaderScreen(
                                                 TappableText(
                                                     lineText,
                                                     style,
+                                                    inlineImages,
                                                     ranges,
                                                     line.start,
                                                     onTapAnnotation = { entry ->
@@ -716,6 +725,7 @@ fun ReaderScreen(
                                                         (selection ?: matchHere)?.rangeIn(joined.blockIndex, floatBlock.text.length), selectionTint,
                                                     ),
                                                     lineStyle(floatBlock, display, colors.ink),
+                                                    inlineImages,
                                                     floatRanges,
                                                     joined.start,
                                                     onTapAnnotation = { entry ->
@@ -1099,6 +1109,7 @@ private fun highlighted(
 private fun TappableText(
     text: AnnotatedString,
     style: TextStyle,
+    inlineContent: Map<String, InlineTextContent>,
     ranges: List<HighlightRange>,
     lineStart: Int,
     onTapAnnotation: (com.baca.shared.sync.AnnotationEntry) -> Unit,
@@ -1116,6 +1127,7 @@ private fun TappableText(
         style = style,
         softWrap = false,
         maxLines = 1,
+        inlineContent = inlineContent,
         onTextLayout = { layout = it },
         modifier = modifier
             .onGloballyPositioned { coordinates -> layout?.let { onPlaced(it, coordinates.positionInRoot()) } }
@@ -1557,10 +1569,12 @@ private fun justified(
     widthPx: Int,
     measurer: TextMeasurer,
     density: Density,
+    /** the line's inline images, as it is drawn */
+    placeholders: List<AnnotatedString.Range<Placeholder>>,
 ): AnnotatedString {
     val gaps = text.indices.filter { text[it] == ' ' }
     if (gaps.isEmpty()) return text
-    val natural = measurer.measure(text, style, softWrap = false, maxLines = 1).size.width
+    val natural = measurer.measure(text, style, softWrap = false, maxLines = 1, placeholders = placeholders).size.width
     // a hair of slack: rounding must never push the line into a second row
     val extra = widthPx - natural - JUSTIFY_SLACK_PX
     if (extra <= 0 || extra > widthPx * MAX_JUSTIFY_STRETCH) return text
@@ -1647,7 +1661,7 @@ private fun annotatedOf(block: Block, ink: Color, accent: Color, sans: FontFamil
                     ),
                 )
             }
-            append(span.text)
+            span.image?.let { appendInlineContent(it.id, span.text) } ?: append(span.text)
             pop()
             if (span.href != null) pop()
         }
@@ -1659,6 +1673,7 @@ private fun annotatedOf(block: Block, ink: Color, accent: Color, sans: FontFamil
 private fun LinkText(
     text: AnnotatedString,
     style: TextStyle,
+    inlineContent: Map<String, InlineTextContent>,
     onPlaced: (TextLayoutResult, Offset) -> Unit,
     onLink: (String) -> Unit,
 ) {
@@ -1668,6 +1683,7 @@ private fun LinkText(
         style = style,
         softWrap = false,
         maxLines = 1,
+        inlineContent = inlineContent,
         onTextLayout = { layout = it },
         modifier = Modifier.onGloballyPositioned { coordinates -> layout?.let { onPlaced(it, coordinates.positionInRoot()) } }.pointerInput(text) {
             detectTapGestures { pos ->

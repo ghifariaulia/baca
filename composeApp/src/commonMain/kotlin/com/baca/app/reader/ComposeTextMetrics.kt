@@ -1,5 +1,8 @@
 package com.baca.app.reader
 
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -14,6 +17,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
+import com.baca.shared.parser.InlineImage
 import com.baca.shared.render.TextMetrics
 
 /**
@@ -28,6 +32,8 @@ import com.baca.shared.render.TextMetrics
 class ComposeTextMetrics(
     private val measurer: TextMeasurer,
     private val density: Density,
+    /** an inline image's width over its height */
+    private val imageAspect: (String) -> Float = { 1f },
     /** display font name → family, from the app's bundled fonts. */
     private val families: (String?) -> FontFamily?,
 ) : TextMetrics {
@@ -56,7 +62,7 @@ class ComposeTextMetrics(
             )
         }
         val annotated = if (styles.isEmpty()) {
-            androidx.compose.ui.text.AnnotatedString(text)
+            AnnotatedString(text)
         } else {
             buildAnnotatedString {
                 append(text)
@@ -81,6 +87,11 @@ class ComposeTextMetrics(
             // fixed, not max: with a max-only width Compose sizes short text to
             // its natural width without the first-line indent, then wraps it
             constraints = Constraints.fixedWidth(maxWidthPx),
+            placeholders = styles.mapNotNull { range ->
+                range.image?.let {
+                    AnnotatedString.Range(inlineImagePlaceholder(it, imageAspect(it.src)), range.start, range.endExclusive)
+                }
+            },
         )
         return (0 until layout.lineCount).map { i ->
             TextMetrics.LineSpan(
@@ -91,6 +102,13 @@ class ComposeTextMetrics(
         }
     }
 }
+
+/** The room an inline image takes in its line; measured and drawn the same way. */
+internal fun inlineImagePlaceholder(image: InlineImage, aspect: Float) = Placeholder(
+    width = (image.heightEm * aspect).em,
+    height = image.heightEm.em,
+    placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
+)
 
 /** The display font name book CSS `font-family: sans-serif` maps to. */
 internal const val SANS = "sans"

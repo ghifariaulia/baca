@@ -161,6 +161,7 @@ class ReflowLayout(
                                     span.smallCaps,
                                     span.scale,
                                     span.sans,
+                                    span.image,
                                 ),
                             )
                             offset += span.text.length

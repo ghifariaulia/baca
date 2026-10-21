@@ -23,7 +23,15 @@ data class FormattedSpan(
     val scale: Float = 1f,
     /** book CSS `font-family: sans-serif`: drawn in the reader's sans font */
     val sans: Boolean = false,
+    /** an image drawn in the line, in place of this span's one [INLINE_IMAGE] char */
+    val image: InlineImage? = null,
 )
+
+/** A text-sized image inside a paragraph (Kinki Region's ○○ redactions), [heightEm] tall, as wide as its aspect makes it. */
+data class InlineImage(val src: String, val heightEm: Float)
+
+/** The char an inline image stands on in its block's text, so offsets count it once. */
+const val INLINE_IMAGE = '\uFFFC'
 
 /**
  * A vertical rule left of a block, from a book CSS `border-left`, [atEm] in from
@@ -437,7 +445,7 @@ internal fun parseXhtml(
         for (s in list) {
             val last = merged.lastOrNull()
             if (last != null && last.bold == s.bold && last.italic == s.italic && last.href == s.href && last.smallCaps == s.smallCaps && last.plainLink == s.plainLink &&
-                last.scale == s.scale && last.sans == s.sans
+                last.scale == s.scale && last.sans == s.sans && last.image == null && s.image == null
             ) {
                 merged[merged.lastIndex] = last.copy(text = last.text + s.text)
             } else {
@@ -458,11 +466,11 @@ internal fun parseXhtml(
         }
     }
 
-    fun appendText(t: String) {
+    fun appendText(t: String, image: InlineImage? = null) {
         val style = styles.last()
         val plainLink = linkHref != null && style.ownColor && !style.underline
         val scale = style.scale / blockFontScale
-        spans?.add(FormattedSpan(t, style.bold, style.italic, linkHref, style.smallCaps, plainLink, scale, style.sans))
+        spans?.add(FormattedSpan(t, style.bold, style.italic, linkHref, style.smallCaps, plainLink, scale, style.sans, image))
     }
 
     while (reader.hasNext()) {
@@ -528,9 +536,16 @@ internal fun parseXhtml(
                         linkDepth++
                     }
                     "blockquote" -> quoteDepth++
-                    "img" -> blocks.add(
-                        Block.Image(reader.attr("alt") ?: "", reader.attr("src")?.let(resolveSrc) ?: "", takeGap()),
-                    )
+                    "img" -> {
+                        val src = reader.attr("src")?.let(resolveSrc) ?: ""
+                        val height = declared.heightEm
+                        // as LibreraX draws it: an image the book sizes like a letter stays in its line
+                        if (spans != null && height != null && height > 0f && height <= INLINE_IMAGE_MAX_EM) {
+                            appendText(INLINE_IMAGE.toString(), InlineImage(src, height))
+                        } else {
+                            blocks.add(Block.Image(reader.attr("alt") ?: "", src, takeGap()))
+                        }
+                    }
                     "br" -> appendText(BR_MARK.toString())
                     "p", "li" -> openBlock(BlockKind.PARAGRAPH, 0)
                     in headingTags -> openBlock(BlockKind.HEADING, tag[1].digitToInt())
@@ -616,6 +631,9 @@ private data class Computed(
         leftRule = leftRule,
     )
 }
+
+// taller than this, an inline image would push its line past the line height every page is measured with
+private const val INLINE_IMAGE_MAX_EM = 1f
 
 // a book's tiny print or poster-size headings shouldn't overrule the reader's size
 private const val MIN_SCALE = 0.75f
