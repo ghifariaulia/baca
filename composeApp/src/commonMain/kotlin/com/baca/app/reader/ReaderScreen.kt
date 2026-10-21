@@ -399,6 +399,16 @@ fun ReaderScreen(
         BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         val isDesktop = maxWidth >= 900.dp
         var panelOpen by remember { mutableStateOf(false) }
+        // Back closes what's open on top of the page first, then leaves the book
+        PlatformBackHandler {
+            when {
+                editing != null -> editing = null
+                toolbarAt != null -> toolbarAt = null
+                sheet != SheetKind.NONE -> sheet = SheetKind.NONE
+                panelOpen -> panelOpen = false
+                else -> onBack()
+            }
+        }
         LaunchedEffect(Unit) { focusRequester.requestFocus() }
         Box(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize()) {

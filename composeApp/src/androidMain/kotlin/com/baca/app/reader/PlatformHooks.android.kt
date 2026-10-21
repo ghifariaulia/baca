@@ -28,6 +28,11 @@ actual fun SystemBarsAppearance(darkBackground: Boolean) {
     }
 }
 
+@Composable
+actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {
+    androidx.activity.compose.BackHandler(enabled = enabled, onBack = onBack)
+}
+
 actual fun openExternalLink(url: String) {
     runCatching {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

@@ -12,5 +12,13 @@ expect val tapZonesForPageTurnEnabled: Boolean
 @androidx.compose.runtime.Composable
 expect fun SystemBarsAppearance(darkBackground: Boolean)
 
+/**
+ * Handles the system Back gesture/button while [enabled] (Android). The most
+ * recently composed enabled handler wins, so inner screens and sheets go
+ * first. No-op on desktop, which has no system Back.
+ */
+@androidx.compose.runtime.Composable
+expect fun PlatformBackHandler(enabled: Boolean = true, onBack: () -> Unit)
+
 /** Opens http(s) links outside the app (browser). */
 expect fun openExternalLink(url: String)

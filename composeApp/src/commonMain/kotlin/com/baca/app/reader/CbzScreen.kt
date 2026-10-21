@@ -128,6 +128,7 @@ fun CbzScreen(
         color = MaterialTheme.colorScheme.background,
     ) {
         LaunchedEffect(Unit) { focusRequester.requestFocus() }
+        PlatformBackHandler(onBack = onBack)
         Column(Modifier.fillMaxSize()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 4.dp).height(56.dp),

@@ -43,6 +43,7 @@ import com.baca.app.reader.rememberLibraryFolder
 import com.baca.app.reader.rememberSyncTransport
 import com.baca.app.reader.rememberBackupOpener
 import com.baca.app.reader.SystemBarsAppearance
+import com.baca.app.reader.PlatformBackHandler
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -454,6 +455,12 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
         // the page color while its bars are hidden).
         val readingReflow = (screenState as? Screen.Reader)?.book is OpenBook.Reflow
         if (!readingReflow) SystemBarsAppearance(darkBackground = dark)
+        // Back: the add-books sheet closes first; other screens return to the
+        // library (the readers handle Back themselves); the library exits
+        PlatformBackHandler(enabled = screenState != Screen.Library && screenState !is Screen.Reader) {
+            screenState = Screen.Library
+        }
+        PlatformBackHandler(enabled = addSheetOpen && screenState == Screen.Library) { addSheetOpen = false }
         Surface(
             Modifier.fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
