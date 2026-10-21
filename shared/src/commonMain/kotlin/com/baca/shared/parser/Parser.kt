@@ -25,6 +25,13 @@ data class FormattedSpan(
     val sans: Boolean = false,
 )
 
+/**
+ * A vertical rule left of a block, from a book CSS `border-left`, [atEm] in from
+ * the column edge. Blocks of one bordered element share a [group], so the rule
+ * runs on through the gaps between them.
+ */
+data class LeftRule(val group: Int, val atEm: Float)
+
 /** Horizontal alignment a book's CSS gives a block; START leaves it to the reader's justification. */
 enum class TextAlign { START, CENTER, END }
 
@@ -45,6 +52,9 @@ sealed class Block {
         /** book CSS negative text-indent: first line flush, the rest take the reader's indent */
         val hanging: Boolean = false,
         override val gapBeforeEm: Float? = null,
+        /** book CSS left border and padding: the text sits this far in from the column edge */
+        val insetEm: Float = 0f,
+        val leftRule: LeftRule? = null,
     ) : Block() {
         override val text: String get() = spans.joinToString("") { it.text }
     }
@@ -378,6 +388,7 @@ internal fun parseXhtml(
     // book CSS vertical margins (collapsing: the largest wins) and padding (adding up) since the last block
     var pendingMargin: Float? = null
     var pendingPadding = 0f
+    var borderedElements = 0
     var quoteDepth = 0
     var linkDepth = 0
     var linkHref: String? = null
@@ -433,7 +444,10 @@ internal fun parseXhtml(
         // not isNotBlank: a lone &nbsp; survives collapsing and draws an empty
         // line, as in HTML (books use <p>&nbsp;</p> for scene breaks)
         if (collapsed.any { it.text.isNotEmpty() }) {
-            blocks.add(Block.Text(collapsed, kind, headingLevel, blockAlign, blockIndent, blockScale, blockHanging, takeGap()))
+            val style = styles.last()
+            blocks.add(
+                Block.Text(collapsed, kind, headingLevel, blockAlign, blockIndent, blockScale, blockHanging, takeGap(), style.insetEm, style.leftRule),
+            )
         }
     }
 
@@ -477,7 +491,14 @@ internal fun parseXhtml(
                     declared.marginTop?.let { pendingMargin = maxOf(pendingMargin ?: 0f, it) }
                     pendingPadding += declared.paddingTop ?: 0f
                 }
-                val style = styles.last().inherit(tag, declared)
+                val style = styles.last().inherit(tag, declared).let { inherited ->
+                    if (declared.borderLeft != true) return@let inherited
+                    val ruleAt = inherited.insetEm + (declared.marginLeft ?: 0f)
+                    inherited.copy(
+                        insetEm = ruleAt + (declared.paddingLeft ?: 0f),
+                        leftRule = LeftRule(group = ++borderedElements, atEm = ruleAt),
+                    )
+                }
                 styles.addLast(style)
                 if (declared.floatRight == true && spans != null && floatDepth == 0) {
                     closeBlock()
@@ -564,6 +585,8 @@ private data class Computed(
     val ownColor: Boolean = false,
     val underline: Boolean = true,
     val sans: Boolean = false,
+    val insetEm: Float = 0f,
+    val leftRule: LeftRule? = null,
 ) {
     fun inherit(tag: String, declared: CssStyle) = Computed(
         bold = declared.bold ?: (bold || tag in boldTags || tag in headingTags),
@@ -578,6 +601,8 @@ private data class Computed(
         // like LibreraX: the reader's font holds for paragraphs and headings,
         // only inline text (a speaker label) takes the book's sans-serif
         sans = (if (tag in inlineTags) declared.sans else null) ?: sans,
+        insetEm = insetEm,
+        leftRule = leftRule,
     )
 }
 

@@ -33,6 +33,11 @@ internal data class CssStyle(
     val marginBottom: Float? = null,
     val paddingTop: Float? = null,
     val paddingBottom: Float? = null,
+    /** `border-left`: a vertical rule beside the element (Strange Buildings' recollections) */
+    val borderLeft: Boolean? = null,
+    /** left margin and padding in em; only an element with a left border uses them */
+    val marginLeft: Float? = null,
+    val paddingLeft: Float? = null,
 ) {
     /** [other]'s set values win. */
     fun overriddenBy(other: CssStyle) = CssStyle(
@@ -52,6 +57,9 @@ internal data class CssStyle(
         marginBottom = other.marginBottom ?: marginBottom,
         paddingTop = other.paddingTop ?: paddingTop,
         paddingBottom = other.paddingBottom ?: paddingBottom,
+        borderLeft = other.borderLeft ?: borderLeft,
+        marginLeft = other.marginLeft ?: marginLeft,
+        paddingLeft = other.paddingLeft ?: paddingLeft,
     )
 }
 
@@ -225,8 +233,15 @@ private fun CssStyle.declare(name: String, value: String): CssStyle = when (name
     "font-size" -> copy(fontScale = relativeSize(value) ?: fontScale)
     "color" -> copy(ownColor = true)
     "font-family" -> copy(sans = value.contains("sans"))
-    "margin" -> boxSides(value)?.let { (top, bottom) -> copy(marginTop = top ?: marginTop, marginBottom = bottom ?: marginBottom) } ?: this
-    "padding" -> boxSides(value)?.let { (top, bottom) -> copy(paddingTop = top ?: paddingTop, paddingBottom = bottom ?: paddingBottom) } ?: this
+    "margin" -> boxSides(value)?.let { (top, bottom, left) ->
+        copy(marginTop = top ?: marginTop, marginBottom = bottom ?: marginBottom, marginLeft = left ?: marginLeft)
+    } ?: this
+    "padding" -> boxSides(value)?.let { (top, bottom, left) ->
+        copy(paddingTop = top ?: paddingTop, paddingBottom = bottom ?: paddingBottom, paddingLeft = left ?: paddingLeft)
+    } ?: this
+    "margin-left" -> copy(marginLeft = lengthEm(value) ?: marginLeft)
+    "padding-left" -> copy(paddingLeft = lengthEm(value) ?: paddingLeft)
+    "border-left" -> copy(borderLeft = "none" !in value && !value.startsWith("0 ") && value != "0")
     "margin-top" -> copy(marginTop = lengthEm(value) ?: marginTop)
     "margin-bottom" -> copy(marginBottom = lengthEm(value) ?: marginBottom)
     "padding-top" -> copy(paddingTop = lengthEm(value) ?: paddingTop)
@@ -235,12 +250,14 @@ private fun CssStyle.declare(name: String, value: String): CssStyle = when (name
     else -> this
 }
 
-/** The top and bottom of a `margin`/`padding` shorthand (1–4 values), in em. */
-private fun boxSides(value: String): Pair<Float?, Float?>? {
-    val values = value.split(Regex("\\s+")).map(::lengthEm)
-    return when (values.size) {
-        1, 2 -> values[0] to values[0]
-        3, 4 -> values[0] to values[2]
+/** Top, bottom and left of a `margin`/`padding` shorthand (1–4 values), in em. */
+private fun boxSides(value: String): List<Float?>? {
+    val v = value.split(Regex("\\s+")).map(::lengthEm)
+    return when (v.size) {
+        1 -> listOf(v[0], v[0], v[0])
+        2 -> listOf(v[0], v[0], v[1])
+        3 -> listOf(v[0], v[2], v[1])
+        4 -> listOf(v[0], v[2], v[3])
         else -> null
     }
 }

@@ -4,6 +4,7 @@ import kotlin.math.ceil
 
 import com.baca.shared.render.gapBeforePx
 import com.baca.shared.render.hangs
+import com.baca.shared.render.insetPx
 import com.baca.shared.render.takesIndent
 
 import com.baca.shared.render.fontScale
@@ -119,6 +120,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
@@ -175,6 +177,7 @@ import com.baca.shared.domain.saveDisplay
 import com.baca.shared.domain.encode
 import com.baca.shared.domain.reader.ReaderSession
 import com.baca.shared.parser.Block
+import com.baca.shared.parser.LeftRule
 import com.baca.shared.parser.BlockKind
 import com.baca.shared.parser.Chapter
 import com.baca.shared.parser.ParsedEpub
@@ -557,16 +560,23 @@ fun ReaderScreen(
                             Modifier.width(with(density) { (columnWidthPx + margin.roundToPx() * 2).toDp() })
                                 .padding(horizontal = margin),
                         ) {
+                            val bodyFontPx = with(density) { display.fontSizeSp.sp.roundToPx() }
                             var prevBlock: Int = -1
                             var firstOnPage = true
                             page.forEach { line ->
                                 if (line.blockIndex != prevBlock && !firstOnPage) {
                                     // packPages counts the paragraph gap; render it too
                                     val gapPx = chapter.blocks[line.blockIndex].gapBeforePx(
-                                        with(density) { display.fontSizeSp.sp.roundToPx() },
+                                        bodyFontPx,
                                         paragraphGapPxOf(display, density),
                                     )
-                                    Spacer(Modifier.height(with(density) { gapPx.toDp() }))
+                                    // a bordered element's rule runs on through the gaps inside it
+                                    val rule = (chapter.blocks[line.blockIndex] as? Block.Text)?.leftRule
+                                        ?.takeIf { it == (chapter.blocks.getOrNull(prevBlock) as? Block.Text)?.leftRule }
+                                    Spacer(
+                                        Modifier.fillMaxWidth().height(with(density) { gapPx.toDp() })
+                                            .leftRule(rule, bodyFontPx, colors.ink),
+                                    )
                                 }
                                 prevBlock = line.blockIndex
                                 firstOnPage = false
@@ -586,7 +596,9 @@ fun ReaderScreen(
                                         val body = block.kind != BlockKind.HEADING && block.align == BookAlign.START
                                         // same indent ReflowLayout measured the line with
                                         val indented = if (block.hangs()) line.start > 0 else block.takesIndent() && line.start == 0
-                                        val indentPx = if (indented) paragraphIndentPxOf(display, density) else 0
+                                        // a left border's padding sets the whole block in
+                                        val indentPx = (if (indented) paragraphIndentPxOf(display, density) else 0) +
+                                            block.insetPx(bodyFontPx)
                                         val lineText = highlighted(
                                             blockStrings[line.blockIndex],
                                             ranges,
@@ -603,7 +615,9 @@ fun ReaderScreen(
                                             }
                                         }
                                         Box(
-                                            Modifier.fillMaxWidth().padding(start = with(density) { indentPx.toDp() }),
+                                            Modifier.fillMaxWidth()
+                                                .leftRule(block.leftRule, bodyFontPx, colors.ink)
+                                                .padding(start = with(density) { indentPx.toDp() }),
                                             contentAlignment = when (block.align) {
                                                 BookAlign.CENTER -> Alignment.TopCenter
                                                 BookAlign.END -> Alignment.TopEnd
@@ -1305,6 +1319,13 @@ private fun ContentsTabs(
 }
 
 /** Draws one image block; falls back to empty space when decode fails. */
+/** The book's `border-left` rule, a hairline [rule].atEm in from the column edge, over this line's height. */
+private fun Modifier.leftRule(rule: LeftRule?, bodyFontPx: Int, ink: Color): Modifier =
+    if (rule == null) this else drawBehind {
+        val x = rule.atEm * bodyFontPx + 0.5.dp.toPx()
+        drawLine(ink, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
+    }
+
 @Composable
 private fun ImageLine(chapter: Chapter, blockIndex: Int, reservedHeightPx: Int?) {
     val images = LocalBookImages.current

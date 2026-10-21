@@ -175,4 +175,25 @@ class BookCssTest {
         val b = blocks(".title h1 { font-weight: normal }", """<h2>Bold</h2><div class="title"><h1>Plain</h1></div>""")
         assertEquals(listOf(true, false), b.map { it.spans.single().bold })
     }
+
+    @Test
+    fun `a left border becomes a rule beside the element's blocks, with their text inset`() {
+        val b = blocks(
+            ".sidebar { border-left: 1px solid rgb(0, 0, 0); padding-left: 1.2em; margin-left: 0em } div.left { margin-left: 1.3em !important }",
+            """<p>Before</p><div class="sidebar"><p>One</p><div class="hanging"><p>Two</p></div></div>""" +
+                """<div class="sidebar left"><p>Three</p></div><p>After</p>""",
+        )
+        val (before, one, two, three, after) = b
+        assertNull(before.leftRule)
+        assertEquals(0f, one.leftRule!!.atEm)
+        assertEquals(1.2f, one.insetEm)
+        // nested blocks share the rule, so it runs on between them
+        assertEquals(one.leftRule, two.leftRule)
+        assertEquals(1.2f, two.insetEm)
+        assertEquals(1.3f, three.leftRule!!.atEm)
+        assertEquals(2.5f, three.insetEm, 0.001f)
+        assertTrue(three.leftRule!!.group != one.leftRule!!.group)
+        assertNull(after.leftRule)
+        assertEquals(0f, after.insetEm)
+    }
 }

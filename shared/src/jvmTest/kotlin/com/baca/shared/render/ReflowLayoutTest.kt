@@ -193,6 +193,14 @@ class ReflowLayoutTest {
     }
 
     @Test
+    fun `a block set in by a left border wraps to the narrower width`() {
+        val inset = text("0123456789abcdefghij").copy(indent = false, insetEm = 1f)
+        val l = ReflowLayout(listOf(inset), GridMetrics(), ReflowSettings(fontSizePx = 20, lineHeightRatio = 1.0f), 100, 1000)
+        // 100 wide less a 20px inset: 8 columns a line
+        assertEquals(listOf(0 to 8, 8 to 16, 16 to 20), l.lines.map { it.start to it.endExclusive })
+    }
+
+    @Test
     fun `empty chapter produces one empty page`() {
         val l = layout()
         assertEquals(1, l.pageCount())

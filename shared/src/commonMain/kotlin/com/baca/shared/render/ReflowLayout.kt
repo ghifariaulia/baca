@@ -31,6 +31,9 @@ fun Block.Text.takesIndent(): Boolean = kind != BlockKind.HEADING && indent && a
 /** Whether every line but the first takes the reader's paragraph indent (book CSS hanging indent). Shared by layout and renderer. */
 fun Block.Text.hangs(): Boolean = kind != BlockKind.HEADING && hanging && align == TextAlign.START
 
+/** How far the book's CSS (a left border's padding) sets the text in. Shared by layout and renderer. */
+fun Block.Text.insetPx(fontSizePx: Int): Int = (insetEm * fontSizePx).roundToInt()
+
 /** Space above the block: the book's CSS margins, else the reader's paragraph gap. Shared by layout and renderer. */
 fun Block.gapBeforePx(fontSizePx: Int, defaultGapPx: Int): Int =
     gapBeforeEm?.let { (it * fontSizePx).roundToInt() } ?: defaultGapPx
@@ -154,14 +157,15 @@ class ReflowLayout(
                             offset += span.text.length
                         }
                     }
+                    val widthPx = columnWidthPx - block.insetPx(settings.fontSizePx)
                     val spans = if (block.hangs()) {
-                        hangingLines(block, styleRanges)
+                        hangingLines(block, styleRanges, widthPx)
                     } else {
                         metrics.layoutLines(
                             block.text,
                             fontPxOf(block),
                             lineHeightPxOf(block),
-                            columnWidthPx,
+                            widthPx,
                             settings.fontFamily,
                             styleRanges,
                             if (block.takesIndent()) settings.paragraphIndentPx else 0,
@@ -183,7 +187,7 @@ class ReflowLayout(
      * in two parts rather than with a rest-line indent, because text engines
      * differ on whether a line after a hard break counts as a "first line".
      */
-    private fun hangingLines(block: Block.Text, styles: List<TextMetrics.StyleRange>): List<TextMetrics.LineSpan> {
+    private fun hangingLines(block: Block.Text, styles: List<TextMetrics.StyleRange>, widthPx: Int): List<TextMetrics.LineSpan> {
         val text = block.text
         fun measure(from: Int, widthPx: Int) = metrics.layoutLines(
             text.substring(from),
@@ -196,13 +200,13 @@ class ReflowLayout(
                     .takeIf { it.endExclusive > it.start }
             },
         )
-        val first = measure(0, columnWidthPx).firstOrNull() ?: return emptyList()
+        val first = measure(0, widthPx).firstOrNull() ?: return emptyList()
         var restStart = first.endExclusive
         // the break's own space or newline belongs to neither line
         while (restStart < text.length && text[restStart] == ' ') restStart++
         if (restStart < text.length && text[restStart] == '\n') restStart++
         if (restStart >= text.length) return listOf(first)
-        val rest = measure(restStart, columnWidthPx - settings.paragraphIndentPx)
+        val rest = measure(restStart, widthPx - settings.paragraphIndentPx)
             .map { TextMetrics.LineSpan(it.start + restStart, it.endExclusive + restStart) }
         return listOf(first) + rest
     }
