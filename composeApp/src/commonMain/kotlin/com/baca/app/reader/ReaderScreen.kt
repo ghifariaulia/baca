@@ -1456,12 +1456,15 @@ private const val JUSTIFY_SLACK_PX = 2
 // a line this short before a break isn't worth stretching into rivers
 private const val MAX_JUSTIFY_STRETCH = 0.35f
 
+// LibreraX's `div, p { margin: 0.2em 0 }`: adjacent margins collapse to one 0.2em gap
+private const val PARAGRAPH_GAP_EM = 0.2f
+
 private fun reflowSettingsOf(display: DisplaySettings, density: Density): ReflowSettings = with(density) {
     val fontPx = display.fontSizeSp.sp.roundToPx()
     ReflowSettings(
         fontSizePx = fontPx,
         lineHeightRatio = display.lineRatio(),
-        paragraphGapPx = (display.fontSizeSp * 0.35f).sp.roundToPx(),
+        paragraphGapPx = (display.fontSizeSp * PARAGRAPH_GAP_EM).sp.roundToPx(),
         paragraphIndentPx = paragraphIndentPxOf(display, density),
         headingScale = DisplaySettings.HEADING_SCALE,
         imageHeightPx = (display.fontSizeSp * 6f).sp.roundToPx(),
