@@ -71,6 +71,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.filled.FormatAlignJustify
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -177,6 +178,8 @@ import com.baca.shared.domain.encode
 import com.baca.shared.domain.reader.ReaderSession
 import com.baca.shared.parser.Block
 import com.baca.shared.parser.LeftRule
+import com.baca.shared.domain.reader.SearchHit
+import com.baca.shared.domain.reader.SelectionPoint
 import com.baca.shared.domain.reader.TextSelection
 import com.baca.shared.parser.BlockKind
 import com.baca.shared.parser.Chapter
@@ -221,6 +224,9 @@ fun ReaderScreen(
 
     // Text being selected: a long press picks a word, its handles drag the ends
     var selection by remember { mutableStateOf<TextSelection?>(null) }
+    // in-book search: the query stays while the book is open; the picked match is tinted (chapter href → range)
+    var searchQuery by remember { mutableStateOf("") }
+    var searchMatch by remember { mutableStateOf<Pair<String, TextSelection>?>(null) }
     // Note editor sheet (new or existing annotation)
     var editing by remember { mutableStateOf<EditorState?>(null) }
 
@@ -296,6 +302,16 @@ fun ReaderScreen(
     val lineGeometry = remember(chapter.href, pageNo, layout) { HashMap<Pair<Int, Int>, LineGeometry>() }
     LaunchedEffect(chapter.href, pageNo) { selection = null }
     val selectionTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+    val matchHere = searchMatch?.takeIf { it.first == chapter.href }?.second
+    val pickSearchHit: (SearchHit) -> Unit = { hit ->
+        sheet = SheetKind.NONE
+        val href = book.chapters[hit.chapterIndex].href
+        searchMatch = href to TextSelection(
+            SelectionPoint(hit.blockIndex, hit.charOffset),
+            SelectionPoint(hit.blockIndex, hit.charOffset + hit.length),
+        )
+        scope.launch { session.jumpToAnchor(href, hit.blockIndex, hit.charOffset) }
+    }
 
 
     // Page turns slide: the page moves out toward the turn and fades, the next
@@ -478,13 +494,21 @@ fun ReaderScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1.6f),
+                        modifier = Modifier.weight(1f),
                     )
                     Row(
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f),
                     ) {
+                        IconButton(onClick = {
+                            sheet = if (sheet == SheetKind.SEARCH) SheetKind.NONE else SheetKind.SEARCH
+                        }) {
+                            androidx.compose.material3.Icon(
+                                imageVector = Icons.Filled.Search,
+                                contentDescription = "Search",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                         IconButton(onClick = {
                             if (isDesktop) panelOpen = !panelOpen else sheet = SheetKind.CONTENTS
                         }) {
@@ -620,7 +644,7 @@ fun ReaderScreen(
                                             ranges,
                                             line.start,
                                             line.endExclusive,
-                                            selection?.rangeIn(line.blockIndex, block.text.length),
+                                            (selection ?: matchHere)?.rangeIn(line.blockIndex, block.text.length),
                                             selectionTint,
                                         ).let { text ->
                                             // a hyphenated break: the text has no hyphen, the measured line drew one
@@ -689,7 +713,7 @@ fun ReaderScreen(
                                                 TappableText(
                                                     highlighted(
                                                         blockStrings[joined.blockIndex], floatRanges, joined.start, joined.endExclusive,
-                                                        selection?.rangeIn(joined.blockIndex, floatBlock.text.length), selectionTint,
+                                                        (selection ?: matchHere)?.rangeIn(joined.blockIndex, floatBlock.text.length), selectionTint,
                                                     ),
                                                     lineStyle(floatBlock, display, colors.ink),
                                                     floatRanges,
@@ -841,6 +865,23 @@ fun ReaderScreen(
                     DisplayContent(display) { display = it }
                 }
             }
+            if (isDesktop && sheet == SheetKind.SEARCH) {
+                Box(
+                    Modifier.fillMaxSize().pointerInput(Unit) {
+                        detectTapGestures { sheet = SheetKind.NONE }
+                    },
+                )
+                Column(
+                    Modifier.width(400.dp).align(Alignment.TopEnd)
+                        .padding(top = 64.dp, end = 16.dp)
+                        .keepsTaps()
+                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp))
+                        .padding(20.dp),
+                ) {
+                    Text("Search", style = Type.cardTitle, fontSize = 18.sp)
+                    SearchContent(book.chapters, searchQuery, { searchQuery = it }, pickSearchHit)
+                }
+            }
             if (!isDesktop && sheet != SheetKind.NONE) {
                 Box(
                     Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f))
@@ -848,6 +889,8 @@ fun ReaderScreen(
                 )
                 Column(
                     Modifier.fillMaxWidth().align(Alignment.BottomCenter)
+                        // the search field's keyboard pushes the sheet up
+                        .imePadding()
                         .keepsTaps()
                         .background(MaterialTheme.colorScheme.surface, SheetShape)
                         .padding(horizontal = 20.dp, vertical = 12.dp)
@@ -862,7 +905,11 @@ fun ReaderScreen(
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(
-                            if (sheet == SheetKind.CONTENTS) "Contents" else "Display",
+                            when (sheet) {
+                                SheetKind.CONTENTS -> "Contents"
+                                SheetKind.SEARCH -> "Search"
+                                else -> "Display"
+                            },
                             style = Type.cardTitle,
                             fontSize = 18.sp,
                         )
@@ -870,13 +917,15 @@ fun ReaderScreen(
                             Text("Done", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                         }
                     }
-                    if (sheet == SheetKind.CONTENTS) {
-                        ContentsTabs(sheetTab, annotations) { sheetTab = it }
-                        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                            ContentsTabBody(sheetTab) { sheet = SheetKind.NONE }
+                    when (sheet) {
+                        SheetKind.CONTENTS -> {
+                            ContentsTabs(sheetTab, annotations) { sheetTab = it }
+                            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                                ContentsTabBody(sheetTab) { sheet = SheetKind.NONE }
+                            }
                         }
-                    } else {
-                        DisplayContent(display) { display = it }
+                        SheetKind.SEARCH -> SearchContent(book.chapters, searchQuery, { searchQuery = it }, pickSearchHit)
+                        else -> DisplayContent(display) { display = it }
                     }
                 }
             }
@@ -1448,7 +1497,7 @@ private val SheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
 
 /** Single chip; filled state uses accent fill with white text (design file). */
 
-private enum class SheetKind { NONE, DISPLAY, CONTENTS }
+private enum class SheetKind { NONE, DISPLAY, CONTENTS, SEARCH }
 
 // --- helpers ---
 
