@@ -54,12 +54,13 @@ Phase 2:
 
 ### 3.1 Book CSS (EPUB)
 
-EPUB chapters keep part of their own styling, cascaded the way LibreraX does it (`FoliateCss` and `BookCSS.generatedCss` in LibreraReader): the book's rules compete with the reader's own rules by `!important`, specificity and order, as in a browser. The reader's font, size and line spacing always win and are not CSS. Stylesheets come from `<link rel="stylesheet">`, `<style>` and `style=""` (`shared/parser/BookCss.kt`).
+EPUB chapters keep their own styling the way LibreraX shows them: the book's CSS cascades as in a browser (`!important`, specificity, order), on top of a few reader defaults. The reader's font, size and line spacing are not CSS here. Stylesheets come from `<link rel="stylesheet">`, `<style>` and `style=""` (`shared/parser/BookCss.kt`).
 
-- **Reader rules:** `h1`–`h6 { text-align: center }` before the book's CSS; `body, div, p, span { text-align: justify; text-indent: 1em !important; margin: 0.2em 0 !important }` after it (Baca draws the margins as a 0.2em gap between blocks); `a { color: link !important }`. So a book rule sets alignment on body text only with more specificity than a tag (`.firstpara`, `div.x p`), and sets the indent only if it is also `!important`.
-- **Applied:** `text-align: center/right`; `float: right` (its content becomes its own right-aligned line); `text-indent` zero (no indent) or negative (hanging: first line flush, the rest take the reader's indent); `font-variant: small-caps`; `font-weight` / `font-style`; `display: none`; relative `font-size` (`em`, `%`, keywords), clamped to 0.75–2× body text; a link whose winning rule sets `color` and `text-decoration: none` draws as body text.
-- **Ignored:** `text-align: left/justify` (the reader justifies), margins and padding, absolute font sizes, color values, fonts.
-- **Selectors:** compounds (`tag`, `.class`, `tag.class`) joined by descendant (space) or child (`>`) combinators; sibling, attribute, id and pseudo selectors are skipped.
+- **Reader defaults:** headings centred and bold unless the book says otherwise; links in the link colour unless a book rule outranks `a { color: link !important }`; where the book sets no `text-indent`, the reader's 1em indent; where it sets no vertical margin or padding, the reader's 0.2em gap between blocks.
+- **Applied from the book:** `text-align: center/right`; `float: right` (its own right-aligned line); `text-indent` zero (none), positive (the reader's indent) or negative (hanging: first line flush, the rest indented); vertical `margin`/`padding` (em, px, pt) as the gap above a block, margins collapsing to the largest and padding adding up; `font-variant: small-caps`; `font-weight` / `font-style`; `display: none`; relative `font-size` (`em`, `%`, keywords) for blocks (clamped to 0.75–2× body text) and for inline spans; `font-family: sans-serif` on inline elements (drawn in the reader's sans font; paragraphs and headings keep the reader's font, as in LibreraX); a link whose winning rule sets `color` and `text-decoration: none` draws as body text.
+- **Ignored:** `text-align: left/justify` (the reader justifies), horizontal margins, absolute font sizes, color values, named fonts.
+- **Selectors:** compounds (`tag`, `.class`, `tag.class`) joined by descendant (space), child (`>`) or next-sibling (`+`) combinators; `~`, attribute, id and pseudo selectors are skipped.
+- **Hyphenation:** body text hyphenates where the platform can (Android); the renderer draws the hyphen at a mid-word break.
 - Whitespace follows HTML (3.x parser notes); a paragraph holding only `&nbsp;` is a blank line, as books use it for scene breaks.
 
 ## 4. Rendering

@@ -20,6 +20,10 @@ interface TextMetrics {
         val bold: Boolean,
         val italic: Boolean,
         val smallCaps: Boolean = false,
+        /** font size relative to the block's */
+        val scale: Float = 1f,
+        /** drawn in the reader's sans font */
+        val sans: Boolean = false,
     )
 
     /** [fontFamily]: "serif" | "sans" | "mono" | "libron" | null = system default. */

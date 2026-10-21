@@ -28,12 +28,6 @@ class BookCssTest {
     }
 
     @Test
-    fun `like LibreraX, the reader's indent wins unless the book's rule is important`() {
-        val b = blocks(".firstpara { text-indent: 0 }", """<p class="firstpara">One</p>""")
-        assertTrue(b.single().indent)
-    }
-
-    @Test
     fun `headings are centred unless the book aligns them`() {
         val b = blocks("h2.left { text-align: left }", """<h1>Centred</h1><h2 class="left">Left</h2>""")
         assertEquals(listOf(TextAlign.CENTER, TextAlign.START), b.map { it.align })
@@ -46,14 +40,6 @@ class BookCssTest {
             """<div class="title-block"><h1><a href="toc.xhtml">Hallway</a></h1></div><p><a href="n.xhtml">note</a></p>""",
         )
         assertEquals(listOf(true, false), b.map { it.spans.single().plainLink })
-    }
-
-    @Test
-    fun `book-wide paragraph rules leave indent and alignment to the reader`() {
-        val b = blocks("p { text-indent: 0; text-align: center } h1 { text-align: center }", """<h1>Title</h1><p>Body</p>""")
-        assertEquals(TextAlign.CENTER, b[0].align)
-        assertTrue(b[1].indent)
-        assertEquals(TextAlign.START, b[1].align)
     }
 
     @Test
@@ -116,20 +102,6 @@ class BookCssTest {
     }
 
     @Test
-    fun `descendant and child selectors match through ancestors`() {
-        // Strange Buildings: the chapter title block's lines are centred through their section's class
-        val b = blocks(
-            ".Chapter-rw .title-block-rw .title-num-rw { text-align: center } .box > p { text-align: right } body p { text-indent: 0 }",
-            """<section class="Chapter-rw"><div class="title-block-rw"><p class="title-num-rw">FILE 1</p></div></section>""" +
-                """<div class="title-block-rw"><p class="title-num-rw">Elsewhere</p></div>""" +
-                """<div class="box"><p>Direct</p><div><p>Nested</p></div></div>""",
-        )
-        assertEquals(listOf(TextAlign.CENTER, TextAlign.START, TextAlign.END, TextAlign.START), b.map { it.align })
-        // the reader's indent is important, so a book-wide `body p` rule can't remove it
-        assertTrue(b[1].indent)
-    }
-
-    @Test
     fun `negative text-indent makes a hanging paragraph`() {
         val b = blocks(
             "div.hanging-rw p { text-indent: -1.3em !important; margin-left: 1.3em !important }",
@@ -139,5 +111,68 @@ class BookCssTest {
         assertFalse(b[0].indent)
         assertFalse(b[1].hanging)
         assertTrue(b[1].indent)
+    }
+
+    // What LibreraX shows for Strange Buildings: the book's own CSS decides, as in a browser.
+
+    @Test
+    fun `the book's indent rules win, including next-sibling selectors`() {
+        val b = blocks(
+            "p { text-indent: 0 } p+p { text-indent: 1.3em } div+p { text-indent: 0 }",
+            """<p>First</p><p>Second</p><div><p>In div</p></div><p>After div</p>""",
+        )
+        assertEquals(listOf(false, true, false, false), b.map { it.indent })
+    }
+
+    @Test
+    fun `without indent rules the reader's indent applies`() {
+        val b = blocks(".x { text-align: center }", """<p>One</p><p>Two</p>""")
+        assertEquals(listOf(true, true), b.map { it.indent })
+    }
+
+    @Test
+    fun `descendant and child selectors match through ancestors, and alignment inherits`() {
+        val b = blocks(
+            ".Chapter-rw .title-block-rw { text-align: center } .box > p { text-align: right }",
+            """<section class="Chapter-rw"><div class="title-block-rw"><p>FILE 1</p></div></section>""" +
+                """<div class="title-block-rw"><p>Elsewhere</p></div>""" +
+                """<div class="box"><p>Direct</p><div><p>Nested</p></div></div>""",
+        )
+        assertEquals(listOf(TextAlign.CENTER, TextAlign.START, TextAlign.END, TextAlign.START), b.map { it.align })
+    }
+
+    @Test
+    fun `vertical margins and padding become the gap before a block, collapsing like CSS`() {
+        val b = blocks(
+            "div, p { margin: 0 } div.hanging { margin-top: 1em; margin-bottom: 1em } div.hanging p { margin-bottom: 0.2em } .title { padding-top: 1.2em }",
+            """<p>A</p><p>B</p><div class="hanging"><p>C</p><p>D</p></div><p>E</p><p class="title">F</p>""",
+        )
+        assertEquals(listOf(0f, 0f, 1f, 0.2f, 1f, 1.2f), b.map { it.gapBeforeEm })
+    }
+
+    @Test
+    fun `a block without margin rules keeps the reader's gap`() {
+        assertNull(blocks("", """<p>A</p><p>B</p>""")[1].gapBeforeEm)
+    }
+
+    @Test
+    fun `spans keep the book's smaller size and sans-serif face`() {
+        val b = blocks(".label { font-family: sans-serif; font-size: 0.85em }", """<p><b><span class="label">NEGISHI:</span></b> Words.</p>""")
+        val (label, words) = b.single().spans
+        assertEquals(0.85f to true, label.scale to label.sans)
+        assertEquals(1f to false, words.scale to words.sans)
+        assertNull(b.single().scale)
+    }
+
+    @Test
+    fun `paragraphs and headings keep the reader's font even when the book says sans-serif`() {
+        val b = blocks(".t { font-family: sans-serif }", """<h1 class="t">Title</h1><p class="t">Date</p>""")
+        assertEquals(listOf(false, false), b.map { it.spans.single().sans })
+    }
+
+    @Test
+    fun `headings are bold unless the book says normal`() {
+        val b = blocks(".title h1 { font-weight: normal }", """<h2>Bold</h2><div class="title"><h1>Plain</h1></div>""")
+        assertEquals(listOf(true, false), b.map { it.spans.single().bold })
     }
 }

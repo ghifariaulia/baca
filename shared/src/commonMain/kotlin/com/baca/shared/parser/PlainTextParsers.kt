@@ -172,7 +172,7 @@ internal fun fb2Epub(fileName: String, xml: String): ParsedEpub {
                             chapterTitle = text
                             chapterTitleCollected = true
                             blocks.add(
-                                Block.Text(listOf(FormattedSpan(text, false, false)), BlockKind.HEADING, 0),
+                                Block.Text(listOf(FormattedSpan(text, bold = true, italic = false)), BlockKind.HEADING, 0),
                             )
                         }
                     }

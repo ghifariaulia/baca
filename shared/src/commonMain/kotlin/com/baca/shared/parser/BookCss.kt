@@ -1,15 +1,15 @@
 package com.baca.shared.parser
 
 /**
- * The part of a book's CSS that Baca applies (TECH 3.1), cascaded the way
- * LibreraX does it: the book's rules compete with the reader's own rules
- * (`READER_RULES`) by `!important`, specificity and order, as in a browser.
- * The reader's font, size and line spacing always win and are not CSS here;
- * colours, margins and absolute sizes are ignored.
+ * The part of a book's CSS that Baca applies (TECH 3.1), cascaded as in a
+ * browser, which is how LibreraX shows a book: the book's rules win, by
+ * `!important`, specificity and order, over a few reader defaults
+ * (`READER_RULES`). The reader's font, size and line spacing are not CSS here;
+ * colours, horizontal margins and absolute font sizes are ignored.
  *
  * Selectors: compounds like `tag`, `.class`, `tag.class.other`, joined by
- * descendant (space) or child (`>`) combinators. Rules with sibling,
- * attribute, id or pseudo selectors are skipped rather than guessed at.
+ * descendant (space), child (`>`) or next-sibling (`+`) combinators. Rules
+ * with `~`, attribute, id or pseudo selectors are skipped rather than guessed at.
  */
 internal data class CssStyle(
     val bold: Boolean? = null,
@@ -26,6 +26,13 @@ internal data class CssStyle(
     /** the element sets its own `color`, which for a link means it isn't drawn as one */
     val ownColor: Boolean? = null,
     val underline: Boolean? = null,
+    /** `font-family` names a sans-serif face */
+    val sans: Boolean? = null,
+    /** vertical margins and padding in em; not inherited */
+    val marginTop: Float? = null,
+    val marginBottom: Float? = null,
+    val paddingTop: Float? = null,
+    val paddingBottom: Float? = null,
 ) {
     /** [other]'s set values win. */
     fun overriddenBy(other: CssStyle) = CssStyle(
@@ -40,14 +47,21 @@ internal data class CssStyle(
         fontScale = other.fontScale ?: fontScale,
         ownColor = other.ownColor ?: ownColor,
         underline = other.underline ?: underline,
+        sans = other.sans ?: sans,
+        marginTop = other.marginTop ?: marginTop,
+        marginBottom = other.marginBottom ?: marginBottom,
+        paddingTop = other.paddingTop ?: paddingTop,
+        paddingBottom = other.paddingBottom ?: paddingBottom,
     )
 }
 
 /** A declaration block split by `!important`, which outranks every normal declaration. */
 internal data class Declarations(val normal: CssStyle = CssStyle(), val important: CssStyle = CssStyle())
 
-/** An element as selectors see it. */
-internal data class CssElement(val tag: String, val classes: Set<String>)
+/** An element as selectors see it, with the sibling element just before it. */
+internal class CssElement(val tag: String, val classes: Set<String>, val previous: CssElement? = null)
+
+internal enum class Combinator { DESCENDANT, CHILD, NEXT_SIBLING }
 
 /** One `tag.class.other` part of a selector. */
 internal data class Compound(val tag: String?, val classes: Set<String>) {
@@ -56,19 +70,26 @@ internal data class Compound(val tag: String?, val classes: Set<String>) {
 
 /**
  * [parts] run outermost first, the last one is the element the rule styles.
- * [childOf] has one entry per part after the first: true for `>`, false for a space.
+ * [combinators] has one entry per part after the first: how it relates to the part before.
  */
-internal class CssRule(val parts: List<Compound>, val childOf: List<Boolean>, val declarations: Declarations, val order: Int) {
+internal class CssRule(val parts: List<Compound>, val combinators: List<Combinator>, val declarations: Declarations, val order: Int) {
     val specificity = parts.sumOf { it.classes.size * 10 + (if (it.tag != null) 1 else 0) }
 
     /** [path] runs from the outermost open element to the element being styled. */
-    fun matches(path: List<CssElement>) = path.isNotEmpty() && matchFrom(parts.lastIndex, path.lastIndex, path)
+    fun matches(path: List<CssElement>) = path.isNotEmpty() && matchFrom(parts.lastIndex, path.last(), path.subList(0, path.lastIndex))
 
-    private fun matchFrom(part: Int, at: Int, path: List<CssElement>): Boolean {
-        if (!parts[part].matches(path[at])) return false
+    /** Whether [element], inside [ancestors] (outermost first), matches parts up to [part]. */
+    private fun matchFrom(part: Int, element: CssElement, ancestors: List<CssElement>): Boolean {
+        if (!parts[part].matches(element)) return false
         if (part == 0) return true
-        if (childOf[part - 1]) return at > 0 && matchFrom(part - 1, at - 1, path)
-        return (at - 1 downTo 0).any { matchFrom(part - 1, it, path) }
+        return when (combinators[part - 1]) {
+            Combinator.CHILD -> ancestors.isNotEmpty() &&
+                matchFrom(part - 1, ancestors.last(), ancestors.subList(0, ancestors.lastIndex))
+            Combinator.DESCENDANT -> ancestors.indices.reversed().any { i ->
+                matchFrom(part - 1, ancestors[i], ancestors.subList(0, i))
+            }
+            Combinator.NEXT_SIBLING -> element.previous?.let { matchFrom(part - 1, it, ancestors) } ?: false
+        }
     }
 }
 
@@ -76,24 +97,13 @@ private fun tagRules(tags: List<String>, declarations: Declarations, order: Int)
     tags.map { CssRule(listOf(Compound(it, emptySet())), emptyList(), declarations, order) }
 
 /**
- * LibreraX's own stylesheet, as far as Baca applies CSS (FoliateCss and
- * BookCSS.generatedCss in LibreraReader). Headings are centred before the
- * book's CSS, so any book rule changes that. Body text gets the reader's
- * justification and an `!important` indent after the book's CSS, so a book
- * rule needs more specificity to set alignment, and `!important` too to set
- * the indent. Links take the reader's link colour unless a book rule
- * outranks that.
+ * What LibreraX adds to a book's own CSS (FoliateCss in LibreraReader):
+ * headings centred before the book's rules, so any book rule changes that,
+ * and the reader's link colour after them, unless a book rule outranks it.
+ * Where the book sets nothing, the reader's indent and paragraph gap apply.
  */
 private val READER_RULES =
     tagRules(listOf("h1", "h2", "h3", "h4", "h5", "h6"), Declarations(normal = CssStyle(align = TextAlign.CENTER)), Int.MIN_VALUE) +
-        tagRules(
-            listOf("body", "div", "p", "span"),
-            Declarations(
-                normal = CssStyle(align = TextAlign.START),
-                important = CssStyle(noIndent = false, hanging = false),
-            ),
-            Int.MAX_VALUE,
-        ) +
         tagRules(listOf("a"), Declarations(important = CssStyle(ownColor = false)), Int.MAX_VALUE)
 
 /** All rules seen so far in a chapter, in document order, with the reader's rules. */
@@ -117,24 +127,29 @@ internal class Stylesheet {
 
 private val COMPOUND = Regex("^([a-zA-Z][a-zA-Z0-9]*)?((?:\\.[a-zA-Z0-9_-]+)*)$")
 
-/** `div.a > p .b` into its compounds and combinators; null for selectors Baca doesn't support. */
-private fun parseSelector(selector: String): Pair<List<Compound>, List<Boolean>>? {
-    val tokens = selector.replace(">", " > ").trim().split(Regex("\\s+"))
+/** `div.a > p + .b` into its compounds and combinators; null for selectors Baca doesn't support. */
+private fun parseSelector(selector: String): Pair<List<Compound>, List<Combinator>>? {
+    val tokens = selector.replace(">", " > ").replace("+", " + ").trim().split(Regex("\\s+"))
     val parts = mutableListOf<Compound>()
-    val childOf = mutableListOf<Boolean>()
-    var child = false
+    val combinators = mutableListOf<Combinator>()
+    var pending: Combinator? = null
     for (token in tokens) {
-        if (token == ">") {
-            if (parts.isEmpty() || child) return null
-            child = true
+        val explicit = when (token) {
+            ">" -> Combinator.CHILD
+            "+" -> Combinator.NEXT_SIBLING
+            else -> null
+        }
+        if (explicit != null) {
+            if (parts.isEmpty() || pending != null) return null
+            pending = explicit
             continue
         }
         val m = COMPOUND.matchEntire(token)?.takeIf { token.isNotEmpty() } ?: return null
-        if (parts.isNotEmpty()) childOf.add(child)
-        child = false
+        if (parts.isNotEmpty()) combinators.add(pending ?: Combinator.DESCENDANT)
+        pending = null
         parts.add(Compound(m.groupValues[1].lowercase().ifEmpty { null }, m.groupValues[2].split('.').filter { it.isNotEmpty() }.toSet()))
     }
-    return if (parts.isEmpty() || child) null else parts to childOf
+    return if (parts.isEmpty() || pending != null) null else parts to combinators
 }
 
 internal fun parseCss(css: String, firstOrder: Int = 0): List<CssRule> {
@@ -155,8 +170,8 @@ internal fun parseCss(css: String, firstOrder: Int = 0): List<CssRule> {
         if (!prelude.startsWith('@')) {
             val declarations = parseDeclarations(text.substring(open + 1, close))
             prelude.split(',').forEach { selector ->
-                parseSelector(selector)?.let { (parts, childOf) ->
-                    rules.add(CssRule(parts, childOf, declarations, firstOrder + rules.size))
+                parseSelector(selector)?.let { (parts, combinators) ->
+                    rules.add(CssRule(parts, combinators, declarations, firstOrder + rules.size))
                 }
             }
         }
@@ -209,9 +224,35 @@ private fun CssStyle.declare(name: String, value: String): CssStyle = when (name
     "display" -> copy(hidden = value == "none")
     "font-size" -> copy(fontScale = relativeSize(value) ?: fontScale)
     "color" -> copy(ownColor = true)
+    "font-family" -> copy(sans = value.contains("sans"))
+    "margin" -> boxSides(value)?.let { (top, bottom) -> copy(marginTop = top ?: marginTop, marginBottom = bottom ?: marginBottom) } ?: this
+    "padding" -> boxSides(value)?.let { (top, bottom) -> copy(paddingTop = top ?: paddingTop, paddingBottom = bottom ?: paddingBottom) } ?: this
+    "margin-top" -> copy(marginTop = lengthEm(value) ?: marginTop)
+    "margin-bottom" -> copy(marginBottom = lengthEm(value) ?: marginBottom)
+    "padding-top" -> copy(paddingTop = lengthEm(value) ?: paddingTop)
+    "padding-bottom" -> copy(paddingBottom = lengthEm(value) ?: paddingBottom)
     "text-decoration", "text-decoration-line" -> copy(underline = value.contains("underline"))
     else -> this
 }
+
+/** The top and bottom of a `margin`/`padding` shorthand (1–4 values), in em. */
+private fun boxSides(value: String): Pair<Float?, Float?>? {
+    val values = value.split(Regex("\\s+")).map(::lengthEm)
+    return when (values.size) {
+        1, 2 -> values[0] to values[0]
+        3, 4 -> values[0] to values[2]
+        else -> null
+    }
+}
+
+/** A vertical length in em; px and pt against a 16px body. Percentages and `auto` aren't vertical lengths here. */
+private fun lengthEm(value: String): Float? = when {
+    value.endsWith("rem") -> value.removeSuffix("rem").toFloatOrNull()
+    value.endsWith("em") -> value.removeSuffix("em").toFloatOrNull()
+    value.endsWith("px") -> value.removeSuffix("px").toFloatOrNull()?.div(16f)
+    value.endsWith("pt") -> value.removeSuffix("pt").toFloatOrNull()?.div(12f)
+    else -> value.toFloatOrNull()?.takeIf { it == 0f }
+}?.coerceAtLeast(0f)
 
 private fun weightIsBold(value: String): Boolean? = when (value) {
     "bold", "bolder" -> true

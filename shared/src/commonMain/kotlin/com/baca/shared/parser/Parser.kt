@@ -19,6 +19,10 @@ data class FormattedSpan(
     val smallCaps: Boolean = false,
     /** a link the book's CSS draws as body text (own colour, no underline); still followed on tap */
     val plainLink: Boolean = false,
+    /** book CSS font size relative to its block's */
+    val scale: Float = 1f,
+    /** book CSS `font-family: sans-serif`: drawn in the reader's sans font */
+    val sans: Boolean = false,
 )
 
 /** Horizontal alignment a book's CSS gives a block; START leaves it to the reader's justification. */
@@ -40,13 +44,17 @@ sealed class Block {
         val scale: Float? = null,
         /** book CSS negative text-indent: first line flush, the rest take the reader's indent */
         val hanging: Boolean = false,
+        override val gapBeforeEm: Float? = null,
     ) : Block() {
         override val text: String get() = spans.joinToString("") { it.text }
     }
 
-    data class Image(val alt: String, val src: String) : Block() {
+    data class Image(val alt: String, val src: String, override val gapBeforeEm: Float? = null) : Block() {
         override val text: String get() = ""
     }
+
+    /** Space above the block from the book's CSS margins and padding, in em; null leaves the reader's gap. */
+    abstract val gapBeforeEm: Float?
 }
 
 /**
@@ -365,6 +373,11 @@ internal fun parseXhtml(
     var blockIndent = true
     var blockScale: Float? = null
     var blockHanging = false
+    // the block's own computed size, so spans carry theirs relative to it
+    var blockFontScale = 1f
+    // book CSS vertical margins (collapsing: the largest wins) and padding (adding up) since the last block
+    var pendingMargin: Float? = null
+    var pendingPadding = 0f
     var quoteDepth = 0
     var linkDepth = 0
     var linkHref: String? = null
@@ -377,8 +390,18 @@ internal fun parseXhtml(
     var floatDepth = 0
     // computed (inherited) style of each open element, innermost last
     val styles = ArrayDeque<Computed>().apply { add(Computed()) }
-    // the open elements as CSS selectors see them, outermost first
+    // the open elements as CSS selectors see them, outermost first, and each one's declared style
     val path = ArrayDeque<CssElement>()
+    val declaredStyles = ArrayDeque<CssStyle>()
+    // per open element, its last child element so far: the next child's previous sibling
+    val lastChild = ArrayDeque<CssElement?>().apply { add(null) }
+
+    fun takeGap(): Float? {
+        val gap = if (pendingMargin == null && pendingPadding == 0f) null else (pendingMargin ?: 0f) + pendingPadding
+        pendingMargin = null
+        pendingPadding = 0f
+        return gap
+    }
 
     fun openBlock(k: BlockKind, level: Int) {
         val style = styles.last()
@@ -388,6 +411,7 @@ internal fun parseXhtml(
         blockIndent = !style.noIndent
         blockScale = style.scale.takeIf { it != 1f }
         blockHanging = style.hanging
+        blockFontScale = style.scale
         spans = mutableListOf()
     }
 
@@ -397,7 +421,9 @@ internal fun parseXhtml(
         val merged = mutableListOf<FormattedSpan>()
         for (s in list) {
             val last = merged.lastOrNull()
-            if (last != null && last.bold == s.bold && last.italic == s.italic && last.href == s.href && last.smallCaps == s.smallCaps && last.plainLink == s.plainLink) {
+            if (last != null && last.bold == s.bold && last.italic == s.italic && last.href == s.href && last.smallCaps == s.smallCaps && last.plainLink == s.plainLink &&
+                last.scale == s.scale && last.sans == s.sans
+            ) {
                 merged[merged.lastIndex] = last.copy(text = last.text + s.text)
             } else {
                 merged.add(s)
@@ -407,14 +433,15 @@ internal fun parseXhtml(
         // not isNotBlank: a lone &nbsp; survives collapsing and draws an empty
         // line, as in HTML (books use <p>&nbsp;</p> for scene breaks)
         if (collapsed.any { it.text.isNotEmpty() }) {
-            blocks.add(Block.Text(collapsed, kind, headingLevel, blockAlign, blockIndent, blockScale, blockHanging))
+            blocks.add(Block.Text(collapsed, kind, headingLevel, blockAlign, blockIndent, blockScale, blockHanging, takeGap()))
         }
     }
 
     fun appendText(t: String) {
         val style = styles.last()
         val plainLink = linkHref != null && style.ownColor && !style.underline
-        spans?.add(FormattedSpan(t, style.bold, style.italic, linkHref, style.smallCaps, plainLink))
+        val scale = style.scale / blockFontScale
+        spans?.add(FormattedSpan(t, style.bold, style.italic, linkHref, style.smallCaps, plainLink, scale, style.sans))
     }
 
     while (reader.hasNext()) {
@@ -434,12 +461,21 @@ internal fun parseXhtml(
                     reader.attr("href")?.let(loadCss)?.let { stylesheet.add(it) }
                 }
                 if (tag == "style") styleText = StringBuilder()
-                path.addLast(CssElement(tag, reader.attrOrEmpty("class").split(' ').filter { it.isNotEmpty() }.toSet()))
+                val element = CssElement(tag, reader.attrOrEmpty("class").split(' ').filter { it.isNotEmpty() }.toSet(), lastChild.last())
+                lastChild[lastChild.lastIndex] = element
+                path.addLast(element)
                 val declared = stylesheet.styleFor(path, reader.attr("style"))
                 if (isPageMarker(reader) || declared.hidden == true) {
                     path.removeLast()
                     skipDepth = 1
                     continue
+                }
+                lastChild.addLast(null)
+                declaredStyles.addLast(declared)
+                // margins of block-level elements only, not of inline text inside a paragraph
+                if (spans == null) {
+                    declared.marginTop?.let { pendingMargin = maxOf(pendingMargin ?: 0f, it) }
+                    pendingPadding += declared.paddingTop ?: 0f
                 }
                 val style = styles.last().inherit(tag, declared)
                 styles.addLast(style)
@@ -451,6 +487,8 @@ internal fun parseXhtml(
                     blockAlign = TextAlign.END
                     blockIndent = false
                     blockHanging = false
+                    // the parts of a split paragraph sit together
+                    pendingMargin = 0f
                 }
                 when (tag) {
                     "a" -> {
@@ -459,7 +497,7 @@ internal fun parseXhtml(
                     }
                     "blockquote" -> quoteDepth++
                     "img" -> blocks.add(
-                        Block.Image(reader.attr("alt") ?: "", reader.attr("src")?.let(resolveSrc) ?: ""),
+                        Block.Image(reader.attr("alt") ?: "", reader.attr("src")?.let(resolveSrc) ?: "", takeGap()),
                     )
                     "br" -> appendText(BR_MARK.toString())
                     "p", "li" -> openBlock(BlockKind.PARAGRAPH, 0)
@@ -482,6 +520,7 @@ internal fun parseXhtml(
                     blockAlign = align
                     blockScale = scale
                     blockIndent = false
+                    pendingMargin = 0f
                 }
                 when (tag) {
                     "style" -> {
@@ -498,6 +537,13 @@ internal fun parseXhtml(
                 }
                 if (styles.size > 1) styles.removeLast()
                 path.removeLastOrNull()
+                if (lastChild.size > 1) lastChild.removeLast()
+                declaredStyles.removeLastOrNull()?.let { declared ->
+                    if (spans == null) {
+                        declared.marginBottom?.let { pendingMargin = maxOf(pendingMargin ?: 0f, it) }
+                        pendingPadding += declared.paddingBottom ?: 0f
+                    }
+                }
             }
             else -> {}
         }
@@ -517,9 +563,10 @@ private data class Computed(
     val scale: Float = 1f,
     val ownColor: Boolean = false,
     val underline: Boolean = true,
+    val sans: Boolean = false,
 ) {
     fun inherit(tag: String, declared: CssStyle) = Computed(
-        bold = declared.bold ?: (bold || tag in boldTags),
+        bold = declared.bold ?: (bold || tag in boldTags || tag in headingTags),
         italic = declared.italic ?: (italic || tag in italicTags),
         smallCaps = declared.smallCaps ?: smallCaps,
         align = declared.align ?: align,
@@ -528,6 +575,9 @@ private data class Computed(
         scale = (scale * (declared.fontScale ?: 1f)).coerceIn(MIN_SCALE, MAX_SCALE),
         ownColor = declared.ownColor ?: ownColor,
         underline = declared.underline ?: underline,
+        // like LibreraX: the reader's font holds for paragraphs and headings,
+        // only inline text (a speaker label) takes the book's sans-serif
+        sans = (if (tag in inlineTags) declared.sans else null) ?: sans,
     )
 }
 
@@ -548,6 +598,7 @@ private fun asLink(raw: String, resolveSrc: (String) -> String): String? {
 private val headingTags = setOf("h1", "h2", "h3", "h4", "h5", "h6")
 private val boldTags = setOf("b", "strong")
 private val italicTags = setOf("i", "em")
+private val inlineTags = setOf("span", "b", "strong", "i", "em", "a", "small", "cite", "u", "sub", "sup")
 
 // Leading whitespace before the XML declaration is ill-formed XML but shows up
 // in real files; KtXmlReader refuses it, so strip it once, here.

@@ -2,6 +2,7 @@ package com.baca.app.reader
 
 import kotlin.math.ceil
 
+import com.baca.shared.render.gapBeforePx
 import com.baca.shared.render.hangs
 import com.baca.shared.render.takesIndent
 
@@ -157,6 +158,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.baca.app.ui.LocalAppFonts
@@ -280,7 +283,7 @@ fun ReaderScreen(
         annotations.filter { !it.deleted && it.reflowAnchor?.href == chapter.href }
     }
     val blockStrings = remember(chapter, display.theme, display.font, accent, bookAnnotations) {
-        chapter.blocks.map { block -> annotatedOf(block, colors.ink, accent) }
+        chapter.blocks.map { block -> annotatedOf(block, colors.ink, accent, appFonts.sans) }
     }
     val pageCount = layout.pageCount()
     val pageNo = session.pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
@@ -557,7 +560,11 @@ fun ReaderScreen(
                             page.forEach { line ->
                                 if (line.blockIndex != prevBlock && !firstOnPage) {
                                     // packPages counts the paragraph gap; render it too
-                                    Spacer(Modifier.height((display.fontSizeSp * 0.35f).dp))
+                                    val gapPx = chapter.blocks[line.blockIndex].gapBeforePx(
+                                        with(density) { display.fontSizeSp.sp.roundToPx() },
+                                        paragraphGapPxOf(display, density),
+                                    )
+                                    Spacer(Modifier.height(with(density) { gapPx.toDp() }))
                                 }
                                 prevBlock = line.blockIndex
                                 firstOnPage = false
@@ -584,6 +591,9 @@ fun ReaderScreen(
                                             line.start,
                                             line.endExclusive,
                                         ).let { text ->
+                                            // a hyphenated break: the text has no hyphen, the measured line drew one
+                                            if (breaksWord(block.text, line.endExclusive)) text + AnnotatedString("-") else text
+                                        }.let { text ->
                                             if (body && endsMidParagraph(block.text, line.endExclusive)) {
                                                 justified(text, style, columnWidthPx - indentPx, textMeasurer, density)
                                             } else {
@@ -1382,7 +1392,6 @@ private fun lineStyle(block: Block.Text, display: DisplaySettings, ink: Color): 
         TextStyle(
             fontSize = fontPx.toFloat().toSp(),
             lineHeight = lineHeightPx.toSp(),
-            fontWeight = if (block.kind == BlockKind.HEADING) FontWeight.Bold else null,
             fontStyle = if (block.kind == BlockKind.QUOTE) FontStyle.Italic else null,
             fontFamily = readerFontFamily(display.font, fonts),
             color = ink,
@@ -1410,6 +1419,9 @@ private fun paragraphIndentPxOf(display: DisplaySettings, density: Density): Int
     with(density) { display.fontSizeSp.sp.roundToPx() }
 
 /** A paragraph's last line and lines before a <br> stay ragged. */
+private fun breaksWord(text: String, lineEnd: Int): Boolean =
+    lineEnd in 1 until text.length && text[lineEnd - 1].isLetter() && text[lineEnd].isLetter()
+
 private fun endsMidParagraph(text: String, lineEnd: Int): Boolean =
     lineEnd < text.length && text[lineEnd - 1] != '\n' && text[lineEnd] != '\n'
 
@@ -1456,15 +1468,17 @@ private const val JUSTIFY_SLACK_PX = 2
 // a line this short before a break isn't worth stretching into rivers
 private const val MAX_JUSTIFY_STRETCH = 0.35f
 
-// LibreraX's `div, p { margin: 0.2em 0 }`: adjacent margins collapse to one 0.2em gap
-private const val PARAGRAPH_GAP_EM = 0.2f
+// LibreraX's `div, p { margin: 0.2em 0 }`: adjacent margins collapse to one 0.2em gap.
+// One function for layout and renderer, so a full page fits what was measured.
+private fun paragraphGapPxOf(display: DisplaySettings, density: Density): Int =
+    with(density) { (display.fontSizeSp * 0.2f).sp.roundToPx() }
 
 private fun reflowSettingsOf(display: DisplaySettings, density: Density): ReflowSettings = with(density) {
     val fontPx = display.fontSizeSp.sp.roundToPx()
     ReflowSettings(
         fontSizePx = fontPx,
         lineHeightRatio = display.lineRatio(),
-        paragraphGapPx = (display.fontSizeSp * PARAGRAPH_GAP_EM).sp.roundToPx(),
+        paragraphGapPx = paragraphGapPxOf(display, density),
         paragraphIndentPx = paragraphIndentPxOf(display, density),
         headingScale = DisplaySettings.HEADING_SCALE,
         imageHeightPx = (display.fontSizeSp * 6f).sp.roundToPx(),
@@ -1481,7 +1495,7 @@ private fun marginDpOf(name: String): Dp = when (name) {
 
 private const val TAG_LINK = "baca.href"
 
-private fun annotatedOf(block: Block, ink: Color, accent: Color): AnnotatedString = when (block) {
+private fun annotatedOf(block: Block, ink: Color, accent: Color, sans: FontFamily): AnnotatedString = when (block) {
     is Block.Image -> AnnotatedString("")
     is Block.Text -> buildAnnotatedString {
         block.spans.forEach { span ->
@@ -1494,6 +1508,9 @@ private fun annotatedOf(block: Block, ink: Color, accent: Color): AnnotatedStrin
                         fontWeight = if (span.bold) FontWeight.Bold else null,
                         fontStyle = if (span.italic) FontStyle.Italic else null,
                         fontFeatureSettings = if (span.smallCaps) SMALL_CAPS else null,
+                        // as ComposeTextMetrics measures them
+                        fontSize = if (span.scale != 1f) span.scale.em else TextUnit.Unspecified,
+                        fontFamily = if (span.sans) sans else null,
                     ),
                 )
             } else {
@@ -1502,6 +1519,9 @@ private fun annotatedOf(block: Block, ink: Color, accent: Color): AnnotatedStrin
                         fontWeight = if (span.bold) FontWeight.Bold else null,
                         fontStyle = if (span.italic) FontStyle.Italic else null,
                         fontFeatureSettings = if (span.smallCaps) SMALL_CAPS else null,
+                        // as ComposeTextMetrics measures them
+                        fontSize = if (span.scale != 1f) span.scale.em else TextUnit.Unspecified,
+                        fontFamily = if (span.sans) sans else null,
                         color = ink,
                     ),
                 )

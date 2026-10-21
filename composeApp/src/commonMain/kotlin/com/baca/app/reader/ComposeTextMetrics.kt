@@ -3,6 +3,8 @@ package com.baca.app.reader
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -10,6 +12,8 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.em
 import com.baca.shared.render.TextMetrics
 
 /**
@@ -44,6 +48,11 @@ class ComposeTextMetrics(
                 lineHeight = lineHeightPx.toFloat().toSp(),
                 fontFamily = families(fontFamily),
                 textIndent = TextIndent(firstLine = firstLineIndentPx.toFloat().toSp()),
+                // breaks inside long words, like LibreraX, so justified lines don't gape;
+                // the renderer draws the hyphen (Android; desktop text doesn't hyphenate)
+                hyphens = Hyphens.Auto,
+                // the Simple strategy only hyphenates words longer than a whole line
+                lineBreak = LineBreak.Paragraph,
             )
         }
         val annotated = if (styles.isEmpty()) {
@@ -57,6 +66,8 @@ class ComposeTextMetrics(
                             fontWeight = if (range.bold) FontWeight.Bold else null,
                             fontStyle = if (range.italic) FontStyle.Italic else null,
                             fontFeatureSettings = if (range.smallCaps) SMALL_CAPS else null,
+                            fontSize = if (range.scale != 1f) range.scale.em else TextUnit.Unspecified,
+                            fontFamily = if (range.sans) families(SANS) else null,
                         ),
                         range.start,
                         range.endExclusive,
@@ -79,6 +90,9 @@ class ComposeTextMetrics(
         }
     }
 }
+
+/** The display font name book CSS `font-family: sans-serif` maps to. */
+internal const val SANS = "sans"
 
 /** OpenType small caps; fonts without them draw normal lowercase. Measured and drawn the same way. */
 internal const val SMALL_CAPS = "smcp"

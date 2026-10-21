@@ -4,6 +4,7 @@ import com.baca.shared.parser.Block
 import com.baca.shared.parser.BlockKind
 import com.baca.shared.parser.TextAlign
 import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 /**
  * Pagination settings in pixels; the UI derives them from density, screen
@@ -29,6 +30,10 @@ fun Block.Text.takesIndent(): Boolean = kind != BlockKind.HEADING && indent && a
 
 /** Whether every line but the first takes the reader's paragraph indent (book CSS hanging indent). Shared by layout and renderer. */
 fun Block.Text.hangs(): Boolean = kind != BlockKind.HEADING && hanging && align == TextAlign.START
+
+/** Space above the block: the book's CSS margins, else the reader's paragraph gap. Shared by layout and renderer. */
+fun Block.gapBeforePx(fontSizePx: Int, defaultGapPx: Int): Int =
+    gapBeforeEm?.let { (it * fontSizePx).roundToInt() } ?: defaultGapPx
 
 /** One visible line (or image placeholder) placed on a page. */
 data class PageLine(
@@ -131,9 +136,7 @@ class ReflowLayout(
                 is Block.Text -> {
                     if (block.text.isEmpty()) return@forEachIndexed
                     // measure with the renderer's exact style (family + per-span
-                    // bold/italic) so breaks match the drawn lines; headings
-                    // render bold, so they measure bold
-                    val headingBold = block.kind == BlockKind.HEADING
+                    // bold/italic/size) so breaks match the drawn lines
                     val styleRanges = buildList {
                         var offset = 0
                         block.spans.forEach { span ->
@@ -141,9 +144,11 @@ class ReflowLayout(
                                 TextMetrics.StyleRange(
                                     offset,
                                     offset + span.text.length,
-                                    span.bold || headingBold,
+                                    span.bold,
                                     span.italic,
                                     span.smallCaps,
+                                    span.scale,
+                                    span.sans,
                                 ),
                             )
                             offset += span.text.length
@@ -211,7 +216,7 @@ class ReflowLayout(
             var line = original
             var height = line.heightPx
                 ?: if (line.isImage) settings.imageHeightPx else lineHeightOf(line)
-            val gap = if (line.blockIndex != lastBlock && used > 0) settings.paragraphGapPx else 0
+            val gap = if (line.blockIndex != lastBlock && used > 0) blocks[line.blockIndex].gapBeforePx(settings.fontSizePx, settings.paragraphGapPx) else 0
             lastBlock = line.blockIndex
             val left = pageHeightPx - used - gap
             // an image pushed whole to the next page leaves the rest of this
