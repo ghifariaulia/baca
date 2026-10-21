@@ -52,6 +52,10 @@ class SafLibraryFolder(private val context: Context, private val tree: Uri) : Li
     }
 
     override fun contains(location: String): Boolean = location.startsWith(tree.toString())
+
+    // DocumentFile reports 0 for a file it can't stat
+    override fun size(location: String): Long? =
+        DocumentFile.fromSingleUri(context, Uri.parse(location))?.length()?.takeIf { it > 0 }
 }
 
 @Composable

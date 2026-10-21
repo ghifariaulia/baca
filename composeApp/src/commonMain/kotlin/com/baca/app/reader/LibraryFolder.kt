@@ -24,6 +24,9 @@ interface LibraryFolder {
     fun add(path: String): String
 
     fun contains(location: String): Boolean
+
+    /** The file's size in bytes, or null when it can't be read. */
+    fun size(location: String): Long?
 }
 
 /** The library folder for a stored setting value, or null when none is set. */

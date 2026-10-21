@@ -75,4 +75,13 @@ class LibraryFolderTest {
         assertEquals("existing", File(folder, "Book.epub").readText())
         assertEquals(location, imported.row.path)
     }
+
+    @Test
+    fun `size reads a book in the folder, null for a missing one`() {
+        val folder = tempDir("library")
+        val book = File(folder, "Book.epub").apply { writeBytes(epubBytes()) }
+        val library = FileLibraryFolder(folder)
+        assertEquals(book.length(), library.size(book.absolutePath))
+        assertEquals(null, library.size(File(folder, "gone.epub").absolutePath))
+    }
 }

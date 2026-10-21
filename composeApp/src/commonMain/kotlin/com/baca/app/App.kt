@@ -23,6 +23,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -544,12 +545,20 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                     val progress = booksRepo.progressFor(current.row.bookHash)
                     val lastRead = booksRepo.lastReadAt(current.row.bookHash)
                     val finished = remember(current.row.bookHash, libraryTick) { booksRepo.isFinished(current.row.bookHash) }
+                    // library-folder books on Android are document URIs, not file paths
+                    val sizeBytes by produceState(0L, current.row.path, libraryFolder) {
+                        value = withContext(Dispatchers.IO) {
+                            val path = current.row.path
+                            if (path.startsWith("content://")) libraryFolder?.size(path) ?: 0L
+                            else fs.metadataOrNull(path.toPath())?.size ?: 0L
+                        }
+                    }
                     BookDetailScreen(
                         row = current.row,
                         progress = progress,
                         lastReadAt = lastRead,
                         addedAt = current.row.addedAt,
-                        sizeBytes = runCatching { fs.metadata(current.row.path.toPath()).size ?: 0L }.getOrDefault(0L),
+                        sizeBytes = sizeBytes,
                         onBack = { screenState = Screen.Library },
                         onContinue = { openAsync(current.row) },
                         onRemove = {

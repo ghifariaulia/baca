@@ -27,6 +27,8 @@ class FileLibraryFolder(private val root: File) : LibraryFolder {
     override fun contains(location: String): Boolean =
         location.startsWith(root.absolutePath + File.separator)
 
+    override fun size(location: String): Long? = File(location).takeIf { it.isFile }?.length()
+
     // "Book.epub" taken → "Book (2).epub"; never overwrite the user's files
     private fun freeName(name: String): File {
         val ext = if (name.endsWith(".fb2.zip", ignoreCase = true)) ".fb2.zip" else "." + name.substringAfterLast('.')
