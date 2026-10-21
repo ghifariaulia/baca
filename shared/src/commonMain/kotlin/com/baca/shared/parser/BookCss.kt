@@ -26,8 +26,8 @@ internal data class CssStyle(
     /** the element sets its own `color`, which for a link means it isn't drawn as one */
     val ownColor: Boolean? = null,
     val underline: Boolean? = null,
-    /** `font-family` names a sans-serif face */
-    val sans: Boolean? = null,
+    /** the generic face `font-family` names first */
+    val face: BookFace? = null,
     /** vertical margins and padding in em; not inherited */
     val marginTop: Float? = null,
     val marginBottom: Float? = null,
@@ -54,7 +54,7 @@ internal data class CssStyle(
         fontScale = other.fontScale ?: fontScale,
         ownColor = other.ownColor ?: ownColor,
         underline = other.underline ?: underline,
-        sans = other.sans ?: sans,
+        face = other.face ?: face,
         marginTop = other.marginTop ?: marginTop,
         marginBottom = other.marginBottom ?: marginBottom,
         paddingTop = other.paddingTop ?: paddingTop,
@@ -235,7 +235,7 @@ private fun CssStyle.declare(name: String, value: String): CssStyle = when (name
     "display" -> copy(hidden = value == "none")
     "font-size" -> copy(fontScale = relativeSize(value) ?: fontScale)
     "color" -> copy(ownColor = true)
-    "font-family" -> copy(sans = value.contains("sans"))
+    "font-family" -> copy(face = faceOf(value))
     "margin" -> boxSides(value)?.let { (top, bottom, left) ->
         copy(marginTop = top ?: marginTop, marginBottom = bottom ?: marginBottom, marginLeft = left ?: marginLeft)
     } ?: this
@@ -285,6 +285,18 @@ private fun cssLengthIsZero(value: String): Boolean =
     value.trimEnd('e', 'm', 'p', 'x', 't', '%', 'r').toFloatOrNull() == 0f
 
 // Relative sizes only; absolute px/pt sizes would fight the reader's font size.
+/** The kind of face a `font-family` list starts with; a font the reader doesn't have is read as serif. */
+private fun faceOf(value: String): BookFace {
+    val first = value.substringBefore(',').trim().trim('"', '\'')
+    return when {
+        "mono" in first || first == "courier" || first == "courier new" -> BookFace.MONO
+        "sans" in first || first in SANS_FONTS -> BookFace.SANS
+        else -> BookFace.SERIF
+    }
+}
+
+private val SANS_FONTS = setOf("helvetica", "helvetica neue", "arial", "verdana", "roboto")
+
 private fun relativeSize(value: String): Float? = when {
     value.endsWith("em") && !value.endsWith("rem") -> value.removeSuffix("em").toFloatOrNull()
     value.endsWith("%") -> value.removeSuffix("%").toFloatOrNull()?.div(100f)

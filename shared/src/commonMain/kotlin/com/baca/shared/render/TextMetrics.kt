@@ -1,5 +1,6 @@
 package com.baca.shared.render
 
+import com.baca.shared.parser.BookFace
 import com.baca.shared.parser.InlineImage
 
 /**
@@ -24,8 +25,8 @@ interface TextMetrics {
         val smallCaps: Boolean = false,
         /** font size relative to the block's */
         val scale: Float = 1f,
-        /** drawn in the reader's sans font */
-        val sans: Boolean = false,
+        /** drawn in the reader's sans or monospace font; null is the reading font */
+        val face: BookFace? = null,
         /** an image in the line instead of the range's one char */
         val image: InlineImage? = null,
     )

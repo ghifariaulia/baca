@@ -166,15 +166,33 @@ class BookCssTest {
     fun `spans keep the book's smaller size and sans-serif face`() {
         val b = blocks(".label { font-family: sans-serif; font-size: 0.85em }", """<p><b><span class="label">NEGISHI:</span></b> Words.</p>""")
         val (label, words) = b.single().spans
-        assertEquals(0.85f to true, label.scale to label.sans)
-        assertEquals(1f to false, words.scale to words.sans)
+        assertEquals(0.85f to BookFace.SANS, label.scale to label.face)
+        assertEquals(1f to null, words.scale to words.face)
         assertNull(b.single().scale)
     }
 
     @Test
-    fun `paragraphs and headings keep the reader's font even when the book says sans-serif`() {
-        val b = blocks(".t { font-family: sans-serif }", """<h1 class="t">Title</h1><p class="t">Date</p>""")
-        assertEquals(listOf(false, false), b.map { it.spans.single().sans })
+    fun `paragraphs and headings keep the face the book sets them in`() {
+        val b = blocks(".t { font-family: sans-serif } .m { font-family: \"Courier New\", monospace }", """<h1 class="t">Title</h1><p class="t">Date</p><p class="m">Log</p>""")
+        assertEquals(listOf(BookFace.SANS, BookFace.SANS, BookFace.MONO), b.map { it.spans.single().face })
+    }
+
+    @Test
+    fun `monospace is set smaller, as a browser sets it, and text inside it in another face is not`() {
+        val b = blocks(
+            "p.t { font-family: monospace; font-size: 1.2em } span.who { font-family: sans-serif }",
+            """<p class="t"><span class="who">Man</span>: Hello.</p>""",
+        ).single()
+        assertEquals(1.2f * 13 / 16, b.scale!!, 0.001f)
+        val (who, words) = b.spans
+        assertEquals(BookFace.SANS to 16f / 13, who.face to who.scale)
+        assertEquals(BookFace.MONO to 1f, words.face to words.scale)
+    }
+
+    @Test
+    fun `text the book underlines is underlined, links aside`() {
+        val b = blocks("span.u { text-decoration: underline }", """<p><span class="u">Man</span>: <a href="n.xhtml">note</a></p>""").single()
+        assertEquals(listOf(true, false, false), b.spans.map { it.underline })
     }
 
     @Test

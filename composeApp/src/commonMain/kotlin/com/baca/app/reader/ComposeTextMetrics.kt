@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
+import com.baca.shared.parser.BookFace
 import com.baca.shared.parser.InlineImage
 import com.baca.shared.render.TextMetrics
 
@@ -73,7 +74,7 @@ class ComposeTextMetrics(
                             fontStyle = if (range.italic) FontStyle.Italic else null,
                             fontFeatureSettings = if (range.smallCaps) SMALL_CAPS else null,
                             fontSize = if (range.scale != 1f) range.scale.em else TextUnit.Unspecified,
-                            fontFamily = if (range.sans) families(SANS) else null,
+                            fontFamily = range.face?.let { families(faceFontName(it)) },
                         ),
                         range.start,
                         range.endExclusive,
@@ -110,8 +111,12 @@ internal fun inlineImagePlaceholder(image: InlineImage, aspect: Float) = Placeho
     placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
 )
 
-/** The display font name book CSS `font-family: sans-serif` maps to. */
-internal const val SANS = "sans"
+/** The reader font a book's own face is drawn in: one name for measuring and drawing. */
+internal fun faceFontName(face: BookFace): String = when (face) {
+    BookFace.SANS -> "sans"
+    BookFace.MONO -> "mono"
+    BookFace.SERIF -> "serif"
+}
 
 /** OpenType small caps; fonts without them draw normal lowercase. Measured and drawn the same way. */
 internal const val SMALL_CAPS = "smcp"

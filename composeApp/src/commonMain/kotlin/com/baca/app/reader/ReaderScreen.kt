@@ -180,6 +180,7 @@ import com.baca.shared.domain.saveDisplay
 import com.baca.shared.domain.encode
 import com.baca.shared.domain.reader.ReaderSession
 import com.baca.shared.parser.Block
+import com.baca.shared.parser.BookFace
 import com.baca.shared.parser.LeftRule
 import com.baca.shared.domain.reader.SearchHit
 import com.baca.shared.domain.reader.SelectionPoint
@@ -296,7 +297,7 @@ fun ReaderScreen(
         annotations.filter { !it.deleted && it.reflowAnchor?.href == chapter.href }
     }
     val blockStrings = remember(chapter, display.theme, display.font, accent, bookAnnotations) {
-        chapter.blocks.map { block -> annotatedOf(block, colors.ink, accent, appFonts.sans) }
+        chapter.blocks.map { block -> annotatedOf(block, colors.ink, accent) { readerFontFamily(faceFontName(it), appFonts) } }
     }
     val inlineImages = rememberInlineImages(chapter, images, colors.ink)
     val pageCount = layout.pageCount()
@@ -1630,7 +1631,7 @@ private fun marginDpOf(name: String): Dp = when (name) {
 
 private const val TAG_LINK = "baca.href"
 
-private fun annotatedOf(block: Block, ink: Color, accent: Color, sans: FontFamily): AnnotatedString = when (block) {
+private fun annotatedOf(block: Block, ink: Color, accent: Color, faces: (BookFace) -> FontFamily): AnnotatedString = when (block) {
     is Block.Image -> AnnotatedString("")
     is Block.Text -> buildAnnotatedString {
         block.spans.forEach { span ->
@@ -1645,7 +1646,7 @@ private fun annotatedOf(block: Block, ink: Color, accent: Color, sans: FontFamil
                         fontFeatureSettings = if (span.smallCaps) SMALL_CAPS else null,
                         // as ComposeTextMetrics measures them
                         fontSize = if (span.scale != 1f) span.scale.em else TextUnit.Unspecified,
-                        fontFamily = if (span.sans) sans else null,
+                        fontFamily = span.face?.let(faces),
                     ),
                 )
             } else {
@@ -1656,7 +1657,8 @@ private fun annotatedOf(block: Block, ink: Color, accent: Color, sans: FontFamil
                         fontFeatureSettings = if (span.smallCaps) SMALL_CAPS else null,
                         // as ComposeTextMetrics measures them
                         fontSize = if (span.scale != 1f) span.scale.em else TextUnit.Unspecified,
-                        fontFamily = if (span.sans) sans else null,
+                        fontFamily = span.face?.let(faces),
+                        textDecoration = if (span.underline) TextDecoration.Underline else null,
                         color = ink,
                     ),
                 )

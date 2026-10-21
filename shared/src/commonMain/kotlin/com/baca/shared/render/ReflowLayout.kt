@@ -160,7 +160,7 @@ class ReflowLayout(
                                     span.italic,
                                     span.smallCaps,
                                     span.scale,
-                                    span.sans,
+                                    span.face,
                                     span.image,
                                 ),
                             )

@@ -21,11 +21,16 @@ data class FormattedSpan(
     val plainLink: Boolean = false,
     /** book CSS font size relative to its block's */
     val scale: Float = 1f,
-    /** book CSS `font-family: sans-serif`: drawn in the reader's sans font */
-    val sans: Boolean = false,
+    /** a face other than the book's running text's (TECH 3.1); null is the reader's font */
+    val face: BookFace? = null,
+    /** book CSS `text-decoration: underline` on text that isn't a link */
+    val underline: Boolean = false,
     /** an image drawn in the line, in place of this span's one [INLINE_IMAGE] char */
     val image: InlineImage? = null,
 )
+
+/** The generic faces a book's CSS names; drawn with the reader's own sans and monospace fonts. */
+enum class BookFace { SERIF, SANS, MONO }
 
 /** A text-sized image inside a paragraph (Kinki Region's ○○ redactions), [heightEm] tall, as wide as its aspect makes it. */
 data class InlineImage(val src: String, val heightEm: Float)
@@ -151,7 +156,7 @@ fun parseEpub(path: Path): ParsedEpub {
     val cover = opf.coverHref?.let {
         if (it.contains("://")) it else (base / it.toPath()).normalized().toString()
     }
-    return ParsedEpub(opf.title, opf.author, cover, chapters, toc, opf.identifier)
+    return ParsedEpub(opf.title, opf.author, cover, withRunningText(chapters), toc, opf.identifier)
 }
 
 internal fun parseToc(
@@ -445,7 +450,7 @@ internal fun parseXhtml(
         for (s in list) {
             val last = merged.lastOrNull()
             if (last != null && last.bold == s.bold && last.italic == s.italic && last.href == s.href && last.smallCaps == s.smallCaps && last.plainLink == s.plainLink &&
-                last.scale == s.scale && last.sans == s.sans && last.image == null && s.image == null
+                last.scale == s.scale && last.face == s.face && last.underline == s.underline && last.image == null && s.image == null
             ) {
                 merged[merged.lastIndex] = last.copy(text = last.text + s.text)
             } else {
@@ -470,7 +475,9 @@ internal fun parseXhtml(
         val style = styles.last()
         val plainLink = linkHref != null && style.ownColor && !style.underline
         val scale = style.scale / blockFontScale
-        spans?.add(FormattedSpan(t, style.bold, style.italic, linkHref, style.smallCaps, plainLink, scale, style.sans, image))
+        val face = style.face.takeIf { it != BookFace.SERIF }
+        val underline = linkHref == null && style.underlined
+        spans?.add(FormattedSpan(t, style.bold, style.italic, linkHref, style.smallCaps, plainLink, scale, face, underline, image))
     }
 
     while (reader.hasNext()) {
@@ -610,27 +617,44 @@ private data class Computed(
     val scale: Float = 1f,
     val ownColor: Boolean = false,
     val underline: Boolean = true,
-    val sans: Boolean = false,
+    /** `text-decoration: underline` on running text; [underline] is about links */
+    val underlined: Boolean = false,
+    val face: BookFace = BookFace.SERIF,
     val insetEm: Float = 0f,
     val leftRule: LeftRule? = null,
 ) {
-    fun inherit(tag: String, declared: CssStyle) = Computed(
-        bold = declared.bold ?: (bold || tag in boldTags || tag in headingTags),
-        italic = declared.italic ?: (italic || tag in italicTags),
-        smallCaps = declared.smallCaps ?: smallCaps,
-        align = declared.align ?: align,
-        noIndent = declared.noIndent ?: noIndent,
-        hanging = declared.hanging ?: hanging,
-        scale = (scale * (declared.fontScale ?: 1f)).coerceIn(MIN_SCALE, MAX_SCALE),
-        ownColor = declared.ownColor ?: ownColor,
-        underline = declared.underline ?: underline,
-        // like LibreraX: the reader's font holds for paragraphs and headings,
-        // only inline text (a speaker label) takes the book's sans-serif
-        sans = (if (tag in inlineTags) declared.sans else null) ?: sans,
-        insetEm = insetEm,
-        leftRule = leftRule,
-    )
+    fun inherit(tag: String, declared: CssStyle): Computed {
+        val ownFace = declared.face ?: face
+        return Computed(
+            bold = declared.bold ?: (bold || tag in boldTags || tag in headingTags),
+            italic = declared.italic ?: (italic || tag in italicTags),
+            smallCaps = declared.smallCaps ?: smallCaps,
+            align = declared.align ?: align,
+            noIndent = declared.noIndent ?: noIndent,
+            hanging = declared.hanging ?: hanging,
+            scale = (scale * (declared.fontScale ?: 1f) * monospaceQuirk(face, ownFace)).coerceIn(MIN_SCALE, MAX_SCALE),
+            ownColor = declared.ownColor ?: ownColor,
+            underline = declared.underline ?: underline,
+            underlined = declared.underline ?: underlined,
+            face = ownFace,
+            insetEm = insetEm,
+            leftRule = leftRule,
+        )
+    }
 }
+
+/**
+ * A browser sets monospace at 13px where other text is 16px, and keeps that ratio
+ * for relative sizes: switching into or out of monospace scales the text by it.
+ * LibreraX inherits this, so a book's transcripts come out smaller and tighter.
+ */
+private fun monospaceQuirk(parent: BookFace, own: BookFace): Float = when {
+    own == BookFace.MONO && parent != BookFace.MONO -> MONOSPACE_RATIO
+    own != BookFace.MONO && parent == BookFace.MONO -> 1f / MONOSPACE_RATIO
+    else -> 1f
+}
+
+private const val MONOSPACE_RATIO = 13f / 16f
 
 // taller than this, an inline image would push its line past the line height every page is measured with
 private const val INLINE_IMAGE_MAX_EM = 1f
@@ -652,7 +676,6 @@ private fun asLink(raw: String, resolveSrc: (String) -> String): String? {
 private val headingTags = setOf("h1", "h2", "h3", "h4", "h5", "h6")
 private val boldTags = setOf("b", "strong")
 private val italicTags = setOf("i", "em")
-private val inlineTags = setOf("span", "b", "strong", "i", "em", "a", "small", "cite", "u", "sub", "sup")
 
 // Leading whitespace before the XML declaration is ill-formed XML but shows up
 // in real files; KtXmlReader refuses it, so strip it once, here.
