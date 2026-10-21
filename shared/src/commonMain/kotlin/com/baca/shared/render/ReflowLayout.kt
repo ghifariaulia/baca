@@ -46,6 +46,8 @@ data class PageLine(
     val isImage: Boolean = false,
     /** resolved height for image lines; text lines derive it from style */
     val heightPx: Int? = null,
+    /** a right float drawn on the previous line's row, at its right end; takes no height */
+    val joinsPrevious: Boolean = false,
 )
 
 enum class AnchorResolution { OFFSETS, QUOTE }
@@ -131,11 +133,14 @@ class ReflowLayout(
 
     private fun buildLines(): List<PageLine> {
         val result = mutableListOf<PageLine>()
+        // where the last text line ends in the column, for a right float to sit beside it
+        var lastRightPx: Int? = null
         blocks.forEachIndexed { blockIndex, block ->
             when (block) {
-                is Block.Image -> result.add(
-                    PageLine(blockIndex, 0, 0, isImage = true, heightPx = imageHeight(block)),
-                )
+                is Block.Image -> {
+                    result.add(PageLine(blockIndex, 0, 0, isImage = true, heightPx = imageHeight(block)))
+                    lastRightPx = null
+                }
                 is Block.Text -> {
                     if (block.text.isEmpty()) return@forEachIndexed
                     // measure with the renderer's exact style (family + per-span
@@ -171,11 +176,20 @@ class ReflowLayout(
                             if (block.takesIndent()) settings.paragraphIndentPx else 0,
                         )
                     }
-                    spans
-                        .filter { it.endExclusive > it.start }
-                        .forEach { span ->
-                            result.add(PageLine(blockIndex, span.start, span.endExclusive))
-                        }
+                    val drawn = spans.filter { it.endExclusive > it.start }
+                    val inset = block.insetPx(settings.fontSizePx)
+                    // like a browser: a right float shares the row when it fits after the text, a space apart
+                    val joins = block.floatsRight && drawn.size == 1 && lastRightPx?.let {
+                        it + settings.paragraphIndentPx + drawn.single().rightPx <= columnWidthPx - inset
+                    } == true
+                    drawn.forEach { span ->
+                        result.add(PageLine(blockIndex, span.start, span.endExclusive, joinsPrevious = joins))
+                    }
+                    lastRightPx = drawn.lastOrNull()?.let { last ->
+                        // hanging lines after the first are measured without their indent
+                        val hang = if (block.hangs() && last.start > 0) settings.paragraphIndentPx else 0
+                        inset + hang + last.rightPx
+                    }
                 }
             }
         }
@@ -207,7 +221,7 @@ class ReflowLayout(
         if (restStart < text.length && text[restStart] == '\n') restStart++
         if (restStart >= text.length) return listOf(first)
         val rest = measure(restStart, widthPx - settings.paragraphIndentPx)
-            .map { TextMetrics.LineSpan(it.start + restStart, it.endExclusive + restStart) }
+            .map { it.copy(start = it.start + restStart, endExclusive = it.endExclusive + restStart) }
         return listOf(first) + rest
     }
 
@@ -220,6 +234,11 @@ class ReflowLayout(
             var line = original
             var height = line.heightPx
                 ?: if (line.isImage) settings.imageHeightPx else lineHeightOf(line)
+            if (line.joinsPrevious && current.isNotEmpty()) {
+                current.add(line)
+                lastBlock = line.blockIndex
+                continue
+            }
             val gap = if (line.blockIndex != lastBlock && used > 0) blocks[line.blockIndex].gapBeforePx(settings.fontSizePx, settings.paragraphGapPx) else 0
             lastBlock = line.blockIndex
             val left = pageHeightPx - used - gap

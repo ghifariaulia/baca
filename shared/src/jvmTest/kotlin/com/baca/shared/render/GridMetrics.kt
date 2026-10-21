@@ -22,7 +22,9 @@ class GridMetrics(private val charW: Int = 10) : TextMetrics {
             var end = (start + cols).coerceAtMost(text.length)
             val nl = text.indexOf('\n', start)
             if (nl in start until end) end = nl + 1
-            lines.add(TextMetrics.LineSpan(start, end))
+            val indent = if (start == 0) firstLineIndentPx / charW * charW else 0
+            val visible = text.substring(start, end).trimEnd('\n').length
+            lines.add(TextMetrics.LineSpan(start, end, indent + visible * charW))
             start = end
         }
         return lines

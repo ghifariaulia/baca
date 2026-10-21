@@ -38,5 +38,6 @@ interface TextMetrics {
         firstLineIndentPx: Int = 0,
     ): List<LineSpan>
 
-    data class LineSpan(val start: Int, val endExclusive: Int)
+    /** [rightPx]: where the line's text ends, from the left of the measured width (indent included). */
+    data class LineSpan(val start: Int, val endExclusive: Int, val rightPx: Int = 0)
 }

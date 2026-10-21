@@ -86,6 +86,7 @@ class ComposeTextMetrics(
             TextMetrics.LineSpan(
                 start = layout.getLineStart(i),
                 endExclusive = layout.getLineEnd(i, visibleEnd = true),
+                rightPx = kotlin.math.ceil(layout.getLineRight(i)).toInt(),
             )
         }
     }

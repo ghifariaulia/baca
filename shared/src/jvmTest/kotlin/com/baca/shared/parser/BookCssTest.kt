@@ -57,6 +57,13 @@ class BookCssTest {
         assertEquals(listOf("28th February", "meguro, tokyo"), b.map { it.text.trim() })
         assertEquals(TextAlign.END, b[1].align)
         assertFalse(b[1].indent)
+        assertTrue(b[1].floatsRight)
+    }
+
+    @Test
+    fun `a float with no text before it in its paragraph stays on its own line`() {
+        val b = blocks(".place { float: right }", """<p>Earlier.</p><p><span class="place">tokyo</span></p>""")
+        assertFalse(b[1].floatsRight)
     }
 
     @Test

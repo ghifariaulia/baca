@@ -563,7 +563,13 @@ fun ReaderScreen(
                             val bodyFontPx = with(density) { display.fontSizeSp.sp.roundToPx() }
                             var prevBlock: Int = -1
                             var firstOnPage = true
-                            page.forEach { line ->
+                            page.forEachIndexed { lineIndex, line ->
+                                if (line.joinsPrevious && !firstOnPage) {
+                                    // drawn in the row before it
+                                    prevBlock = line.blockIndex
+                                    return@forEachIndexed
+                                }
+                                val joined = page.getOrNull(lineIndex + 1)?.takeIf { it.joinsPrevious }
                                 if (line.blockIndex != prevBlock && !firstOnPage) {
                                     // packPages counts the paragraph gap; render it too
                                     val gapPx = chapter.blocks[line.blockIndex].gapBeforePx(
@@ -645,6 +651,29 @@ fun ReaderScreen(
                                                         editing = EditorState(existing = entry)
                                                     },
                                                     onLongPress = { pos -> toolbarAt = line.blockIndex to pos },
+                                                )
+                                            }
+                                            if (joined != null) {
+                                                // a right float that fits beside this line (book CSS float: right)
+                                                val floatBlock = chapter.blocks[joined.blockIndex] as Block.Text
+                                                val floatRanges = highlightRangesOf(
+                                                    bookAnnotations,
+                                                    chapter.href,
+                                                    joined.blockIndex,
+                                                    joined.start,
+                                                    joined.endExclusive,
+                                                )
+                                                TappableText(
+                                                    highlighted(blockStrings[joined.blockIndex], floatRanges, joined.start, joined.endExclusive),
+                                                    lineStyle(floatBlock, display, colors.ink),
+                                                    floatRanges,
+                                                    joined.start,
+                                                    onTapAnnotation = { entry ->
+                                                        textUsedTap[0] = true
+                                                        editing = EditorState(existing = entry)
+                                                    },
+                                                    onLongPress = { pos -> toolbarAt = joined.blockIndex to pos },
+                                                    modifier = Modifier.align(Alignment.TopEnd),
                                                 )
                                             }
                                         }
@@ -1026,6 +1055,7 @@ private fun TappableText(
     lineStart: Int,
     onTapAnnotation: (com.baca.shared.sync.AnnotationEntry) -> Unit,
     onLongPress: (Offset) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     var positionInRoot by remember { mutableStateOf(Offset.Zero) }
@@ -1037,7 +1067,7 @@ private fun TappableText(
         softWrap = false,
         maxLines = 1,
         onTextLayout = { layout = it },
-        modifier = Modifier
+        modifier = modifier
             .onGloballyPositioned { positionInRoot = it.positionInRoot() }
             .pointerInput(text, ranges, lineStart) {
                 detectTapGestures(

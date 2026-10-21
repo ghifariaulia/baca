@@ -55,6 +55,8 @@ sealed class Block {
         /** book CSS left border and padding: the text sits this far in from the column edge */
         val insetEm: Float = 0f,
         val leftRule: LeftRule? = null,
+        /** book CSS `float: right` at a paragraph's end: drawn at the right, beside the line before if it fits */
+        val floatsRight: Boolean = false,
     ) : Block() {
         override val text: String get() = spans.joinToString("") { it.text }
     }
@@ -383,6 +385,7 @@ internal fun parseXhtml(
     var blockIndent = true
     var blockScale: Float? = null
     var blockHanging = false
+    var blockFloatsRight = false
     // the block's own computed size, so spans carry theirs relative to it
     var blockFontScale = 1f
     // book CSS vertical margins (collapsing: the largest wins) and padding (adding up) since the last block
@@ -422,6 +425,7 @@ internal fun parseXhtml(
         blockIndent = !style.noIndent
         blockScale = style.scale.takeIf { it != 1f }
         blockHanging = style.hanging
+        blockFloatsRight = false
         blockFontScale = style.scale
         spans = mutableListOf()
     }
@@ -446,7 +450,10 @@ internal fun parseXhtml(
         if (collapsed.any { it.text.isNotEmpty() }) {
             val style = styles.last()
             blocks.add(
-                Block.Text(collapsed, kind, headingLevel, blockAlign, blockIndent, blockScale, blockHanging, takeGap(), style.insetEm, style.leftRule),
+                Block.Text(
+                    collapsed, kind, headingLevel, blockAlign, blockIndent, blockScale, blockHanging, takeGap(),
+                    style.insetEm, style.leftRule, blockFloatsRight,
+                ),
             )
         }
     }
@@ -501,13 +508,17 @@ internal fun parseXhtml(
                 }
                 styles.addLast(style)
                 if (declared.floatRight == true && spans != null && floatDepth == 0) {
+                    val blocksBefore = blocks.size
                     closeBlock()
+                    // it may share a row only with text of its own paragraph
+                    val afterText = blocks.size > blocksBefore
                     floatDepth = styles.size
                     val (k, level) = kind to headingLevel
                     openBlock(k, level)
                     blockAlign = TextAlign.END
                     blockIndent = false
                     blockHanging = false
+                    blockFloatsRight = afterText
                     // the parts of a split paragraph sit together
                     pendingMargin = 0f
                 }

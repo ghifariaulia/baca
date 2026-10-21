@@ -30,6 +30,6 @@ class ComposeTextMetricsTest {
             }
         }
         rule.waitForIdle()
-        assertEquals(listOf(TextMetrics.LineSpan(0, text.length)), lines)
+        assertEquals(listOf(0 to text.length), lines.map { it.start to it.endExclusive })
     }
 }

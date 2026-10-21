@@ -201,6 +201,22 @@ class ReflowLayoutTest {
     }
 
     @Test
+    fun `a right float shares the row with the line before when it fits`() {
+        val date = text("28th Feb").copy(indent = false)
+        val place = text("tokyo").copy(indent = false, floatsRight = true)
+        fun layout(width: Int) = ReflowLayout(
+            listOf(date, place), GridMetrics(),
+            ReflowSettings(fontSizePx = 20, lineHeightRatio = 1.0f, paragraphIndentPx = 10), width, 1000,
+        )
+        // 80 + 10 apart + 50 fits in 200: one row, no extra height
+        val wide = layout(200)
+        assertEquals(listOf(false, true), wide.lines.map { it.joinsPrevious })
+        assertEquals(1, wide.pageCount())
+        // 140 doesn't fit in 120: its own line
+        assertEquals(listOf(false, false), layout(120).lines.map { it.joinsPrevious })
+    }
+
+    @Test
     fun `empty chapter produces one empty page`() {
         val l = layout()
         assertEquals(1, l.pageCount())
