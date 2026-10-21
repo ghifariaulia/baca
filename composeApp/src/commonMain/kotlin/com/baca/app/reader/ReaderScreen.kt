@@ -282,7 +282,8 @@ fun ReaderScreen(
     val layout = remember(chapterIndex, tick) { session.layoutFor(chapterIndex) }
     val accent = MaterialTheme.colorScheme.primary
     // block text with highlight background styles merged in per line (TECH 10.3)
-    val bookAnnotations = remember(annotations) {
+    // keyed on the chapter too: the reader starts on the first chapter and moves to the saved one
+    val bookAnnotations = remember(annotations, chapter.href) {
         annotations.filter { !it.deleted && it.reflowAnchor?.href == chapter.href }
     }
     val blockStrings = remember(chapter, display.theme, display.font, accent, bookAnnotations) {

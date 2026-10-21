@@ -14,6 +14,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.click
+import androidx.compose.ui.semantics.getOrNull
 import com.baca.shared.db.DbAnnotationRepository
 import com.baca.shared.db.Baca
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
@@ -101,7 +102,9 @@ class AnnotationFlowTest {
         val driver = JdbcSqliteDriver("jdbc:sqlite:")
         Baca.Schema.create(driver)
         val repo = DbAnnotationRepository(Baca(driver), now = { 1L })
+        val annotTick = androidx.compose.runtime.mutableIntStateOf(0)
         rule.setContent {
+            annotTick.value
             ReaderScreen(
                 book = book, bookPath = path.toString(), bookHash = "hash", store = AStore, onBack = {},
                 annotations = repo.forBookDetailed("hash").map { it.entry },
@@ -122,6 +125,7 @@ class AnnotationFlowTest {
         rule.onNodeWithText("Note").performClick()
         rule.waitForIdle()
         rule.onNodeWithText("Save").performClick()
+        annotTick.value++
 
         val anchor = repo.forBookDetailed("hash").single().entry.reflowAnchor!!
         assertEquals(anchor.start.blockIndex, anchor.end.blockIndex)
@@ -129,5 +133,13 @@ class AnnotationFlowTest {
         val selected = anchor.end.charOffset - anchor.start.charOffset
         assertTrue(selected > "Title".length, "the drag extended the selection past the word, got $selected chars")
         assertTrue(anchor.quote.startsWith("Title: Fr"), "quote follows the selection: ${anchor.quote}")
+        // and the page draws it
+        rule.waitForIdle()
+        val drawn = rule.onAllNodesWithText("Title: Frankenstein", substring = true).fetchSemanticsNodes().flatMap { node ->
+            val results = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            node.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult)?.action?.invoke(results)
+            results.flatMap { r -> r.layoutInput.text.spanStyles.map { it.item.background } }
+        }
+        assertTrue(HighlightColors.of("yellow") in drawn, "the highlight is drawn, got backgrounds $drawn")
     }
 }
