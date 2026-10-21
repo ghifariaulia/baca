@@ -140,6 +140,21 @@ class ReaderSession(
         return before + (pageIndex + 1)
     }
 
+    /** Pages after this one in the current chapter. */
+    fun chapterPagesLeft(): Int =
+        (layoutFor(chapterIndex).pageCount() - 1 - pageIndex).coerceAtLeast(0)
+
+    /** Where each chapter after the first starts, as a fraction of the book's pages (footer ticks). */
+    fun chapterStartFractions(): List<Float> {
+        val total = bookTotalPages()
+        if (total <= 1) return emptyList()
+        var cumulative = 0
+        return chapters.indices.drop(1).map { i ->
+            cumulative += layoutFor(i - 1).pageCount()
+            cumulative / total.toFloat()
+        }
+    }
+
     /** Jumps to the start of a chapter (contents panel). */
     suspend fun jumpToChapter(target: Int) {
         if (target in chapters.indices) {

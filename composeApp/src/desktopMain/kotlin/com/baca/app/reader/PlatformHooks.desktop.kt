@@ -20,3 +20,9 @@ actual fun openExternalLink(url: String) {
         Desktop.getDesktop().browse(URI(url))
     }
 }
+
+actual fun clockText(): String =
+    java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+
+// a laptop's battery is already on screen in the menu bar
+actual fun batteryPercent(): Int? = null

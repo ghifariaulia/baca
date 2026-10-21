@@ -22,3 +22,9 @@ expect fun PlatformBackHandler(enabled: Boolean = true, onBack: () -> Unit)
 
 /** Opens http(s) links outside the app (browser). */
 expect fun openExternalLink(url: String)
+
+/** The time now, in the device's 12/24-hour style (reader footer). */
+expect fun clockText(): String
+
+/** Battery charge in percent; null where there is no battery to report (desktop). */
+expect fun batteryPercent(): Int?

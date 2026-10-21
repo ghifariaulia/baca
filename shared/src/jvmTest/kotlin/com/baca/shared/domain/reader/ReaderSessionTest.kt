@@ -90,6 +90,21 @@ class ReaderSessionTest {
     }
 
     @Test
+    fun `footer counts pages left in the chapter and marks where chapters start`() = runTest {
+        val s = session(FakeStore())
+        s.ensureView(VIEWPORT, SETTINGS)
+        val pages = s.layoutFor(0).pageCount()
+        assertEquals(pages - 1, s.chapterPagesLeft())
+        s.turnPage(1)
+        assertEquals(pages - 2, s.chapterPagesLeft())
+        // three equal chapters: ticks at a third and two thirds
+        val ticks = s.chapterStartFractions()
+        assertEquals(2, ticks.size)
+        assertEquals(1f / 3, ticks[0], 0.001f)
+        assertEquals(2f / 3, ticks[1], 0.001f)
+    }
+
+    @Test
     fun `page turn at chapter end moves to next chapter page 1`() = runTest {
         val store = FakeStore()
         val s = session(store)

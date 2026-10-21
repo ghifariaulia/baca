@@ -39,3 +39,11 @@ actual fun openExternalLink(url: String) {
         AndroidContexts.current.startActivity(intent)
     }
 }
+
+actual fun clockText(): String =
+    android.text.format.DateFormat.getTimeFormat(AndroidContexts.current).format(java.util.Date())
+
+actual fun batteryPercent(): Int? {
+    val manager = AndroidContexts.current.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
+    return manager?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 0..100 }
+}

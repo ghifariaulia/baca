@@ -49,6 +49,31 @@ class ReaderBarsTest {
         // same page: hiding the bars doesn't re-paginate
         assertEquals(before, pageLabel())
     }
+
+    @Test
+    fun `the status footer stays under the page when the bars are hidden`() {
+        val bytes = javaClass.classLoader.getResourceAsStream("books/frankenstein.epub")!!.readBytes()
+        val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "footer-test.epub"
+        FileSystem.SYSTEM.write(path) { write(bytes) }
+        val book = parseEpub(path)
+        rule.setContent {
+            Box(Modifier.size(420.dp, 800.dp)) {
+                ReaderScreen(book, path.toString(), "hash", BarsTestStore(), onBack = {})
+            }
+        }
+        fun texts(part: String) = rule.onAllNodesWithText(part, substring = true).fetchSemanticsNodes()
+            .map { it.config[SemanticsProperties.Text].joinToString() }
+        rule.waitUntil(10_000) { texts("Page ").isNotEmpty() }
+        rule.mainClock.advanceTimeBy(1_000)
+        rule.waitForIdle()
+        // "Page 1 of 120" in the bar, "1 / 120" in the footer
+        val (page, total) = Regex("Page (\\d+) of (\\d+)").find(texts("Page ").single())!!.destructured
+
+        rule.onRoot().performTouchInput { click(center) }
+        rule.waitUntil(5_000) { texts("Page ").isEmpty() }
+        assertEquals(1, texts("Pages left: ").size)
+        assertEquals(listOf("$page / $total"), texts(" / $total"))
+    }
 }
 
 private class BarsTestStore : com.baca.shared.domain.reader.PositionStore {

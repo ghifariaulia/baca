@@ -531,7 +531,9 @@ fun ReaderScreen(
                             } else {
                                 Modifier
                             },
-                        ),
+                        )
+                        // the footer's strip, in the page colour; text stops above it
+                        .padding(bottom = READER_FOOTER_HEIGHT),
                 ) {
                     val desktopColumn = maxWidth >= 900.dp
                     val columnWidthPx = with(density) {
@@ -639,6 +641,18 @@ fun ReaderScreen(
                     }
 
                 }
+
+                ReaderFooter(
+                    fraction = progressFractionOf(session),
+                    chapterStarts = session.chapterStartFractions(),
+                    chapterPagesLeft = session.chapterPagesLeft(),
+                    page = session.bookPageNumber(),
+                    totalPages = session.bookTotalPages().coerceAtLeast(1),
+                    ink = colors.ink,
+                    horizontalMargin = margin,
+                    // same width as the desktop text column
+                    modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = 680.dp),
+                )
 
                 AnimatedVisibility(
                     visible = barsVisible,
