@@ -4,9 +4,10 @@ import kotlin.math.ceil
 
 import com.baca.shared.render.evenLinesPx
 import com.baca.shared.render.gapBeforePx
-import com.baca.shared.render.hangs
-import com.baca.shared.render.insetPx
-import com.baca.shared.render.takesIndent
+import com.baca.shared.render.sizePx
+import com.baca.shared.render.heightPx
+import com.baca.shared.render.lineBox
+import com.baca.shared.render.lineRatio
 
 import com.baca.shared.render.fontScale
 
@@ -122,6 +123,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
@@ -129,6 +131,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -158,11 +163,14 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.dp
@@ -181,6 +189,7 @@ import com.baca.shared.domain.encode
 import com.baca.shared.domain.reader.ReaderSession
 import com.baca.shared.parser.Block
 import com.baca.shared.parser.BookFace
+import com.baca.shared.parser.TEXT_COLOR
 import com.baca.shared.parser.LeftRule
 import com.baca.shared.domain.reader.SearchHit
 import com.baca.shared.domain.reader.SelectionPoint
@@ -247,7 +256,7 @@ fun ReaderScreen(
             layoutFactory = { index, vp, settings ->
                 ReflowLayout(
                     blocks = book.chapters[index].blocks,
-                    metrics = ComposeTextMetrics(textMeasurer, density, imageAspect = { images.aspect(it) }) { name ->
+                    metrics = ComposeTextMetrics(textMeasurer, density, imageAspect = { images.aspect(it) }, language = book.language) { name ->
                         name?.let { readerFontFamily(it, appFonts) }
                     },
                     settings = settings,
@@ -255,13 +264,7 @@ fun ReaderScreen(
                     pageHeightPx = vp.pageHeightPx,
                     imageHeight = { img: Block.Image ->
                         images.preload(img.src)?.let { bitmap ->
-                            if (bitmap.width <= 0) return@let null
-                            val fillWidth = vp.columnWidthPx * bitmap.height / bitmap.width
-                            // inline figures keep room for text on their page; portrait
-                            // artwork (covers) may take the whole page
-                            val cap = if (bitmap.height > bitmap.width) vp.pageHeightPx
-                            else (vp.pageHeightPx * 0.6f).toInt()
-                            fillWidth.coerceAtMost(cap)
+                            img.box.sizePx(bitmap.width, bitmap.height, density.density, settings.fontSizePx, vp.columnWidthPx, vp.pageHeightPx).heightPx
                         }
                     },
                 )
@@ -296,7 +299,8 @@ fun ReaderScreen(
         annotations.filter { !it.deleted && it.reflowAnchor?.href == chapter.href }
     }
     val blockStrings = remember(chapter, display.theme, display.font, accent, bookAnnotations) {
-        chapter.blocks.map { block -> annotatedOf(block, colors.ink, accent) { readerFontFamily(faceFontName(it), appFonts) } }
+        val dark = colors.background.luminance() < 0.5f
+        chapter.blocks.map { block -> annotatedOf(block, colors.ink, dark) { readerFontFamily(faceFontName(it), appFonts) } }
     }
     val inlineImages = rememberInlineImages(chapter, images, colors.ink)
     val pageCount = layout.pageCount()
@@ -617,10 +621,7 @@ fun ReaderScreen(
                                 val joined = page.getOrNull(lineIndex + 1)?.takeIf { it.joinsPrevious }
                                 if (line.blockIndex != prevBlock && !firstOnPage) {
                                     // packPages counts the paragraph gap; render it too
-                                    val gapPx = chapter.blocks[line.blockIndex].gapBeforePx(
-                                        bodyFontPx,
-                                        paragraphGapPxOf(display, density),
-                                    )
+                                    val gapPx = chapter.blocks[line.blockIndex].gapBeforePx(bodyFontPx, density.density)
                                     // a bordered element's rule runs on through the gaps inside it
                                     val rule = (chapter.blocks[line.blockIndex] as? Block.Text)?.leftRule
                                         ?.takeIf { it == (chapter.blocks.getOrNull(prevBlock) as? Block.Text)?.leftRule }
@@ -632,28 +633,32 @@ fun ReaderScreen(
                                 prevBlock = line.blockIndex
                                 firstOnPage = false
                                 when {
-                                    line.isImage -> ImageLine(chapter, line.blockIndex, line.heightPx)
+                                    line.isImage && chapter.blocks[line.blockIndex] is Block.Rule ->
+                                        RuleLine(chapter.blocks[line.blockIndex] as Block.Rule, bodyFontPx, colors.ink)
+                                    line.isImage -> ImageLine(chapter, line.blockIndex, line.heightPx, columnWidthPx, inner.pageHeightPx, bodyFontPx, colors.background)
                                     else -> {
                                         val block = chapter.blocks[line.blockIndex] as Block.Text
+                                        // a drop cap is drawn on its own: the line's text starts after it
+                                        val cap = block.dropCap?.takeIf { line.start == 0 }
+                                        val textStart = cap?.end ?: line.start
                                         val ranges = highlightRangesOf(
                                             bookAnnotations,
                                             chapter.href,
                                             line.blockIndex,
-                                            line.start,
+                                            textStart,
                                             line.endExclusive,
                                         )
                                         val style = lineStyle(block, display, colors.ink)
                                         // book CSS centred/right lines and headings stay unjustified
-                                        val body = block.kind != BlockKind.HEADING && block.align == BookAlign.START
-                                        // same indent ReflowLayout measured the line with
-                                        val indented = if (block.hangs()) line.start > 0 else block.takesIndent() && line.start == 0
-                                        // a left border's padding sets the whole block in
-                                        val indentPx = (if (indented) paragraphIndentPxOf(display, density) else 0) +
-                                            block.insetPx(bodyFontPx)
+                                        val body = block.kind != BlockKind.HEADING && block.align == BookAlign.START && !block.keepsSpaces
+                                        // where ReflowLayout measured the line: the block's margins, padding and text-indent
+                                        val box = block.lineBox(bodyFontPx, density.density, columnWidthPx)
+                                        // beside a drop cap, lines start after it, as ReflowLayout measured them
+                                        val indentPx = if (block.dropCap != null) box.startPx + line.floatIndentPx else box.linePx(firstLine = line.start == 0)
                                         val lineText = highlighted(
                                             blockStrings[line.blockIndex],
                                             ranges,
-                                            line.start,
+                                            textStart,
                                             line.endExclusive,
                                             (selection ?: matchHere)?.rangeIn(line.blockIndex, block.text.length),
                                             selectionTint,
@@ -663,8 +668,8 @@ fun ReaderScreen(
                                         }.let { text ->
                                             if (body && endsMidParagraph(block.text, line.endExclusive)) {
                                                 justified(
-                                                    text, style, columnWidthPx - indentPx, textMeasurer, density,
-                                                    inlinePlaceholders(block, line.start, line.endExclusive, images),
+                                                    text, style, columnWidthPx - indentPx - box.endPx, textMeasurer, density,
+                                                    inlinePlaceholders(block, textStart, line.endExclusive, images),
                                                 )
                                             } else {
                                                 text
@@ -673,26 +678,39 @@ fun ReaderScreen(
                                         Box(
                                             Modifier.fillMaxWidth()
                                                 .leftRule(block.leftRule, bodyFontPx, colors.ink)
-                                                .padding(start = with(density) { indentPx.toDp() }),
+                                                .padding(start = with(density) { indentPx.toDp() }, end = with(density) { box.endPx.toDp() }),
                                             contentAlignment = when (block.align) {
                                                 BookAlign.CENTER -> Alignment.TopCenter
                                                 BookAlign.END -> Alignment.TopEnd
                                                 BookAlign.START -> Alignment.TopStart
                                             },
                                         ) {
+                                            if (line.start == 0 && block.marker != null) {
+                                                ListMarker(block.marker!!, style, shiftPx = box.firstLinePx + line.floatIndentPx)
+                                            }
+                                            if (cap != null) {
+                                                DropCapText(
+                                                    highlighted(blockStrings[line.blockIndex], emptyList(), 0, cap.end),
+                                                    style, block.spans.first().scale * cap.lineRatio, line.floatIndentPx,
+                                                )
+                                            }
                                             if (block.spans.any { it.href != null }) {
                                                 LinkText(
                                                     lineText,
                                                     style,
                                                     inlineImages,
                                                     onPlaced = { textLayout, topLeft ->
-                                                        lineGeometry[line.blockIndex to line.start] =
-                                                            LineGeometry(line.blockIndex, line.start, line.endExclusive, textLayout, topLeft)
+                                                        lineGeometry[line.blockIndex to textStart] =
+                                                            LineGeometry(line.blockIndex, textStart, line.endExclusive, textLayout, topLeft)
                                                     },
                                                     onLink = { href ->
                                                         textUsedTap[0] = true
                                                         if (href.startsWith("http")) openExternalLink(href)
                                                         else scope.launch { session.jumpToHref(href) }
+                                                    },
+                                                    onLongPress = { offset ->
+                                                        val at = (textStart + offset).coerceAtMost(line.endExclusive - 1)
+                                                        selection = TextSelection.wordAt(chapter.blocks, line.blockIndex, at)
                                                     },
                                                 )
                                             } else {
@@ -701,17 +719,17 @@ fun ReaderScreen(
                                                     style,
                                                     inlineImages,
                                                     ranges,
-                                                    line.start,
+                                                    textStart,
                                                     onTapAnnotation = { entry ->
                                                         textUsedTap[0] = true
                                                         editing = EditorState(existing = entry)
                                                     },
                                                     onPlaced = { textLayout, topLeft ->
-                                                        lineGeometry[line.blockIndex to line.start] =
-                                                            LineGeometry(line.blockIndex, line.start, line.endExclusive, textLayout, topLeft)
+                                                        lineGeometry[line.blockIndex to textStart] =
+                                                            LineGeometry(line.blockIndex, textStart, line.endExclusive, textLayout, topLeft)
                                                     },
                                                     onLongPress = { offset ->
-                                                        val at = (line.start + offset).coerceAtMost(line.endExclusive - 1)
+                                                        val at = (textStart + offset).coerceAtMost(line.endExclusive - 1)
                                                         selection = TextSelection.wordAt(chapter.blocks, line.blockIndex, at)
                                                     },
                                                 )
@@ -1424,30 +1442,74 @@ private fun ContentsTabs(
 }
 
 /** Draws one image block; falls back to empty space when decode fails. */
-/** The book's `border-left` rule, a hairline [rule].atEm in from the column edge, over this line's height. */
+/** The book's `border-left` rule, a hairline [rule].at in from the column edge, over this line's height. */
 private fun Modifier.leftRule(rule: LeftRule?, bodyFontPx: Int, ink: Color): Modifier =
     if (rule == null) this else drawBehind {
-        val x = rule.atEm * bodyFontPx + 0.5.dp.toPx()
+        val x = rule.at.toPx(bodyFontPx, density) + 0.5.dp.toPx()
         drawLine(ink, Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
     }
 
+/**
+ * How LibreraX lays a picture on the page: dimmed to 80% on a dark page; on a tinted
+ * light one, a drawing on white multiplied into it so the white takes the page's
+ * colour; on a white page, as it is.
+ */
+private fun pictureFilter(page: Color, onPlainGround: () -> Boolean): ColorFilter? = when {
+    page.luminance() < 0.5f -> DIMMED
+    page != Color.White && onPlainGround() -> ColorFilter.tint(page, BlendMode.Multiply)
+    else -> null
+}
+
+private val DIMMED = ColorFilter.colorMatrix(ColorMatrix().apply { setToScale(0.8f, 0.8f, 0.8f, 1f) })
+
+/** An `<hr>`: a browser's grey hairline, or the book's ornament at its own size, centred in the band. */
 @Composable
-private fun ImageLine(chapter: Chapter, blockIndex: Int, reservedHeightPx: Int?) {
+private fun RuleLine(rule: Block.Rule, bodyFontPx: Int, ink: Color) {
+    val density = LocalDensity.current
+    val ornament = rule.ornament?.let { LocalBookImages.current?.image(it) }
+    Box(
+        Modifier.fillMaxWidth().height(with(density) { rule.heightPx(bodyFontPx, density.density).toDp() }).clipToBounds()
+            .drawBehind {
+                if (rule.line && ornament == null) drawLine(ink.copy(alpha = RULE_ALPHA), Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 1.dp.toPx())
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (ornament != null) {
+            androidx.compose.foundation.Image(
+                painter = BitmapPainter(ornament),
+                contentDescription = null,
+                modifier = Modifier.size(with(density) { (ornament.width * density.density).toDp() }, with(density) { (ornament.height * density.density).toDp() }),
+            )
+        }
+    }
+}
+
+private const val RULE_ALPHA = 0.4f
+
+@Composable
+private fun ImageLine(chapter: Chapter, blockIndex: Int, reservedHeightPx: Int?, columnWidthPx: Int, pageHeightPx: Int, fontPx: Int, page: Color) {
     val images = LocalBookImages.current
     val block = chapter.blocks[blockIndex] as Block.Image
     val bitmap = images?.image(block.src)
     if (bitmap != null) {
         val density = LocalDensity.current
-        val boxHeight = with(density) { (reservedHeightPx ?: 96.dp.roundToPx()).toDp() }
+        // the size ReflowLayout reserved, and the width that goes with it
+        val size = block.box.sizePx(bitmap.width, bitmap.height, density.density, fontPx, columnWidthPx, pageHeightPx)
+        val height = reservedHeightPx ?: size.heightPx
         Box(
-            Modifier.fillMaxWidth().height(boxHeight),
-            contentAlignment = Alignment.Center,
+            Modifier.fillMaxWidth().height(with(density) { height.toDp() }),
+            contentAlignment = when (block.align) {
+                BookAlign.CENTER -> Alignment.TopCenter
+                BookAlign.END -> Alignment.TopEnd
+                BookAlign.START -> Alignment.TopStart
+            },
         ) {
             androidx.compose.foundation.Image(
                 painter = BitmapPainter(bitmap),
                 contentDescription = block.alt.ifBlank { "image" },
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth(),
+                colorFilter = pictureFilter(page) { images?.onPlainGround(block.src) == true },
+                modifier = Modifier.size(with(density) { size.widthPx.toDp() }, with(density) { height.toDp() }),
             )
         }
     } else {
@@ -1526,13 +1588,12 @@ private fun lineStyle(block: Block.Text, display: DisplaySettings, ink: Color): 
     val density = LocalDensity.current
     // exactly the pixel size and line height ReflowLayout measured with, so a
     // drawn line is never wider or taller than the one that was paginated
-    val fontPx = with(density) { (display.fontSizeSp.sp.roundToPx() * block.fontScale(DisplaySettings.HEADING_SCALE)).toInt() }
-    val lineHeightPx = ceil(fontPx * display.lineRatio())
+    val fontPx = with(density) { (display.fontSizeSp.sp.roundToPx() * block.fontScale()).toInt() }
+    val lineHeightPx = ceil(fontPx * block.lineRatio(display.lineRatio()))
     return with(density) {
         TextStyle(
             fontSize = fontPx.toFloat().toSp(),
             lineHeight = lineHeightPx.toSp(),
-            fontStyle = if (block.kind == BlockKind.QUOTE) FontStyle.Italic else null,
             fontFamily = readerFontFamily(display.font, fonts),
             color = ink,
             lineHeightStyle = PageLineHeightStyle,
@@ -1553,10 +1614,40 @@ private fun readerFontFamily(key: String, fonts: com.baca.app.ui.UiFonts): FontF
     else -> fonts.serif
 }
 
-// Body paragraphs: 1em first-line indent and both edges flush (Librera's
-// defaults); headings stay ragged and unindented.
-private fun paragraphIndentPxOf(display: DisplaySettings, density: Density): Int =
-    with(density) { display.fontSizeSp.sp.roundToPx() }
+/**
+ * A floated first letter, [widthPx] wide, at the left of the lines beside it; its
+ * own line box ([lineRatio] of the block's font) starts at the first line's top.
+ */
+@Composable
+private fun DropCapText(text: AnnotatedString, style: TextStyle, lineRatio: Float, widthPx: Int) {
+    androidx.compose.foundation.text.BasicText(
+        text,
+        style = style.copy(lineHeight = style.fontSize * lineRatio),
+        maxLines = 1,
+        softWrap = false,
+        modifier = Modifier.layout { measurable, constraints ->
+            val placeable = measurable.measure(constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+            layout(0, 0) { placeable.place(-widthPx, 0) }
+        },
+    )
+}
+
+/**
+ * A list item's marker, outside its text as a browser draws it: right-aligned
+ * against where the item's text starts, [shiftPx] left of the first line.
+ */
+@Composable
+private fun ListMarker(marker: String, style: TextStyle, shiftPx: Int) {
+    androidx.compose.foundation.text.BasicText(
+        "$marker ",
+        style = style,
+        maxLines = 1,
+        modifier = Modifier.layout { measurable, constraints ->
+            val placeable = measurable.measure(constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+            layout(0, placeable.height) { placeable.place(-placeable.width - shiftPx, 0) }
+        },
+    )
+}
 
 /** A paragraph's last line and lines before a <br> stay ragged. */
 private fun breaksWord(text: String, lineEnd: Int): Boolean =
@@ -1610,20 +1701,13 @@ private const val JUSTIFY_SLACK_PX = 2
 // a line this short before a break isn't worth stretching into rivers
 private const val MAX_JUSTIFY_STRETCH = 0.35f
 
-// LibreraX's `div, p { margin: 0.2em 0 }`: adjacent margins collapse to one 0.2em gap.
-// One function for layout and renderer, so a full page fits what was measured.
-private fun paragraphGapPxOf(display: DisplaySettings, density: Density): Int =
-    with(density) { (display.fontSizeSp * 0.2f).sp.roundToPx() }
-
 private fun reflowSettingsOf(display: DisplaySettings, density: Density): ReflowSettings = with(density) {
     val fontPx = display.fontSizeSp.sp.roundToPx()
     ReflowSettings(
         fontSizePx = fontPx,
         lineHeightRatio = display.lineRatio(),
-        paragraphGapPx = paragraphGapPxOf(display, density),
-        paragraphIndentPx = paragraphIndentPxOf(display, density),
-        headingScale = DisplaySettings.HEADING_SCALE,
         imageHeightPx = (display.fontSizeSp * 6f).sp.roundToPx(),
+        cssPx = density.density,
         fontFamily = display.font,
     )
 }
@@ -1643,41 +1727,45 @@ private val DESKTOP_COLUMN = 680.dp
 
 private const val TAG_LINK = "baca.href"
 
-private fun annotatedOf(block: Block, ink: Color, accent: Color, faces: (BookFace) -> FontFamily): AnnotatedString = when (block) {
-    is Block.Image -> AnnotatedString("")
+// a browser's link colour (WebKit's -webkit-link), and LibreraX's on a dark page
+private val LINK_BLUE = Color(0xFF0000EE)
+private val DARK_LINK = Color(0xFF8AB4F8)
+
+/**
+ * A block's text styled as LibreraX shows it: the book's own colours on a light page,
+ * links in a browser's blue and underlined unless the book says otherwise; on a dark
+ * page everything in the theme's ink and links in a light blue (LibreraX's `css()`).
+ */
+private fun annotatedOf(block: Block, ink: Color, dark: Boolean, faces: (BookFace) -> FontFamily): AnnotatedString = when (block) {
+    is Block.Image, is Block.Rule -> AnnotatedString("")
     is Block.Text -> buildAnnotatedString {
         block.spans.forEach { span ->
-            if (span.href != null) {
-                pushStringAnnotation(TAG_LINK, span.href!!)
-                pushStyle(
-                    SpanStyle(
-                        color = if (span.plainLink) ink else accent,
-                        textDecoration = if (span.plainLink) null else TextDecoration.Underline,
-                        fontWeight = if (span.bold) FontWeight.Bold else null,
-                        fontStyle = if (span.italic) FontStyle.Italic else null,
-                        fontFeatureSettings = if (span.smallCaps) SMALL_CAPS else null,
-                        // as ComposeTextMetrics measures them
-                        fontSize = if (span.scale != 1f) span.scale.em else TextUnit.Unspecified,
-                        fontFamily = span.face?.let(faces),
-                    ),
-                )
-            } else {
-                pushStyle(
-                    SpanStyle(
-                        fontWeight = if (span.bold) FontWeight.Bold else null,
-                        fontStyle = if (span.italic) FontStyle.Italic else null,
-                        fontFeatureSettings = if (span.smallCaps) SMALL_CAPS else null,
-                        // as ComposeTextMetrics measures them
-                        fontSize = if (span.scale != 1f) span.scale.em else TextUnit.Unspecified,
-                        fontFamily = span.face?.let(faces),
-                        textDecoration = if (span.underline) TextDecoration.Underline else null,
-                        color = ink,
-                    ),
-                )
-            }
+            val link = span.href != null
+            if (link) pushStringAnnotation(TAG_LINK, span.href!!)
+            val bookColor = span.color
+            pushStyle(
+                SpanStyle(
+                    color = when {
+                        dark -> if (link) DARK_LINK else ink
+                        bookColor == TEXT_COLOR -> ink
+                        bookColor != null -> Color(bookColor)
+                        link -> LINK_BLUE
+                        else -> ink
+                    },
+                    textDecoration = if (if (link) !span.plainLink else span.underline) TextDecoration.Underline else null,
+                    fontWeight = if (span.bold) FontWeight.Bold else null,
+                    fontStyle = if (span.italic) FontStyle.Italic else null,
+                    fontFeatureSettings = if (span.smallCaps) SMALL_CAPS else null,
+                    // as ComposeTextMetrics measures them
+                    fontSize = if (span.scale != 1f) span.scale.em else TextUnit.Unspecified,
+                    fontFamily = span.face?.let(faces),
+                    baselineShift = if (span.baseline != 0f) BaselineShift(span.baseline) else null,
+                    letterSpacing = if (span.letterSpacing != 0f) span.letterSpacing.em else TextUnit.Unspecified,
+                ),
+            )
             span.image?.let { appendInlineContent(it.id, span.text) } ?: append(span.text)
             pop()
-            if (span.href != null) pop()
+            if (link) pop()
         }
     }
 }
@@ -1690,6 +1778,8 @@ private fun LinkText(
     inlineContent: Map<String, InlineTextContent>,
     onPlaced: (TextLayoutResult, Offset) -> Unit,
     onLink: (String) -> Unit,
+    /** a long press at this char offset into the line */
+    onLongPress: (Int) -> Unit,
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     androidx.compose.foundation.text.BasicText(
@@ -1700,14 +1790,17 @@ private fun LinkText(
         inlineContent = inlineContent,
         onTextLayout = { layout = it },
         modifier = Modifier.onGloballyPositioned { coordinates -> layout?.let { onPlaced(it, coordinates.positionInRoot()) } }.pointerInput(text) {
-            detectTapGestures { pos ->
-                layout?.let { l ->
-                    val offset = l.getOffsetForPosition(pos)
-                    text.getStringAnnotations(TAG_LINK, offset, offset).firstOrNull()?.let { ann ->
-                        onLink(ann.item)
+            detectTapGestures(
+                onTap = { pos ->
+                    layout?.let { l ->
+                        val offset = l.getOffsetForPosition(pos)
+                        text.getStringAnnotations(TAG_LINK, offset, offset).firstOrNull()?.let { ann ->
+                            onLink(ann.item)
+                        }
                     }
-                }
-            }
+                },
+                onLongPress = { pos -> layout?.let { onLongPress(it.getOffsetForPosition(pos)) } },
+            )
         },
     )
 }

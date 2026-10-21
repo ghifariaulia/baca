@@ -32,7 +32,8 @@ internal fun txtEpub(fileName: String, raw: String): ParsedEpub {
         .map { it.replace(Regex("\\s+"), " ").trim() }
         .filter { it.isNotBlank() }
     val blocks = paragraphs.map {
-        Block.Text(listOf(FormattedSpan(it, false, false)), BlockKind.PARAGRAPH, 0)
+        // LibreraX reads a text file as HTML paragraphs: a browser's 1em between them, no indent
+        Block.Text(listOf(FormattedSpan(it, false, false)), BlockKind.PARAGRAPH, 0, gapBefore = Spacing(1f))
     }
     val title = fileName.substringBeforeLast('.').trim()
     return ParsedEpub(
@@ -106,7 +107,8 @@ internal fun fb2Epub(fileName: String, xml: String): ParsedEpub {
         val text = paraText.toString().replace(Regex("\\s+"), " ").trim()
         paraText = StringBuilder()
         if (text.isNotEmpty()) {
-            blocks.add(Block.Text(listOf(FormattedSpan(text, false, false)), BlockKind.PARAGRAPH, 0))
+            // foliate's FB2 stylesheet: `p { text-indent: 1em; margin: 0 }`
+            blocks.add(Block.Text(listOf(FormattedSpan(text, false, false)), BlockKind.PARAGRAPH, 0, indent = Spacing(1f), gapBefore = Spacing.ZERO))
         }
     }
 
@@ -172,7 +174,7 @@ internal fun fb2Epub(fileName: String, xml: String): ParsedEpub {
                             chapterTitle = text
                             chapterTitleCollected = true
                             blocks.add(
-                                Block.Text(listOf(FormattedSpan(text, bold = true, italic = false)), BlockKind.HEADING, 0),
+                                Block.Text(listOf(FormattedSpan(text, bold = true, italic = false)), BlockKind.HEADING, 0, align = TextAlign.CENTER, scale = 2f),
                             )
                         }
                     }

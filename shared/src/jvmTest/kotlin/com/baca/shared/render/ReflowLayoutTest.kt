@@ -2,6 +2,8 @@ package com.baca.shared.render
 
 import com.baca.shared.parser.Block
 import com.baca.shared.parser.BlockKind
+import com.baca.shared.parser.Spacing
+import com.baca.shared.parser.DropCap
 import com.baca.shared.parser.FormattedSpan
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -15,7 +17,6 @@ private fun layout(
     vararg blocks: Block,
     fontSizePx: Int = 20,
     lineHeightRatio: Float = 1.0f,
-    paragraphGapPx: Int = 0,
     colWidth: Int = 100,
     pageHeight: Int = 100,
     metrics: TextMetrics = GridMetrics(),
@@ -24,7 +25,6 @@ private fun layout(
     ReflowSettings(
         fontSizePx = fontSizePx,
         lineHeightRatio = lineHeightRatio,
-        paragraphGapPx = paragraphGapPx,
         imageHeightPx = 60,
     ),
     colWidth, pageHeight,
@@ -38,8 +38,8 @@ class ReflowLayoutTest {
     @Test
     fun `paginates by height with paragraph gaps`() {
         val p1 = text("aaaa bbbb cccc dddd eeee ffff gggg hhhh") // 39 chars, 4 lines
-        val p2 = text("iiii jjjj kkkk llll mmmm nnnn oooo pppp") // 39 chars, 4 lines
-        val l = layout(p1, p2, paragraphGapPx = 20, pageHeight = 100)
+        val p2 = text("iiii jjjj kkkk llll mmmm nnnn oooo pppp").copy(gapBefore = Spacing(1f)) // 39 chars, 4 lines
+        val l = layout(p1, p2, pageHeight = 100)
         // p1: 4 lines x 20 = 80px. p2 needs gap 20 + 80 = 100 more -> new page
         assertEquals(2, l.pageCount())
         assertTrue(l.pages[0].all { it.blockIndex == 0 })
@@ -138,24 +138,8 @@ class ReflowLayoutTest {
     }
 
     @Test
-    fun `image shrinks into leftover space instead of leaving it blank`() {
+    fun `a picture that doesn't fit moves whole to the next page`() {
         val p1 = text("0123456789".repeat(2)) // 2 lines = 40px, 60px left
-        val img = Block.Image("fig", "img.jpg")
-        val l = ReflowLayout(
-            listOf(p1, img), GridMetrics(),
-            ReflowSettings(fontSizePx = 20, lineHeightRatio = 1.0f, imageHeightPx = 60),
-            100, 100,
-            imageHeight = { 80 }, // 60px left >= half of 80
-        )
-        assertEquals(1, l.pageCount())
-        assertEquals(60, l.pages[0].single { it.isImage }.heightPx)
-        // anchors on the shrunk image still resolve to its page
-        assertEquals(0, l.pageForPosition(1, 0, "")?.pageIndex)
-    }
-
-    @Test
-    fun `image moves to next page when leftover space is under half its height`() {
-        val p1 = text("0123456789".repeat(4)) // 4 lines = 80px, 20px left
         val img = Block.Image("fig", "img.jpg")
         val l = ReflowLayout(
             listOf(p1, img), GridMetrics(),
@@ -168,24 +152,24 @@ class ReflowLayoutTest {
     }
 
     @Test
-    fun `first line of a paragraph is shortened by the indent, headings are not`() {
+    fun `first line of a paragraph is shortened by its text-indent`() {
         val l = ReflowLayout(
-            listOf(text("0123456789abcdefghij", BlockKind.HEADING), text("0123456789abcdefghij")),
+            listOf(text("0123456789abcdefghij"), text("0123456789abcdefghij").copy(indent = Spacing(1f))),
             GridMetrics(),
-            ReflowSettings(fontSizePx = 20, lineHeightRatio = 1.0f, paragraphIndentPx = 20),
+            ReflowSettings(fontSizePx = 20, lineHeightRatio = 1.0f),
             100, 1000,
         )
-        // heading: 10 + 10; paragraph: 8 (two columns of indent) + 10 + 2
+        // no indent: 10 + 10; 1em indent: 8 (two columns of indent) + 10 + 2
         assertEquals(listOf(0 to 10, 10 to 20), l.lines.filter { it.blockIndex == 0 }.map { it.start to it.endExclusive })
         assertEquals(listOf(0 to 8, 8 to 18, 18 to 20), l.lines.filter { it.blockIndex == 1 }.map { it.start to it.endExclusive })
     }
 
     @Test
     fun `hanging paragraph keeps the first line full and indents the rest, after a line break too`() {
-        val hanging = text("0123456789abcdefghij\nklmnopqrst").copy(indent = false, hanging = true)
+        val hanging = text("0123456789abcdefghij\nklmnopqrst").copy(indent = Spacing(-1f), inset = Spacing(1f))
         val l = ReflowLayout(
             listOf(hanging), GridMetrics(),
-            ReflowSettings(fontSizePx = 20, lineHeightRatio = 1.0f, paragraphIndentPx = 20),
+            ReflowSettings(fontSizePx = 20, lineHeightRatio = 1.0f),
             100, 1000,
         )
         // 10 at full width, then 8 columns per line (two columns of indent)
@@ -194,7 +178,7 @@ class ReflowLayoutTest {
 
     @Test
     fun `a block set in by a left border wraps to the narrower width`() {
-        val inset = text("0123456789abcdefghij").copy(indent = false, insetEm = 1f)
+        val inset = text("0123456789abcdefghij").copy(inset = Spacing(1f))
         val l = ReflowLayout(listOf(inset), GridMetrics(), ReflowSettings(fontSizePx = 20, lineHeightRatio = 1.0f), 100, 1000)
         // 100 wide less a 20px inset: 8 columns a line
         assertEquals(listOf(0 to 8, 8 to 16, 16 to 20), l.lines.map { it.start to it.endExclusive })
@@ -202,17 +186,17 @@ class ReflowLayoutTest {
 
     @Test
     fun `a right float shares the row with the line before when it fits`() {
-        val date = text("28th Feb").copy(indent = false)
-        val place = text("tokyo").copy(indent = false, floatsRight = true)
+        val date = text("28th Feb")
+        val place = text("tokyo").copy(floatsRight = true)
         fun layout(width: Int) = ReflowLayout(
             listOf(date, place), GridMetrics(),
-            ReflowSettings(fontSizePx = 20, lineHeightRatio = 1.0f, paragraphIndentPx = 10), width, 1000,
+            ReflowSettings(fontSizePx = 20, lineHeightRatio = 1.0f), width, 1000,
         )
-        // 80 + 10 apart + 50 fits in 200: one row, no extra height
+        // 80 + 20 (1em) apart + 50 fits in 200: one row, no extra height
         val wide = layout(200)
         assertEquals(listOf(false, true), wide.lines.map { it.joinsPrevious })
         assertEquals(1, wide.pageCount())
-        // 140 doesn't fit in 120: its own line
+        // 150 doesn't fit in 120: its own line
         assertEquals(listOf(false, false), layout(120).lines.map { it.joinsPrevious })
     }
 
@@ -229,7 +213,7 @@ class ReflowLayoutTest {
     fun `heading occupies first line of first page`() {
         val heading = text("Introduction", BlockKind.HEADING)
         val para = text("word ".repeat(50))
-        val l = layout(heading, para, pageHeight = 100, paragraphGapPx = 20)
+        val l = layout(heading, para, pageHeight = 100)
         assertEquals(0, l.pages[0][0].blockIndex)
         assertEquals(0, l.pages[0][0].start)
     }
@@ -249,5 +233,51 @@ class ReflowLayoutTest {
         assertEquals(10, settings.evenLinesPx(230))
         assertEquals(0, settings.evenLinesPx(240))
         assertEquals(0, settings.evenLinesPx(20))
+    }
+
+    @Test
+    fun `a negative indent never pulls the first line out past the column`() {
+        val box = text("x").copy(indent = Spacing(-2f), inset = Spacing(1f)).lineBox(20, 1f, 100)
+        assertEquals(LineBox(startPx = 0, endPx = 0, firstLinePx = 0, restLinePx = 40), box)
+    }
+
+    @Test
+    fun `headings are set at a browser's normal line height, not the reader's`() {
+        val l = ReflowLayout(
+            listOf(text("Title", BlockKind.HEADING), text("Body")),
+            GridMetrics(), ReflowSettings(fontSizePx = 20, lineHeightRatio = 2f), 100, 70,
+        )
+        // a 24px heading line and a 40px body line fit 70px; at the reader's 40px the heading wouldn't
+        assertEquals(1, l.pageCount())
+    }
+
+    @Test
+    fun `lines beside a drop cap are shortened by its width`() {
+        // a 3em "D" (one 10px grid column at any size) one line-height tall stands beside 3 lines
+        val capped = Block.Text(
+            listOf(FormattedSpan("D", false, false, scale = 3f), FormattedSpan("abcdefghijklmnopqrstuvwxyz0123456789", false, false)),
+            BlockKind.PARAGRAPH, 0, dropCap = DropCap(1, 1f),
+        )
+        val l = ReflowLayout(listOf(capped), GridMetrics(), ReflowSettings(fontSizePx = 20, lineHeightRatio = 1f), 100, 1000)
+        // 9 columns beside the cap for 3 lines, then 10
+        assertEquals(listOf(0 to 10, 10 to 19, 19 to 28, 28 to 37), l.lines.map { it.start to it.endExclusive })
+        assertEquals(listOf(10, 10, 10, 0), l.lines.map { it.floatIndentPx })
+    }
+
+    @Test
+    fun `the line after a drop cap's lines doesn't start with the break's space`() {
+        val capped = Block.Text(
+            listOf(FormattedSpan("D", false, false, scale = 3f), FormattedSpan("abcdefgh abcdefgh abcdefgh abcd", false, false)),
+            BlockKind.PARAGRAPH, 0, dropCap = DropCap(1, 0.5f),
+        )
+        val l = ReflowLayout(listOf(capped), GridMetrics(), ReflowSettings(fontSizePx = 20, lineHeightRatio = 1f), 100, 1000)
+        assertTrue(l.lines.drop(1).none { capped.text[it.start] == ' ' }, l.lines.map { capped.text.substring(it.start, it.endExclusive) }.toString())
+    }
+
+    @Test
+    fun `css px spacing follows the screen's density, not the font size`() {
+        val block = text("x").copy(inset = Spacing(em = 1f, px = 10f))
+        assertEquals(20 + 30, block.lineBox(bodyFontPx = 20, cssPx = 3f, columnPx = 400).startPx)
+        assertEquals(40 + 30, block.lineBox(bodyFontPx = 40, cssPx = 3f, columnPx = 400).startPx)
     }
 }

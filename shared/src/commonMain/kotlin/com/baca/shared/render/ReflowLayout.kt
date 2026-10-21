@@ -2,7 +2,7 @@ package com.baca.shared.render
 
 import com.baca.shared.parser.Block
 import com.baca.shared.parser.BlockKind
-import com.baca.shared.parser.TextAlign
+import com.baca.shared.parser.DropCap
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
@@ -13,26 +13,43 @@ import kotlin.math.roundToInt
 data class ReflowSettings(
     val fontSizePx: Int,
     val lineHeightRatio: Float = 1.7f,
-    val paragraphGapPx: Int = 0,
-    val headingScale: Float = 1.35f,
     val imageHeightPx: Int = 0,
-    /** first-line indent of body paragraphs (not headings) */
-    val paragraphIndentPx: Int = 0,
+    /** device px to a CSS px (the screen density): a book's px spacing doesn't grow with the font */
+    val cssPx: Float = 1f,
     /** "serif" | "sans" | "mono" | "libron" — must match the renderer's font. */
     val fontFamily: String? = null,
 )
 
-/** Font size relative to body text: the book's CSS size, else the heading default. Shared by layout and renderer. */
-fun Block.Text.fontScale(headingScale: Float): Float = scale ?: if (kind == BlockKind.HEADING) headingScale else 1f
+/** Font size relative to body text. Shared by layout and renderer. */
+fun Block.Text.fontScale(): Float = scale ?: 1f
 
-/** Whether the block's first line takes the reader's paragraph indent. Shared by layout and renderer. */
-fun Block.Text.takesIndent(): Boolean = kind != BlockKind.HEADING && indent && align == TextAlign.START
+/**
+ * Line height over font size: the reader's for running text, a browser's `normal`
+ * for headings, which LibreraX leaves at the book's own. Shared by layout and renderer.
+ */
+fun Block.Text.lineRatio(readerRatio: Float): Float = if (kind == BlockKind.HEADING) HEADING_LINE_HEIGHT else readerRatio
 
-/** Whether every line but the first takes the reader's paragraph indent (book CSS hanging indent). Shared by layout and renderer. */
-fun Block.Text.hangs(): Boolean = kind != BlockKind.HEADING && hanging && align == TextAlign.START
+private const val HEADING_LINE_HEIGHT = 1.2f
 
-/** How far the book's CSS (a left border's padding) sets the text in. Shared by layout and renderer. */
-fun Block.Text.insetPx(fontSizePx: Int): Int = (insetEm * fontSizePx).roundToInt()
+/**
+ * Where a block's lines sit, in px from the column's left: lines are measured in a
+ * box from [startPx] to [endPx] short of the right edge; the first line starts
+ * [firstLinePx] into it and the others [restLinePx]. A positive `text-indent` moves
+ * the first line in; a negative one pulls it out to the left of the rest. Shared by
+ * layout and renderer.
+ */
+data class LineBox(val startPx: Int, val endPx: Int, val firstLinePx: Int, val restLinePx: Int) {
+    fun linePx(firstLine: Boolean): Int = startPx + if (firstLine) firstLinePx else restLinePx
+}
+
+fun Block.Text.lineBox(bodyFontPx: Int, cssPx: Float, columnPx: Int): LineBox {
+    val indent = indent.toPx(bodyFontPx, cssPx)
+    val inset = inset.toPx(bodyFontPx, cssPx) + (insetShare * columnPx).roundToInt()
+    val hang = maxOf(-indent, 0)
+    val end = insetEnd.toPx(bodyFontPx, cssPx) + (insetEndShare * columnPx).roundToInt()
+    // like LibreraX's keepIndentsInside: a hanging first line never pulls out past the column
+    return LineBox(maxOf(inset - hang, 0), end, maxOf(indent, 0), hang)
+}
 
 /**
  * Room above the text of a page [heightPx] tall, as LibreraX lays its page out: a page
@@ -45,9 +62,13 @@ fun ReflowSettings.evenLinesPx(heightPx: Int): Int {
     return heightPx % lineHeightPx / 2
 }
 
-/** Space above the block: the book's CSS margins, else the reader's paragraph gap. Shared by layout and renderer. */
-fun Block.gapBeforePx(fontSizePx: Int, defaultGapPx: Int): Int =
-    gapBeforeEm?.let { (it * fontSizePx).roundToInt() } ?: defaultGapPx
+/** An `<hr>`'s band: the book's height, else a browser's 1px border top and bottom. Shared by layout and renderer. */
+fun Block.Rule.heightPx(fontSizePx: Int, cssPx: Float): Int = height?.toPx(fontSizePx, cssPx) ?: if (line) RULE_PX else 0
+
+private const val RULE_PX = 2
+
+/** Space above the block: its CSS margins and padding (TECH 3.1). Shared by layout and renderer. */
+fun Block.gapBeforePx(fontSizePx: Int, cssPx: Float): Int = gapBefore?.toPx(fontSizePx, cssPx) ?: 0
 
 /** One visible line (or image placeholder) placed on a page. */
 data class PageLine(
@@ -59,6 +80,8 @@ data class PageLine(
     val heightPx: Int? = null,
     /** a right float drawn on the previous line's row, at its right end; takes no height */
     val joinsPrevious: Boolean = false,
+    /** a drop cap's width, which this line starts after */
+    val floatIndentPx: Int = 0,
 )
 
 enum class AnchorResolution { OFFSETS, QUOTE }
@@ -140,11 +163,11 @@ class ReflowLayout(
         page.any { it.blockIndex == line.blockIndex && it.start == line.start }
     }
 
-    private fun fontPxOf(block: Block.Text): Int = (settings.fontSizePx * block.fontScale(settings.headingScale)).toInt()
+    private fun fontPxOf(block: Block.Text): Int = (settings.fontSizePx * block.fontScale()).toInt()
 
     // round up: the renderer draws the exact fractional height, so rounding
     // down would let a full page overflow and clip its last line
-    private fun lineHeightPxOf(block: Block.Text): Int = ceil(fontPxOf(block) * settings.lineHeightRatio).toInt()
+    private fun lineHeightPxOf(block: Block.Text): Int = ceil(fontPxOf(block) * block.lineRatio(settings.lineHeightRatio)).toInt()
 
     private fun buildLines(): List<PageLine> {
         val result = mutableListOf<PageLine>()
@@ -154,6 +177,10 @@ class ReflowLayout(
             when (block) {
                 is Block.Image -> {
                     result.add(PageLine(blockIndex, 0, 0, isImage = true, heightPx = imageHeight(block)))
+                    lastRightPx = null
+                }
+                is Block.Rule -> {
+                    result.add(PageLine(blockIndex, 0, 0, isImage = true, heightPx = block.heightPx(settings.fontSizePx, settings.cssPx)))
                     lastRightPx = null
                 }
                 is Block.Text -> {
@@ -173,14 +200,20 @@ class ReflowLayout(
                                     span.scale,
                                     span.face,
                                     span.image,
+                                    span.baseline,
+                                    span.letterSpacing,
                                 ),
                             )
                             offset += span.text.length
                         }
                     }
-                    val widthPx = columnWidthPx - block.insetPx(settings.fontSizePx)
-                    val spans = if (block.hangs()) {
-                        hangingLines(block, styleRanges, widthPx)
+                    val box = block.lineBox(settings.fontSizePx, settings.cssPx, columnWidthPx)
+                    val widthPx = columnWidthPx - box.startPx - box.endPx
+                    val cap = block.dropCap?.let { capOf(block, it, styleRanges) }
+                    val spans = if (cap != null) {
+                        dropCapLines(block, styleRanges, widthPx, cap)
+                    } else if (box.restLinePx > 0) {
+                        hangingLines(block, styleRanges, widthPx, box.restLinePx)
                     } else {
                         metrics.layoutLines(
                             block.text,
@@ -189,22 +222,22 @@ class ReflowLayout(
                             widthPx,
                             settings.fontFamily,
                             styleRanges,
-                            if (block.takesIndent()) settings.paragraphIndentPx else 0,
+                            box.firstLinePx,
                         )
                     }
                     val drawn = spans.filter { it.endExclusive > it.start }
-                    val inset = block.insetPx(settings.fontSizePx)
                     // like a browser: a right float shares the row when it fits after the text, a space apart
                     val joins = block.floatsRight && drawn.size == 1 && lastRightPx?.let {
-                        it + settings.paragraphIndentPx + drawn.single().rightPx <= columnWidthPx - inset
+                        it + settings.fontSizePx + drawn.single().rightPx <= columnWidthPx - box.startPx - box.endPx
                     } == true
-                    drawn.forEach { span ->
-                        result.add(PageLine(blockIndex, span.start, span.endExclusive, joinsPrevious = joins))
+                    drawn.forEachIndexed { i, span ->
+                        val floatIndent = if (cap != null && i < cap.lines) cap.widthPx else 0
+                        result.add(PageLine(blockIndex, span.start, span.endExclusive, joinsPrevious = joins, floatIndentPx = floatIndent))
                     }
                     lastRightPx = drawn.lastOrNull()?.let { last ->
                         // hanging lines after the first are measured without their indent
-                        val hang = if (block.hangs() && last.start > 0) settings.paragraphIndentPx else 0
-                        inset + hang + last.rightPx
+                        val hang = if (last.start > 0) box.restLinePx else 0
+                        box.startPx + hang + last.rightPx
                     }
                 }
             }
@@ -212,12 +245,48 @@ class ReflowLayout(
         return result
     }
 
+    /** A drop cap's width and how many lines it stands beside. */
+    private data class Cap(val widthPx: Int, val lines: Int)
+
+    private fun capOf(block: Block.Text, cap: DropCap, styles: List<TextMetrics.StyleRange>): Cap? {
+        val capStyles = styles.mapNotNull { r -> r.copy(endExclusive = minOf(r.endExclusive, cap.end)).takeIf { it.endExclusive > it.start } }
+        val capText = block.text.substring(0, cap.end)
+        val width = metrics.layoutLines(capText, fontPxOf(block), lineHeightPxOf(block), columnWidthPx * 2, settings.fontFamily, capStyles)
+            .firstOrNull()?.rightPx ?: return null
+        val capFontPx = fontPxOf(block) * (block.spans.firstOrNull()?.scale ?: 1f)
+        val lines = ceil(capFontPx * cap.lineRatio / lineHeightPxOf(block)).toInt().coerceAtLeast(1)
+        return Cap(width, lines)
+    }
+
     /**
-     * The first line at full width, the rest narrower by the indent. Measured
+     * The text after a drop cap: its first [Cap.lines] lines narrower by the cap's
+     * width, the rest at full width. The first line also holds the cap's own chars,
+     * so every offset of the block lies in a line.
+     */
+    private fun dropCapLines(block: Block.Text, styles: List<TextMetrics.StyleRange>, widthPx: Int, cap: Cap): List<TextMetrics.LineSpan> {
+        val text = block.text
+        val capEnd = block.dropCap!!.end
+        fun measure(from: Int, width: Int) = metrics.layoutLines(
+            text.substring(from), fontPxOf(block), lineHeightPxOf(block), width, settings.fontFamily,
+            styles.mapNotNull { range ->
+                range.copy(start = maxOf(range.start - from, 0), endExclusive = range.endExclusive - from).takeIf { it.endExclusive > it.start }
+            },
+        ).map { it.copy(start = it.start + from, endExclusive = it.endExclusive + from) }
+        if (capEnd >= text.length) return listOf(TextMetrics.LineSpan(0, text.length))
+        val beside = measure(capEnd, widthPx - cap.widthPx).take(cap.lines)
+        var besideEnd = beside.lastOrNull()?.endExclusive ?: capEnd
+        // the break's own space belongs to neither line
+        while (besideEnd < text.length && text[besideEnd] == ' ') besideEnd++
+        val below = if (besideEnd < text.length) measure(besideEnd, widthPx) else emptyList()
+        return (beside + below).mapIndexed { i, line -> if (i == 0) line.copy(start = 0) else line }
+    }
+
+    /**
+     * The first line at full width, the rest narrower by [hangPx]. Measured
      * in two parts rather than with a rest-line indent, because text engines
      * differ on whether a line after a hard break counts as a "first line".
      */
-    private fun hangingLines(block: Block.Text, styles: List<TextMetrics.StyleRange>, widthPx: Int): List<TextMetrics.LineSpan> {
+    private fun hangingLines(block: Block.Text, styles: List<TextMetrics.StyleRange>, widthPx: Int, hangPx: Int): List<TextMetrics.LineSpan> {
         val text = block.text
         fun measure(from: Int, widthPx: Int) = metrics.layoutLines(
             text.substring(from),
@@ -236,7 +305,7 @@ class ReflowLayout(
         while (restStart < text.length && text[restStart] == ' ') restStart++
         if (restStart < text.length && text[restStart] == '\n') restStart++
         if (restStart >= text.length) return listOf(first)
-        val rest = measure(restStart, widthPx - settings.paragraphIndentPx)
+        val rest = measure(restStart, widthPx - hangPx)
             .map { it.copy(start = it.start + restStart, endExclusive = it.endExclusive + restStart) }
         return listOf(first) + rest
     }
@@ -246,24 +315,17 @@ class ReflowLayout(
         var current = mutableListOf<PageLine>()
         var used = 0
         var lastBlock = -1
-        for (original in lines) {
-            var line = original
-            var height = line.heightPx
+        for (line in lines) {
+            val height = line.heightPx
                 ?: if (line.isImage) settings.imageHeightPx else lineHeightOf(line)
             if (line.joinsPrevious && current.isNotEmpty()) {
                 current.add(line)
                 lastBlock = line.blockIndex
                 continue
             }
-            val gap = if (line.blockIndex != lastBlock && used > 0) blocks[line.blockIndex].gapBeforePx(settings.fontSizePx, settings.paragraphGapPx) else 0
+            val gap = if (line.blockIndex != lastBlock && used > 0) blocks[line.blockIndex].gapBeforePx(settings.fontSizePx, settings.cssPx) else 0
             lastBlock = line.blockIndex
-            val left = pageHeightPx - used - gap
-            // an image pushed whole to the next page leaves the rest of this
-            // one blank; scale it into the leftover space when that's not tiny
-            if (line.isImage && used > 0 && height > left && left >= height * MIN_IMAGE_SCALE) {
-                height = left
-                line = line.copy(heightPx = left)
-            }
+            // a picture that doesn't fit moves whole to the next page (foliate's break-inside: avoid)
             if (used > 0 && used + gap + height > pageHeightPx) {
                 pages.add(current)
                 current = mutableListOf()
@@ -286,6 +348,5 @@ class ReflowLayout(
 
     private companion object {
         const val QUOTE_LENGTH = 60
-        const val MIN_IMAGE_SCALE = 0.5f
     }
 }

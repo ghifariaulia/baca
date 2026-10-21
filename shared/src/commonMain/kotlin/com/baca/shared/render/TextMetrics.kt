@@ -29,6 +29,10 @@ interface TextMetrics {
         val face: BookFace? = null,
         /** an image in the line instead of the range's one char */
         val image: InlineImage? = null,
+        /** raised (positive) or lowered, in em */
+        val baseline: Float = 0f,
+        /** extra space after each letter, in em */
+        val letterSpacing: Float = 0f,
     )
 
     /** [fontFamily]: "serif" | "sans" | "mono" | "libron" | null = system default. */

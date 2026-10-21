@@ -73,6 +73,19 @@ class EpubParserTest {
     }
 
     @Test
+    fun `text outside paragraphs is a block of its own, as a browser shows it`() {
+        val blocks = parseXhtml(
+            "<html><head><title>Cover</title></head><body><div>Hello <b>you</b></div><section>Before<p>Inside</p>after</section>" +
+                "<table><tr><td>cell one</td><td>cell two</td></tr></table><dl><dt>Term</dt><dd>Meaning</dd></dl>" +
+                "<div>\n  </div></body></html>",
+        )
+        assertEquals(
+            listOf("Hello you", "Before", "Inside", "after", "cell one cell two", "Term", "Meaning"),
+            blocks.map { it.text },
+        )
+    }
+
+    @Test
     fun `printed page numbers are left out of the text`() {
         val blocks = parseXhtml(
             """<html xmlns:epub="http://www.idpf.org/2007/ops"><body>""" +
@@ -89,6 +102,12 @@ class EpubParserTest {
     fun `unique identifier is read from the opf`() {
         assertEquals("http://www.gutenberg.org/84", parse(realEpub("books/frankenstein.epub")).identifier)
         assertEquals(null, parse(tempEpub(tinyEpubOf(xhtmlOf("<p>x</p>")))).identifier)
+    }
+
+    @Test
+    fun `the book's language is read from the opf`() {
+        assertEquals("en", parse(realEpub("books/frankenstein.epub")).language)
+        assertEquals(null, parse(tempEpub(tinyEpubOf(xhtmlOf("<p>x</p>")))).language)
     }
 
     @Test

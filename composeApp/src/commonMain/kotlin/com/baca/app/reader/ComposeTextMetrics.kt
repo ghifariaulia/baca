@@ -6,6 +6,8 @@ import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.intl.LocaleList
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextIndent
@@ -35,6 +37,8 @@ class ComposeTextMetrics(
     private val density: Density,
     /** an inline image's width over its height */
     private val imageAspect: (String) -> Float = { 1f },
+    /** the book's language: hyphenation follows it, as LibreraX's does; null is the device's */
+    private val language: String? = null,
     /** display font name → family, from the app's bundled fonts. */
     private val families: (String?) -> FontFamily?,
 ) : TextMetrics {
@@ -60,6 +64,7 @@ class ComposeTextMetrics(
                 hyphens = Hyphens.Auto,
                 // the Simple strategy only hyphenates words longer than a whole line
                 lineBreak = LineBreak.Paragraph,
+                localeList = language?.let { LocaleList(it) },
             )
         }
         val annotated = if (styles.isEmpty()) {
@@ -75,6 +80,8 @@ class ComposeTextMetrics(
                             fontFeatureSettings = if (range.smallCaps) SMALL_CAPS else null,
                             fontSize = if (range.scale != 1f) range.scale.em else TextUnit.Unspecified,
                             fontFamily = range.face?.let { families(faceFontName(it)) },
+                            baselineShift = if (range.baseline != 0f) BaselineShift(range.baseline) else null,
+                            letterSpacing = if (range.letterSpacing != 0f) range.letterSpacing.em else TextUnit.Unspecified,
                         ),
                         range.start,
                         range.endExclusive,

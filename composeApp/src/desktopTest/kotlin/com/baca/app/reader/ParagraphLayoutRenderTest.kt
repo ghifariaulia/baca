@@ -49,7 +49,8 @@ class ParagraphLayoutRenderTest {
         rule.waitUntil(10_000) { rule.onAllNodesWithText("Page", substring = true).fetchSemanticsNodes().isNotEmpty() }
         rule.mainClock.advanceTimeBy(1_000)
         rule.waitForIdle()
-        repeat(14) {
+        // past the Gutenberg header and the contents, into the letters
+        repeat(40) {
             rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
             rule.waitForIdle()
         }

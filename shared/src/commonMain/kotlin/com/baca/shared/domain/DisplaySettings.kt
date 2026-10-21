@@ -34,7 +34,6 @@ data class DisplaySettings(
         val MARGINS = setOf("narrow", "medium", "wide")
 
         val LINE_SPACING_RATIOS = mapOf("compact" to 1.5f, "normal" to 1.7f, "relaxed" to 1.9f)
-        const val HEADING_SCALE = 1.35f
     }
 }
 

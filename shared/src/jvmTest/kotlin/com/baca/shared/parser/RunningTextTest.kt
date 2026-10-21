@@ -3,7 +3,6 @@ package com.baca.shared.parser
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
-import kotlin.test.assertSame
 
 class RunningTextTest {
 
@@ -24,8 +23,7 @@ class RunningTextTest {
         assertNull(body.scale)
         assertEquals(0.8f, log.scale!!, 0.001f)
         assertEquals(1f / 0.9f, unsized.scale!!, 0.001f)
-        // a heading without a size of its own keeps the reader's heading size
-        assertNull(title.scale)
+        assertEquals(1f / 0.9f, title.scale!!, 0.001f)
     }
 
     @Test
@@ -38,6 +36,23 @@ class RunningTextTest {
     @Test
     fun `a book with too little text keeps its sizes`() {
         val book = listOf(Chapter("c.xhtml", null, listOf(para("Short", 0.9f))))
-        assertSame(book, withRunningText(book))
+        assertEquals(0.9f, (withRunningText(book).single().blocks.single() as Block.Text).scale)
+    }
+
+    @Test
+    fun `spacing goes into em of the running text, and 4em or more is halved`() {
+        val spaced = para(prose, 0.5f).copy(gapBefore = Spacing(1f), inset = Spacing(4f), indent = Spacing(-1f))
+        val text = withRunningText(listOf(Chapter("c.xhtml", null, listOf(spaced)))).single().blocks.single() as Block.Text
+        // 1em of 16px is 2em of 8px running text; 4em is 8, wide enough to be halved
+        assertEquals(listOf(2f, 4f, -2f), listOf(text.gapBefore?.em, text.inset.em, text.indent.em))
+    }
+
+    @Test
+    fun `px spacing stays in CSS px, unless it's wide enough to be halved`() {
+        val spaced = para(prose, 0.5f).copy(gapBefore = Spacing(px = 10f), inset = Spacing(px = 40f))
+        val text = withRunningText(listOf(Chapter("c.xhtml", null, listOf(spaced)))).single().blocks.single() as Block.Text
+        assertEquals(Spacing(px = 10f), text.gapBefore)
+        // 40px is 5em of 8px running text: halved, and kept in em of it from then on
+        assertEquals(Spacing(em = 2.5f), text.inset)
     }
 }
