@@ -17,7 +17,7 @@ class BookCssTest {
     @Test
     fun `alignment, no-indent and small caps come from classes`() {
         val b = blocks(
-            ".centered { text-align: center } .first { text-indent: 0 } span.sc { font-variant: small-caps }",
+            ".centered { text-align: center } .first { text-indent: 0 !important } span.sc { font-variant: small-caps }",
             """<p class="centered">Title</p><p class="first">One <span class="sc">tokyo</span></p><p>Two</p>""",
         )
         assertEquals(TextAlign.CENTER, b[0].align)
@@ -25,6 +25,27 @@ class BookCssTest {
         assertEquals(listOf(false, true), b[1].spans.map { it.smallCaps })
         assertTrue(b[2].indent)
         assertEquals(TextAlign.START, b[2].align)
+    }
+
+    @Test
+    fun `like LibreraX, the reader's indent wins unless the book's rule is important`() {
+        val b = blocks(".firstpara { text-indent: 0 }", """<p class="firstpara">One</p>""")
+        assertTrue(b.single().indent)
+    }
+
+    @Test
+    fun `headings are centred unless the book aligns them`() {
+        val b = blocks("h2.left { text-align: left }", """<h1>Centred</h1><h2 class="left">Left</h2>""")
+        assertEquals(listOf(TextAlign.CENTER, TextAlign.START), b.map { it.align })
+    }
+
+    @Test
+    fun `links the book colours without underline draw as text`() {
+        val b = blocks(
+            "div.title-block a { text-decoration: none; color: #000000 !important } a { color: inherit; text-decoration: none }",
+            """<div class="title-block"><h1><a href="toc.xhtml">Hallway</a></h1></div><p><a href="n.xhtml">note</a></p>""",
+        )
+        assertEquals(listOf(true, false), b.map { it.spans.single().plainLink })
     }
 
     @Test
@@ -92,5 +113,31 @@ class BookCssTest {
                 """<body><p class="c">Shown</p></body></html>""",
         ).filterIsInstance<Block.Text>()
         assertEquals(TextAlign.CENTER, b.single().align)
+    }
+
+    @Test
+    fun `descendant and child selectors match through ancestors`() {
+        // Strange Buildings: the chapter title block's lines are centred through their section's class
+        val b = blocks(
+            ".Chapter-rw .title-block-rw .title-num-rw { text-align: center } .box > p { text-align: right } body p { text-indent: 0 }",
+            """<section class="Chapter-rw"><div class="title-block-rw"><p class="title-num-rw">FILE 1</p></div></section>""" +
+                """<div class="title-block-rw"><p class="title-num-rw">Elsewhere</p></div>""" +
+                """<div class="box"><p>Direct</p><div><p>Nested</p></div></div>""",
+        )
+        assertEquals(listOf(TextAlign.CENTER, TextAlign.START, TextAlign.END, TextAlign.START), b.map { it.align })
+        // the reader's indent is important, so a book-wide `body p` rule can't remove it
+        assertTrue(b[1].indent)
+    }
+
+    @Test
+    fun `negative text-indent makes a hanging paragraph`() {
+        val b = blocks(
+            "div.hanging-rw p { text-indent: -1.3em !important; margin-left: 1.3em !important }",
+            """<div class="hanging-rw"><p><b>NEGISHI:</b> There was something odd.</p></div><p>Narration.</p>""",
+        )
+        assertTrue(b[0].hanging)
+        assertFalse(b[0].indent)
+        assertFalse(b[1].hanging)
+        assertTrue(b[1].indent)
     }
 }

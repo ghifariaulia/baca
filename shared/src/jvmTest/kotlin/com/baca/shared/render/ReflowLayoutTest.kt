@@ -181,6 +181,18 @@ class ReflowLayoutTest {
     }
 
     @Test
+    fun `hanging paragraph keeps the first line full and indents the rest, after a line break too`() {
+        val hanging = text("0123456789abcdefghij\nklmnopqrst").copy(indent = false, hanging = true)
+        val l = ReflowLayout(
+            listOf(hanging), GridMetrics(),
+            ReflowSettings(fontSizePx = 20, lineHeightRatio = 1.0f, paragraphIndentPx = 20),
+            100, 1000,
+        )
+        // 10 at full width, then 8 columns per line (two columns of indent)
+        assertEquals(listOf(0 to 10, 10 to 18, 18 to 21, 21 to 29, 29 to 31), l.lines.map { it.start to it.endExclusive })
+    }
+
+    @Test
     fun `empty chapter produces one empty page`() {
         val l = layout()
         assertEquals(1, l.pageCount())

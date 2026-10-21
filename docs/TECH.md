@@ -54,12 +54,12 @@ Phase 2:
 
 ### 3.1 Book CSS (EPUB)
 
-EPUB chapters keep part of their own styling, following Librera's policy: the book's CSS applies, but the reader's font, size, line spacing, paragraph indent and justification always win. Stylesheets come from `<link rel="stylesheet">`, `<style>` and `style=""` (`shared/parser/BookCss.kt`).
+EPUB chapters keep part of their own styling, cascaded the way LibreraX does it (`FoliateCss` and `BookCSS.generatedCss` in LibreraReader): the book's rules compete with the reader's own rules by `!important`, specificity and order, as in a browser. The reader's font, size and line spacing always win and are not CSS. Stylesheets come from `<link rel="stylesheet">`, `<style>` and `style=""` (`shared/parser/BookCss.kt`).
 
-- **Applied:** `text-align: center/right`; `float: right` (its content becomes its own right-aligned line); `text-indent: 0` (no first-line indent); `font-variant: small-caps`; `font-weight` / `font-style`; `display: none`; relative `font-size` (`em`, `%`, keywords), clamped to 0.75–2× body text.
-- **Ignored:** `text-align: left/justify` (the reader justifies), margins and padding, absolute font sizes, colors, fonts.
-- **Book-wide body rules** (`p`, `div`, `span`, `li`, `body` with no class) cannot change indent or alignment, as Librera's overrides do. Classes and inline styles can (e.g. `.firstpara { text-indent: 0 }`).
-- **Selectors:** `tag`, `.class`, `tag.class` only, cascaded by specificity then order; descendant, child, sibling, attribute, id and pseudo selectors are skipped.
+- **Reader rules:** `h1`–`h6 { text-align: center }` before the book's CSS; `body, div, p, span { text-align: justify; text-indent: 1em !important }` after it; `a { color: link !important }`. So a book rule sets alignment on body text only with more specificity than a tag (`.firstpara`, `div.x p`), and sets the indent only if it is also `!important`.
+- **Applied:** `text-align: center/right`; `float: right` (its content becomes its own right-aligned line); `text-indent` zero (no indent) or negative (hanging: first line flush, the rest take the reader's indent); `font-variant: small-caps`; `font-weight` / `font-style`; `display: none`; relative `font-size` (`em`, `%`, keywords), clamped to 0.75–2× body text; a link whose winning rule sets `color` and `text-decoration: none` draws as body text.
+- **Ignored:** `text-align: left/justify` (the reader justifies), margins and padding, absolute font sizes, color values, fonts.
+- **Selectors:** compounds (`tag`, `.class`, `tag.class`) joined by descendant (space) or child (`>`) combinators; sibling, attribute, id and pseudo selectors are skipped.
 - Whitespace follows HTML (3.x parser notes); a paragraph holding only `&nbsp;` is a blank line, as books use it for scene breaks.
 
 ## 4. Rendering

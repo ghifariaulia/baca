@@ -17,6 +17,8 @@ data class FormattedSpan(
     val href: String? = null,
     /** book CSS `font-variant: small-caps` */
     val smallCaps: Boolean = false,
+    /** a link the book's CSS draws as body text (own colour, no underline); still followed on tap */
+    val plainLink: Boolean = false,
 )
 
 /** Horizontal alignment a book's CSS gives a block; START leaves it to the reader's justification. */
@@ -36,6 +38,8 @@ sealed class Block {
         val indent: Boolean = true,
         /** book CSS font size relative to body text; null when the book sets none */
         val scale: Float? = null,
+        /** book CSS negative text-indent: first line flush, the rest take the reader's indent */
+        val hanging: Boolean = false,
     ) : Block() {
         override val text: String get() = spans.joinToString("") { it.text }
     }
@@ -360,6 +364,7 @@ internal fun parseXhtml(
     var blockAlign = TextAlign.START
     var blockIndent = true
     var blockScale: Float? = null
+    var blockHanging = false
     var quoteDepth = 0
     var linkDepth = 0
     var linkHref: String? = null
@@ -372,6 +377,8 @@ internal fun parseXhtml(
     var floatDepth = 0
     // computed (inherited) style of each open element, innermost last
     val styles = ArrayDeque<Computed>().apply { add(Computed()) }
+    // the open elements as CSS selectors see them, outermost first
+    val path = ArrayDeque<CssElement>()
 
     fun openBlock(k: BlockKind, level: Int) {
         val style = styles.last()
@@ -380,6 +387,7 @@ internal fun parseXhtml(
         blockAlign = style.align
         blockIndent = !style.noIndent
         blockScale = style.scale.takeIf { it != 1f }
+        blockHanging = style.hanging
         spans = mutableListOf()
     }
 
@@ -389,7 +397,7 @@ internal fun parseXhtml(
         val merged = mutableListOf<FormattedSpan>()
         for (s in list) {
             val last = merged.lastOrNull()
-            if (last != null && last.bold == s.bold && last.italic == s.italic && last.href == s.href && last.smallCaps == s.smallCaps) {
+            if (last != null && last.bold == s.bold && last.italic == s.italic && last.href == s.href && last.smallCaps == s.smallCaps && last.plainLink == s.plainLink) {
                 merged[merged.lastIndex] = last.copy(text = last.text + s.text)
             } else {
                 merged.add(s)
@@ -399,13 +407,14 @@ internal fun parseXhtml(
         // not isNotBlank: a lone &nbsp; survives collapsing and draws an empty
         // line, as in HTML (books use <p>&nbsp;</p> for scene breaks)
         if (collapsed.any { it.text.isNotEmpty() }) {
-            blocks.add(Block.Text(collapsed, kind, headingLevel, blockAlign, blockIndent, blockScale))
+            blocks.add(Block.Text(collapsed, kind, headingLevel, blockAlign, blockIndent, blockScale, blockHanging))
         }
     }
 
     fun appendText(t: String) {
         val style = styles.last()
-        spans?.add(FormattedSpan(t, style.bold, style.italic, linkHref, style.smallCaps))
+        val plainLink = linkHref != null && style.ownColor && !style.underline
+        spans?.add(FormattedSpan(t, style.bold, style.italic, linkHref, style.smallCaps, plainLink))
     }
 
     while (reader.hasNext()) {
@@ -425,8 +434,10 @@ internal fun parseXhtml(
                     reader.attr("href")?.let(loadCss)?.let { stylesheet.add(it) }
                 }
                 if (tag == "style") styleText = StringBuilder()
-                val declared = stylesheet.styleFor(tag, reader.attrOrEmpty("class").split(' ').filter { it.isNotEmpty() }.toSet(), reader.attr("style"))
+                path.addLast(CssElement(tag, reader.attrOrEmpty("class").split(' ').filter { it.isNotEmpty() }.toSet()))
+                val declared = stylesheet.styleFor(path, reader.attr("style"))
                 if (isPageMarker(reader) || declared.hidden == true) {
+                    path.removeLast()
                     skipDepth = 1
                     continue
                 }
@@ -439,6 +450,7 @@ internal fun parseXhtml(
                     openBlock(k, level)
                     blockAlign = TextAlign.END
                     blockIndent = false
+                    blockHanging = false
                 }
                 when (tag) {
                     "a" -> {
@@ -485,6 +497,7 @@ internal fun parseXhtml(
                     in headingTags -> closeBlock()
                 }
                 if (styles.size > 1) styles.removeLast()
+                path.removeLastOrNull()
             }
             else -> {}
         }
@@ -499,8 +512,11 @@ private data class Computed(
     val smallCaps: Boolean = false,
     val align: TextAlign = TextAlign.START,
     val noIndent: Boolean = false,
+    val hanging: Boolean = false,
     /** font size relative to body text */
     val scale: Float = 1f,
+    val ownColor: Boolean = false,
+    val underline: Boolean = true,
 ) {
     fun inherit(tag: String, declared: CssStyle) = Computed(
         bold = declared.bold ?: (bold || tag in boldTags),
@@ -508,7 +524,10 @@ private data class Computed(
         smallCaps = declared.smallCaps ?: smallCaps,
         align = declared.align ?: align,
         noIndent = declared.noIndent ?: noIndent,
+        hanging = declared.hanging ?: hanging,
         scale = (scale * (declared.fontScale ?: 1f)).coerceIn(MIN_SCALE, MAX_SCALE),
+        ownColor = declared.ownColor ?: ownColor,
+        underline = declared.underline ?: underline,
     )
 }
 

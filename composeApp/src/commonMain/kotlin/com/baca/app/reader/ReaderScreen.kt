@@ -2,6 +2,7 @@ package com.baca.app.reader
 
 import kotlin.math.ceil
 
+import com.baca.shared.render.hangs
 import com.baca.shared.render.takesIndent
 
 import com.baca.shared.render.fontScale
@@ -574,8 +575,9 @@ fun ReaderScreen(
                                         val style = lineStyle(block, display, colors.ink)
                                         // book CSS centred/right lines and headings stay unjustified
                                         val body = block.kind != BlockKind.HEADING && block.align == BookAlign.START
-                                        // same indent ReflowLayout measured the first line with
-                                        val indentPx = if (block.takesIndent() && line.start == 0) paragraphIndentPxOf(display, density) else 0
+                                        // same indent ReflowLayout measured the line with
+                                        val indented = if (block.hangs()) line.start > 0 else block.takesIndent() && line.start == 0
+                                        val indentPx = if (indented) paragraphIndentPxOf(display, density) else 0
                                         val lineText = highlighted(
                                             blockStrings[line.blockIndex],
                                             ranges,
@@ -1484,8 +1486,8 @@ private fun annotatedOf(block: Block, ink: Color, accent: Color): AnnotatedStrin
                 pushStringAnnotation(TAG_LINK, span.href!!)
                 pushStyle(
                     SpanStyle(
-                        color = accent,
-                        textDecoration = TextDecoration.Underline,
+                        color = if (span.plainLink) ink else accent,
+                        textDecoration = if (span.plainLink) null else TextDecoration.Underline,
                         fontWeight = if (span.bold) FontWeight.Bold else null,
                         fontStyle = if (span.italic) FontStyle.Italic else null,
                         fontFeatureSettings = if (span.smallCaps) SMALL_CAPS else null,

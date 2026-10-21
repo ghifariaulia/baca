@@ -27,6 +27,9 @@ fun Block.Text.fontScale(headingScale: Float): Float = scale ?: if (kind == Bloc
 /** Whether the block's first line takes the reader's paragraph indent. Shared by layout and renderer. */
 fun Block.Text.takesIndent(): Boolean = kind != BlockKind.HEADING && indent && align == TextAlign.START
 
+/** Whether every line but the first takes the reader's paragraph indent (book CSS hanging indent). Shared by layout and renderer. */
+fun Block.Text.hangs(): Boolean = kind != BlockKind.HEADING && hanging && align == TextAlign.START
+
 /** One visible line (or image placeholder) placed on a page. */
 data class PageLine(
     val blockIndex: Int,
@@ -146,8 +149,10 @@ class ReflowLayout(
                             offset += span.text.length
                         }
                     }
-                    metrics
-                        .layoutLines(
+                    val spans = if (block.hangs()) {
+                        hangingLines(block, styleRanges)
+                    } else {
+                        metrics.layoutLines(
                             block.text,
                             fontPxOf(block),
                             lineHeightPxOf(block),
@@ -156,6 +161,8 @@ class ReflowLayout(
                             styleRanges,
                             if (block.takesIndent()) settings.paragraphIndentPx else 0,
                         )
+                    }
+                    spans
                         .filter { it.endExclusive > it.start }
                         .forEach { span ->
                             result.add(PageLine(blockIndex, span.start, span.endExclusive))
@@ -164,6 +171,35 @@ class ReflowLayout(
             }
         }
         return result
+    }
+
+    /**
+     * The first line at full width, the rest narrower by the indent. Measured
+     * in two parts rather than with a rest-line indent, because text engines
+     * differ on whether a line after a hard break counts as a "first line".
+     */
+    private fun hangingLines(block: Block.Text, styles: List<TextMetrics.StyleRange>): List<TextMetrics.LineSpan> {
+        val text = block.text
+        fun measure(from: Int, widthPx: Int) = metrics.layoutLines(
+            text.substring(from),
+            fontPxOf(block),
+            lineHeightPxOf(block),
+            widthPx,
+            settings.fontFamily,
+            styles.mapNotNull { range ->
+                range.copy(start = maxOf(range.start - from, 0), endExclusive = range.endExclusive - from)
+                    .takeIf { it.endExclusive > it.start }
+            },
+        )
+        val first = measure(0, columnWidthPx).firstOrNull() ?: return emptyList()
+        var restStart = first.endExclusive
+        // the break's own space or newline belongs to neither line
+        while (restStart < text.length && text[restStart] == ' ') restStart++
+        if (restStart < text.length && text[restStart] == '\n') restStart++
+        if (restStart >= text.length) return listOf(first)
+        val rest = measure(restStart, columnWidthPx - settings.paragraphIndentPx)
+            .map { TextMetrics.LineSpan(it.start + restStart, it.endExclusive + restStart) }
+        return listOf(first) + rest
     }
 
     private fun packPages(): List<List<PageLine>> {
