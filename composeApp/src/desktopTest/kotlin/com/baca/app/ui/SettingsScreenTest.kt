@@ -12,6 +12,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onRoot
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -72,6 +75,31 @@ class SettingsScreenTest {
         val pixel = IntArray(1)
         image.readPixels(pixel, x, y, 1, 1)
         return pixel[0]
+    }
+
+    @Test
+    fun `library folder section offers choose and rescan`() {
+        var chosen = 0
+        var rescans = 0
+        var label by mutableStateOf<String?>(null)
+        rule.setContent {
+            AppTheme {
+                SettingsScreen(
+                    store = store(), onBack = {}, libraryFolderLabel = label,
+                    onChooseLibraryFolder = { chosen++ }, onRescan = { rescans++ },
+                )
+            }
+        }
+        rule.onNodeWithText("Choose folder").performClick()
+        assertTrue(rule.onAllNodesWithText("Rescan").fetchSemanticsNodes().isEmpty(), "nothing to rescan without a folder")
+
+        label = "Books"
+        rule.waitForIdle()
+        rule.onNodeWithText("Change folder").performClick()
+        rule.onNodeWithText("Rescan").performClick()
+        rule.waitForIdle()
+        assertEquals(2, chosen)
+        assertEquals(1, rescans)
     }
 
     @Test

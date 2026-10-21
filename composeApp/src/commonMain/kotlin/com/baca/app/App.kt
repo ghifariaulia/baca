@@ -37,6 +37,9 @@ import com.baca.app.reader.rememberBookPicker
 import com.baca.app.reader.rememberBookStoreDir
 import com.baca.app.reader.rememberFolderPicker
 import com.baca.app.reader.rememberSyncFolderPicker
+import com.baca.app.reader.LibraryFolder
+import com.baca.app.reader.folderLabel
+import com.baca.app.reader.rememberLibraryFolder
 import com.baca.app.reader.rememberSyncTransport
 import com.baca.app.reader.rememberBackupOpener
 import com.baca.app.reader.SystemBarsAppearance
@@ -214,6 +217,33 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
             }
         }
 
+        // --- library folder (TECH 5.4): books read in place ---
+        var libraryFolderPath by remember { mutableStateOf(store.getLocal(KEY_LIBRARY_FOLDER)) }
+        val libraryFolder = rememberLibraryFolder(libraryFolderPath)
+        // locations seen by the last scan; folder books missing from it are hidden
+        var folderBooks by remember { mutableStateOf<Set<String>?>(null) }
+        var scanning by remember { mutableStateOf(false) }
+        var scanError by remember { mutableStateOf<String?>(null) }
+
+        fun scanLibraryFolder() {
+            val folder = libraryFolder ?: return
+            scanning = true
+            scope.launch {
+                try {
+                    folderBooks = withContext(Dispatchers.IO) { importer.scanFolder(folder) }
+                    scanError = null
+                    libraryTick++
+                    dirtySinceSync = true
+                } catch (e: Exception) {
+                    // folder unplugged or access revoked: keep showing what we know
+                    scanError = e.message ?: "Can't read the library folder"
+                } finally {
+                    scanning = false
+                }
+            }
+        }
+        LaunchedEffect(libraryFolder) { scanLibraryFolder() }
+
         // --- add-books sheet + import progress ---
         var addSheetOpen by remember { mutableStateOf(false) }
         val importItems = remember { mutableStateListOf<ImportItem>() }
@@ -240,7 +270,14 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                     val status = withContext(Dispatchers.IO) {
                         when {
                             BookFormats.of(usable[i].substringAfterLast('/')) == null -> ImportStatus.UNSUPPORTED
-                            else -> importer.import(usable[i])
+                            // with a library folder, the book is copied there and read in place
+                            else -> (
+                                libraryFolder?.let { folder ->
+                                    // a folder that can't be written to shows as a broken import
+                                    val location = try { folder.add(usable[i]) } catch (e: Exception) { null }
+                                    location?.let { importer.importInPlace(usable[i], it, restoreRemoved = true) }
+                                } ?: if (libraryFolder == null) importer.import(usable[i]) else null
+                                )
                                 ?.let { if (it.isNew) ImportStatus.ADDED else ImportStatus.SKIPPED }
                                 ?: ImportStatus.BROKEN
                         }
@@ -281,6 +318,13 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
         }
         val openBackup = rememberBackupOpener { path -> pendingRestore = path }
 
+        val pickLibraryFolder = rememberSyncFolderPicker(title = "Choose library folder") { path ->
+            if (path != null) {
+                libraryFolderPath = path
+                store.putLocal(KEY_LIBRARY_FOLDER, path)
+                // the new folder is scanned through the LaunchedEffect above
+            }
+        }
         val pickSyncFolder = rememberSyncFolderPicker { path ->
             if (path != null) {
                 syncFolderPath = path
@@ -296,7 +340,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                 withContext(Dispatchers.IO) {
                     importer.import(initialBookPath)
                 }?.let { imported ->
-                    openBookOf(imported.row)?.let { screenState = Screen.Reader(it) }
+                    openBookOf(imported.row, libraryFolder)?.let { screenState = Screen.Reader(it) }
                 }
                 libraryTick++
             }
@@ -340,7 +384,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
         fun openAsync(row: BookRow) {
             openingTitle = row.title
             scope.launch(Dispatchers.IO) {
-                val book = openBookOf(row)
+                val book = openBookOf(row, libraryFolder)
                 // Compose snapshot writes are safe from any thread; Dispatchers.Main
                 // doesn't exist on desktop (that's kotlinx-coroutines-android)
                 openingTitle = null
@@ -391,7 +435,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
         fun openAnnotation(row: BookRow, picked: com.baca.shared.sync.AnnotationEntry) {
             val page = picked.fixedAnchor?.pageIndex
             if (picked.reflowAnchor == null && page == null) return
-            openBookOf(row)?.let { book ->
+            openBookOf(row, libraryFolder)?.let { book ->
                 // a note from another file of this edition jumps to its re-found spot
                 val anchor = (book as? OpenBook.Reflow)
                     ?.let { annotationsForReader(it, listOf(picked)).firstOrNull()?.entry?.reflowAnchor }
@@ -541,11 +585,21 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                             appTheme = choice
                             store.putLocal(AppThemeChoice.STORE_KEY, choice.key)
                         },
+                        libraryFolderLabel = libraryFolderPath?.let { folderLabel(it) },
+                        scanning = scanning,
+                        scanError = scanError,
+                        onChooseLibraryFolder = pickLibraryFolder,
+                        onRescan = { scanLibraryFolder() },
                         onBack = { screenState = Screen.Library },
                     )
                 }
                 Screen.Library -> {
-                    val books = remember(libraryTick) { booksRepo.visible() }
+                    val books = remember(libraryTick, folderBooks) {
+                        val present = folderBooks
+                        booksRepo.visible().filter { row ->
+                            present == null || libraryFolder?.contains(row.path) != true || row.path in present
+                        }
+                    }
                     val library = books.map { row ->
                         LibraryBook(
                             row = row,
@@ -644,15 +698,22 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
     }
 }
 
-/** Library tap / launcher entry: parse from the row's stored path and format. */
-private fun openBookOf(row: BookRow): OpenBook? = when (row.format) {
-    "cbz" -> BookFormats.parseCbzFile(row.path.toPath(), row.path.substringAfterLast('/'))
-        ?.let { OpenBook.Fixed(it, row.path, row.bookHash) }
-    else -> BookFormats.parse(row.path.toPath(), row.format)
-        ?.let { OpenBook.Reflow(it, row.path, row.bookHash) }
+/**
+ * Library tap / launcher entry: parse from the row's stored path and format.
+ * Android library-folder books are document URIs; [folder] stages a local copy.
+ */
+private fun openBookOf(row: BookRow, folder: LibraryFolder?): OpenBook? {
+    val readable = if (row.path.startsWith("content://")) folder?.stage(row.path) ?: return null else row.path
+    return when (row.format) {
+        "cbz" -> BookFormats.parseCbzFile(readable.toPath(), readable.substringAfterLast('/'))
+            ?.let { OpenBook.Fixed(it, readable, row.bookHash) }
+        else -> BookFormats.parse(readable.toPath(), row.format)
+            ?.let { OpenBook.Reflow(it, readable, row.bookHash) }
+    }
 }
 
 private const val KEY_SYNC_FOLDER = "sync_folder"
+private const val KEY_LIBRARY_FOLDER = "library_folder"
 private const val KEY_LAST_SYNC = "last_sync_at"
 
 /** Wall clock, display/debug use only (docs/TECH.md 6.1). */

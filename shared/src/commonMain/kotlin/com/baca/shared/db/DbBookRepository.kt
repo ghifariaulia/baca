@@ -95,6 +95,14 @@ class DbBookRepository(
 
     fun all(): List<BookRow> = db.booksQueries.selectBooks().executeAsList().map { it.toRow() }
 
+    /** Where the book's file now lives; local only, not a synced change. */
+    fun updatePath(bookHash: String, path: String) {
+        db.booksQueries.updateBookPath(path, bookHash)
+    }
+
+    /** Stored paths of every row, removed ones included. */
+    fun allPaths(): Set<String> = db.booksQueries.selectBooksAll().executeAsList().map { it.path }.toSet()
+
     /** Tombstone via the delete flag (TECH 6.4); the row stays for sync. */
     fun tombstone(bookHash: String) {
         db.booksQueries.tombstoneBook(lamport = bumpLamport(), book_hash = bookHash)

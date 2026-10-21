@@ -134,7 +134,7 @@ class LibraryBackup(
         private const val DEVICE_ID_KEY = "device_id"
 
         /** This device's identity and its own sync folder; never taken from a backup. */
-        val DEVICE_ONLY_KEYS = listOf(DEVICE_ID_KEY, "sync_folder", "last_sync_at")
+        val DEVICE_ONLY_KEYS = listOf(DEVICE_ID_KEY, "sync_folder", "last_sync_at", "library_folder")
 
         private val json = Json { ignoreUnknownKeys = true }
     }

@@ -81,7 +81,7 @@ actual fun folderLabel(path: String): String = path.substringAfterLast('/')
  * keeps access across app restarts (TECH 11.1).
  */
 @Composable
-actual fun rememberSyncFolderPicker(onPicked: (String?) -> Unit): () -> Unit {
+actual fun rememberSyncFolderPicker(title: String, onPicked: (String?) -> Unit): () -> Unit {
     val context = LocalContext.current
     val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),

@@ -66,45 +66,80 @@ object BookFormats {
 data class Imported(val row: BookRow, val isNew: Boolean)
 
 /**
- * Import use case (TECH 7.1/7.2): hash → dedupe by hash → copy into app
- * storage → parse metadata (+ cover for EPUB) → upsert. Returns the row that
- * ended up in the library (existing on re-import), or null when unsupported
- * or unreadable.
+ * Import use case (TECH 7.1/7.2): hash → dedupe by hash → keep the file →
+ * parse metadata (+ cover for EPUB/CBZ) → upsert. The file is either copied
+ * into app storage ([import]) or left where it is in the library folder
+ * ([importInPlace]). Returns the row that ended up in the library (existing
+ * on re-import), or null when unsupported or unreadable.
  */
 class BookImporter(
     private val repo: DbBookRepository,
     private val storeDir: String,
     private val fs: FileSystem = FileSystem.SYSTEM,
 ) {
-    fun import(path: String): Imported? = runCatching {
-        val source = path.toPath()
+    /** Copies [path] into app storage. */
+    fun import(path: String): Imported? = register(path.toPath(), location = null, restoreRemoved = true)
+
+    /**
+     * Registers a library-folder book without copying it. [readable] is a local
+     * file with its content (the file itself on desktop, a temporary copy on
+     * Android); [location] is what the library stores as its path. A scan
+     * passes [restoreRemoved] false so books the user removed stay hidden.
+     */
+    fun importInPlace(readable: String, location: String, restoreRemoved: Boolean): Imported? =
+        register(readable.toPath(), location, restoreRemoved)
+
+    /**
+     * Adds the folder's books that the library doesn't know yet. Returns the
+     * locations found, so the library can hide books whose file is gone.
+     */
+    fun scanFolder(folder: LibraryFolder): Set<String> {
+        val books = folder.books()
+        val known = repo.allPaths()
+        books.filter { it.location !in known }.forEach { book ->
+            val readable = folder.stage(book.location)
+            try {
+                importInPlace(readable, book.location, restoreRemoved = false)
+            } finally {
+                folder.unstage(readable)
+            }
+        }
+        return books.map { it.location }.toSet()
+    }
+
+    private fun register(source: Path, location: String?, restoreRemoved: Boolean): Imported? = runCatching {
         val fileName = source.name
         val format = BookFormats.of(fileName) ?: return null
         val bookHash = computeBookHash(source, fs)
 
         // Same file imported twice yields one library row (TECH 7). A removed
-        // (tombstoned) row falls through so re-importing brings the book back.
-        repo.byHash(bookHash)?.takeIf { !it.deleted }?.let { existing ->
+        // (tombstoned) row falls through so re-importing brings the book back,
+        // unless a folder scan found it: then it stays removed.
+        repo.byHash(bookHash)?.takeIf { !it.deleted || !restoreRemoved }?.let { existing ->
+            // a library-folder file that moved keeps its reading data
+            if (!existing.deleted && location != null && existing.path != location) repo.updatePath(bookHash, location)
             backfill(existing)
             return Imported(repo.byHash(bookHash) ?: existing, isNew = false)
         }
 
         val dir = storeDir.toPath()
         fs.createDirectories(dir)
-        val dest = dir / "$bookHash.${fileName.substringAfterLast('.').lowercase()}"
-        if (!fs.exists(dest)) {
-            fs.source(source).use { input ->
-                fs.sink(dest).use { output ->
-                    output.buffer().use { buffered -> buffered.writeAll(input) }
+        val readable = if (location != null) source else (dir / "$bookHash.${fileName.substringAfterLast('.').lowercase()}").also { dest ->
+            if (!fs.exists(dest)) {
+                fs.source(source).use { input ->
+                    fs.sink(dest).use { output ->
+                        output.buffer().use { buffered -> buffered.writeAll(input) }
+                    }
                 }
             }
         }
+        val storedPath = location ?: readable.toString()
 
         // CBZ: fixed layout — no Block pipeline; cover = first page image.
         if (format == "cbz") {
-            val cbz = BookFormats.parseCbzFile(dest, fileName) ?: error("unreadable $fileName")
+            val cbz = BookFormats.parseCbzFile(readable, fileName) ?: error("unreadable $fileName")
             val coverPath: String? = cbz.pages.firstOrNull()
-                ?.let { first -> EpubImages(dest).imageBytes(first) }
+                ?.let { first -> EpubImages(readable).imageBytes(first) }
                 ?.let { bytes ->
                     val coverFile = dir / "$bookHash-cover.jpg"
                     fs.sink(coverFile).use { sink ->
@@ -116,7 +151,7 @@ class BookImporter(
                 bookHash = bookHash,
                 title = cbz.title,
                 author = "",
-                path = dest.toString(),
+                path = storedPath,
                 format = format,
                 coverPath = coverPath,
             )
@@ -130,7 +165,7 @@ class BookImporter(
         // fallback: flat color + title/author). Some EPUBs point the cover meta
         // at a wrapper XHTML page instead of the image itself.
         val coverPath: String? = if (format == "epub") {
-            coverBytes(parsed, EpubImages(dest))?.let { bytes ->
+            coverBytes(parsed, EpubImages(readable))?.let { bytes ->
                 val coverFile = dir / "$bookHash-cover.jpg"
                 fs.sink(coverFile).use { sink ->
                     sink.buffer().use { buffered -> buffered.write(bytes) }
@@ -145,7 +180,7 @@ class BookImporter(
             bookHash = bookHash,
             title = parsed.title,
             author = parsed.author,
-            path = dest.toString(),
+            path = storedPath,
             format = format,
             coverPath = coverPath,
         )

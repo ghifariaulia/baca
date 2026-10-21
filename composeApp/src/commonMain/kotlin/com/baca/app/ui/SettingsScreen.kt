@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.baca.app.reader.DisplayContent
 import com.baca.app.reader.SegmentedRow
 import com.baca.app.reader.SheetSection
+import com.baca.app.reader.ChoiceChip
 import com.baca.shared.domain.loadDisplay
 import com.baca.shared.domain.reader.PositionStore
 import com.baca.shared.domain.saveDisplay
@@ -45,6 +46,12 @@ internal fun SettingsScreen(
     onBack: () -> Unit,
     appTheme: AppThemeChoice = AppThemeChoice.SYSTEM,
     onAppThemeChange: (AppThemeChoice) -> Unit = {},
+    /** shown name of the library folder, null when books live inside Baca */
+    libraryFolderLabel: String? = null,
+    scanning: Boolean = false,
+    scanError: String? = null,
+    onChooseLibraryFolder: () -> Unit = {},
+    onRescan: () -> Unit = {},
 ) {
     var display by remember { mutableStateOf(store.loadDisplay()) }
     LaunchedEffect(display) { store.saveDisplay(display) }
@@ -76,6 +83,23 @@ internal fun SettingsScreen(
                 options = AppThemeChoice.entries.map { it.key to it.label },
                 selected = appTheme.key,
             ) { key -> onAppThemeChange(AppThemeChoice.of(key)) }
+        }
+        SheetSection("LIBRARY FOLDER") {
+            Text(
+                when {
+                    scanning -> "Scanning ${libraryFolderLabel.orEmpty()}…"
+                    scanError != null -> "Can't read $libraryFolderLabel: $scanError"
+                    libraryFolderLabel != null -> "Books in $libraryFolderLabel and its subfolders, read where they are. Added books are copied there."
+                    else -> "Not set: added books are kept inside Baca. Choose a folder to read books where they are."
+                },
+                style = Type.body,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                ChoiceChip(if (libraryFolderLabel == null) "Choose folder" else "Change folder", true, onChooseLibraryFolder)
+                if (libraryFolderLabel != null) ChoiceChip("Rescan", false, onRescan)
+            }
         }
         // DisplayContent scrolls itself; just bound the height
         Box(Modifier.fillMaxWidth().weight(1f)) {

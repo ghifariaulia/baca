@@ -15,4 +15,4 @@ expect fun folderLabel(path: String): String
 
 /** Folder picker for the sync folder; persists access on Android (TECH 11.1). */
 @Composable
-expect fun rememberSyncFolderPicker(onPicked: (String?) -> Unit): () -> Unit
+expect fun rememberSyncFolderPicker(title: String = "Choose sync folder", onPicked: (String?) -> Unit): () -> Unit

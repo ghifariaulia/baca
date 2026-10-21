@@ -116,6 +116,17 @@ Resolution order when restoring: `href` + `block_index` + `char_offset`, then th
 
 Offsets are the primary anchor. If the parse changes (parser update, different edition, offset no longer matches `quote`), re-anchor by searching for `prefix + quote + suffix` in the document. If that fails, keep the annotation, show it in the annotation list, and flag it as detached rather than dropping it.
 
+### 5.4 Book files and the library folder
+
+Without a library folder, an imported book is copied into app storage (desktop `~/.baca/books`, Android `filesDir/books`) as `<book_hash>.<ext>`, and `books.path` points at that copy.
+
+With a **library folder** (Settings, stored as the device-only local setting `library_folder`), books are read where they are and never copied:
+- `books.path` holds the book's location in the folder: a file path on desktop, a document URI inside a persisted SAF tree grant on Android. Parsers need a real file, so Android stages a temporary cache copy to read from.
+- The folder and all its subfolders are scanned at launch and on Rescan. New files are added. A known `book_hash` found at a new location keeps its reading data and gets the new path (moved or renamed). Books the user removed stay removed. Books whose file is gone from the folder are hidden until it comes back.
+- **Add books** copies the picked file into the folder's top level, never overwriting (`Book (2).epub`), then reads it in place.
+- **Remove from library** hides the book (tombstone, 6.4); the file stays in the folder.
+- Only covers are stored in app storage.
+
 ## 6. Sync
 
 ### 6.1 Principles

@@ -34,3 +34,7 @@ SELECT * FROM books;
 
 deleteBooksAll:
 DELETE FROM books;
+
+-- a library-folder book was moved or renamed
+updateBookPath:
+UPDATE books SET path = ? WHERE book_hash = ?;

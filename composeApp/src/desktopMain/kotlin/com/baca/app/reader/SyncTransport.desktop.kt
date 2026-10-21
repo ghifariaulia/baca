@@ -47,7 +47,7 @@ actual fun folderLabel(path: String): String = path.substringAfterLast(File.sepa
 
 /** Desktop sync folder pick: JFileChooser directories-only, returns the path. */
 @Composable
-actual fun rememberSyncFolderPicker(onPicked: (String?) -> Unit): () -> Unit {
+actual fun rememberSyncFolderPicker(title: String, onPicked: (String?) -> Unit): () -> Unit {
     var busy by remember { mutableStateOf(false) }
     return {
         if (!busy) {
@@ -55,7 +55,7 @@ actual fun rememberSyncFolderPicker(onPicked: (String?) -> Unit): () -> Unit {
             try {
                 val chooser = javax.swing.JFileChooser()
                 chooser.fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
-                chooser.dialogTitle = "Choose sync folder"
+                chooser.dialogTitle = title
                 val result = chooser.showOpenDialog(null as java.awt.Frame?)
                 onPicked(if (result == javax.swing.JFileChooser.APPROVE_OPTION) chooser.selectedFile?.absolutePath else null)
             } finally {
