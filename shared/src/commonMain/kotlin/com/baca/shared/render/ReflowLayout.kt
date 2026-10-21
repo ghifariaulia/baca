@@ -95,10 +95,7 @@ class ReflowLayout(
      */
     fun pageForPosition(blockIndex: Int, charOffset: Int, quote: String): AnchorRestore? {
         if (blockIndex in blocks.indices) {
-            val line = lines.firstOrNull {
-                it.blockIndex > blockIndex ||
-                    (it.blockIndex == blockIndex && it.start >= charOffset)
-            }
+            val line = lineAt(blockIndex, charOffset)
             if (line != null) {
                 return AnchorRestore(pageIndexOf(line), AnchorResolution.OFFSETS)
             }
@@ -108,9 +105,7 @@ class ReflowLayout(
             val blockIdx = blocks.indexOfFirst { it.text.contains(quote) }
             if (blockIdx >= 0) {
                 val offset = blocks[blockIdx].text.indexOf(quote)
-                val line = lines.firstOrNull {
-                    it.blockIndex > blockIdx || (it.blockIndex == blockIdx && it.start >= offset)
-                }
+                val line = lineAt(blockIdx, offset)
                 if (line != null) {
                     return AnchorRestore(pageIndexOf(line), AnchorResolution.QUOTE)
                 }
@@ -119,6 +114,15 @@ class ReflowLayout(
 
         return null
     }
+
+    /**
+     * The line holding [charOffset] of [blockIndex]: the block's last line starting at
+     * or before it. A highlight beginning mid-line belongs to that line's page, not the
+     * next line's. A block without lines (empty) gives the first line after it.
+     */
+    private fun lineAt(blockIndex: Int, charOffset: Int): PageLine? =
+        lines.lastOrNull { it.blockIndex == blockIndex && it.start <= charOffset }
+            ?: lines.firstOrNull { it.blockIndex > blockIndex }
 
     // match by position: packing may resize image lines, so equality won't do
     private fun pageIndexOf(line: PageLine): Int = pages.indexOfFirst { page ->

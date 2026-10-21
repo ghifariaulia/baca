@@ -44,6 +44,8 @@ class ReaderSession(
     private var viewport = Viewport(0, 0)
     private var settings = ReflowSettings(0)
     private var initialized = false
+    // a jump asked for before the first layout (Notes/Bookmarks screens open the reader with one)
+    private var pendingJump: Triple<String, Int, Int>? = null
     private val layouts = mutableMapOf<Int, ReflowLayout>()
 
     fun layoutFor(index: Int): ReflowLayout =
@@ -66,7 +68,10 @@ class ReaderSession(
             initialized = true
             val linked = repo.loadLinkedPosition(bookHash)
             val saved = repo.loadPosition(bookHash)
+            val jump = pendingJump
+            pendingJump = null
             when {
+                jump != null && moveToAnchor(jump.first, jump.second, jump.third) -> {}
                 linked != null -> restoreFromOtherFile(linked)
                 saved != null -> restore(saved)
                 else -> {
@@ -202,13 +207,22 @@ class ReaderSession(
 
     /** Jump to an annotation anchor (Notes list / contents panel). */
     suspend fun jumpToAnchor(href: String, blockIndex: Int, charOffset: Int) {
-        val target = indexOfChapter(href, chapters)
-        if (target < 0) return
-        chapterIndex = target
-        val restore = layoutFor(target).pageForPosition(blockIndex, charOffset, "")
-        pageIndex = restore?.pageIndex ?: 0
+        if (!initialized) {
+            // no layout yet: ensureView goes here instead of the saved position
+            pendingJump = Triple(href, blockIndex, charOffset)
+            return
+        }
+        if (!moveToAnchor(href, blockIndex, charOffset)) return
         save()
         onChange()
+    }
+
+    private fun moveToAnchor(href: String, blockIndex: Int, charOffset: Int): Boolean {
+        val target = indexOfChapter(href, chapters)
+        if (target < 0) return false
+        chapterIndex = target
+        pageIndex = layoutFor(target).pageForPosition(blockIndex, charOffset, "")?.pageIndex ?: 0
+        return true
     }
 
     fun progress(): Double {

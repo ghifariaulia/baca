@@ -105,6 +105,31 @@ class ReaderSessionTest {
     }
 
     @Test
+    fun `a jump asked for before the first layout lands there, not on the saved position`() = runTest {
+        val store = FakeStore()
+        store.positions["h"] = Locator("OEBPS/c0.xhtml", 1, 0, 0.0)
+        val s = session(store)
+        // the Notes and Bookmarks screens open the reader with a jump before it has laid out a page
+        s.jumpToAnchor("OEBPS/c2.xhtml", 1, 500)
+        s.ensureView(VIEWPORT, SETTINGS)
+        assertEquals(2, s.chapterIndex)
+        val expected = s.layoutFor(2).pages.indexOfFirst { page -> page.any { it.blockIndex == 1 && 500 in it.start until it.endExclusive } }
+        assertEquals(expected, s.pageIndex)
+    }
+
+    @Test
+    fun `an anchor in the middle of a page's last line opens that page, not the next`() = runTest {
+        val s = session(FakeStore())
+        s.ensureView(VIEWPORT, SETTINGS)
+        val layout = s.layoutFor(1)
+        val pageNo = 2
+        val last = layout.pages[pageNo].last { !it.isImage }
+        s.jumpToAnchor("OEBPS/c1.xhtml", last.blockIndex, last.start + 1)
+        assertEquals(1, s.chapterIndex)
+        assertEquals(pageNo, s.pageIndex)
+    }
+
+    @Test
     fun `page turn at chapter end moves to next chapter page 1`() = runTest {
         val store = FakeStore()
         val s = session(store)
