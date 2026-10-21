@@ -359,7 +359,9 @@ internal fun parseXhtml(xhtml: String, resolveSrc: (String) -> String = { it }):
             }
         }
         val collapsed = collapseWhitespace(merged)
-        if (collapsed.any { it.text.isNotBlank() }) {
+        // not isNotBlank: a lone &nbsp; survives collapsing and draws an empty
+        // line, as in HTML (books use <p>&nbsp;</p> for scene breaks)
+        if (collapsed.any { it.text.isNotEmpty() }) {
             blocks.add(Block.Text(collapsed, kind, headingLevel))
         }
     }
@@ -398,7 +400,9 @@ internal fun parseXhtml(xhtml: String, resolveSrc: (String) -> String = { it }):
                 "p", "li" -> openBlock(BlockKind.PARAGRAPH, 0)
                 in headingTags -> openBlock(BlockKind.HEADING, reader.localName[1].digitToInt())
             }
-            EventType.TEXT, EventType.CDSECT, EventType.ENTITY_REF -> appendText(reader.text)
+            // whitespace-only text (e.g. <i> </i> between words) arrives as
+            // IGNORABLE_WHITESPACE; it is real text in XHTML
+            EventType.TEXT, EventType.CDSECT, EventType.ENTITY_REF, EventType.IGNORABLE_WHITESPACE -> appendText(reader.text)
             EventType.END_ELEMENT -> when (reader.localName) {
                 in boldTags -> bold--
                 in italicTags -> italic--

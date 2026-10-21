@@ -58,6 +58,21 @@ class EpubParserTest {
     }
 
     @Test
+    fun `spaces in their own inline elements are kept`() {
+        val blocks = parseXhtml(
+            """<html><body><p><i>28th</i><i> </i><i>F</i><i>eb</i><i> </i><i>2023</i><i> </i><span>Tokyo</span></p></body></html>""",
+        )
+        assertEquals("28th Feb 2023 Tokyo", blocks.single().text)
+    }
+
+    @Test
+    fun `a paragraph holding only a non-breaking space is a blank line`() {
+        val blocks = parseXhtml("<html><body><p>One</p><p>\u00A0</p><p> </p><p>Two</p></body></html>")
+        // &nbsp; renders an empty line in HTML; a plain space renders nothing
+        assertEquals(listOf("One", "\u00A0", "Two"), blocks.map { it.text })
+    }
+
+    @Test
     fun `printed page numbers are left out of the text`() {
         val blocks = parseXhtml(
             """<html xmlns:epub="http://www.idpf.org/2007/ops"><body>""" +
