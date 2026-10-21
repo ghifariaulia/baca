@@ -183,7 +183,7 @@ Field shapes:
 { "settings": { "dictionary": { "value": "...", "lamport": 650 } } }
 ```
 
-`finished` is the reader's "Mark as finished" flag, kept locally as `finished:<book_hash>`; changing it bumps the book's Lamport value so the newest choice wins like any library change. Files from older versions omit `workKey` and `finished`, and a missing value keeps what the device already knows.
+`finished` is the reader's "Mark as finished" flag, kept locally as `finished:<book_hash>`. A book counts as finished when marked or read through (98%, `isFinished` in `shared/domain/ReadState.kt`); "Mark as unread" clears the flag and saves a start-of-book position, so it syncs over the old place; changing it bumps the book's Lamport value so the newest choice wins like any library change. Files from older versions omit `workKey` and `finished`, and a missing value keeps what the device already knows.
 
 `meta.json` holds the device's counter, bumped on every write batch. A peer detects "this device has new data" by comparing `counter` with its locally stored `last_seen_counter` for that device (`sync_state`), with no cross-device timestamp comparison. This replaces the shared `sync/journal.json`, which every device would have written on every change.
 

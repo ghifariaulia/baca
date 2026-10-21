@@ -56,6 +56,7 @@ import com.baca.app.reader.AnchorJump
 import com.baca.app.sync.SyncCoordinator
 import com.baca.app.sync.SyncTriggerStore
 import com.baca.app.ui.AppTheme
+import com.baca.shared.domain.isFinished
 import com.baca.app.ui.SettingsScreen
 import com.baca.app.ui.BookDetailScreen
 import com.baca.app.ui.DeviceRow
@@ -544,7 +545,9 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                 is Screen.Detail -> {
                     val progress = booksRepo.progressFor(current.row.bookHash)
                     val lastRead = booksRepo.lastReadAt(current.row.bookHash)
-                    val finished = remember(current.row.bookHash, libraryTick) { booksRepo.isFinished(current.row.bookHash) }
+                    val finished = remember(current.row.bookHash, libraryTick) {
+                        isFinished(booksRepo.isFinished(current.row.bookHash), progress)
+                    }
                     // library-folder books on Android are document URIs, not file paths
                     val sizeBytes by produceState(0L, current.row.path, libraryFolder) {
                         value = withContext(Dispatchers.IO) {
@@ -570,6 +573,8 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                         finished = finished,
                         onToggleFinished = {
                             booksRepo.setFinished(current.row.bookHash, !finished)
+                            // unread means from the start; a read-through book would count as finished again
+                            if (finished) store.resetToStart(current.row.bookHash, fixedLayout = current.row.format == "cbz")
                             dirtySinceSync = true
                             libraryTick++
                         },

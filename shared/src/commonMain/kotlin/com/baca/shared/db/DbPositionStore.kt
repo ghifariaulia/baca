@@ -51,6 +51,18 @@ class DbPositionStore(
         )
     }
 
+    /**
+     * Back to the book's start, as a new position so it syncs over the old one
+     * (mark as unread). A start locator with no href restores to the first
+     * chapter; for fixed layout, page 0.
+     */
+    fun resetToStart(bookHash: String, fixedLayout: Boolean) {
+        val lamport = bumpLamport()
+        val locator = if (fixedLayout) json.encodeToString(FixedLocator(0, 0.0)) else json.encodeToString(Locator("", 0, 0, 0.0))
+        db.positionsQueries.setPosition(bookHash, deviceId, locator, lamport, now())
+        saveBookProgress(bookHash, 0f)
+    }
+
     override fun loadFixedPosition(bookHash: String): FixedLocator? =
         db.positionsQueries.selectPosition(bookHash).executeAsOneOrNull()?.locator
             ?.let { runCatching { json.decodeFromString<FixedLocator>(it) }.getOrNull() }

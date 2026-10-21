@@ -1,5 +1,6 @@
 package com.baca.app.ui
 
+import com.baca.shared.domain.isFinished
 import androidx.compose.foundation.Canvas
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.Icons
@@ -103,14 +104,14 @@ private fun filterPredicate(query: String, filter: LibraryFilter): (LibraryBook)
     (query.isBlank() || r.title.contains(query, true) || r.author.contains(query, true)) &&
         when (filter) {
             LibraryFilter.ALL -> true
-            LibraryFilter.READING -> !lib.finished && lib.progress != null && lib.progress < 0.98f
-            LibraryFilter.FINISHED -> lib.finished || (lib.progress != null && lib.progress >= 0.98f)
+            LibraryFilter.READING -> lib.progress != null && !isFinished(lib.finished, lib.progress)
+            LibraryFilter.FINISHED -> isFinished(lib.finished, lib.progress)
         }
 }
 
 /** Most-recently-read unfinished book, or null. */
 private fun continueBook(visible: List<LibraryBook>): LibraryBook? =
-    visible.filter { !it.finished && it.progress != null && it.progress in 0.001f..0.98f }
+    visible.filter { it.progress != null && it.progress >= 0.001f && !isFinished(it.finished, it.progress) }
         .maxByOrNull { it.lastReadAt ?: 0L }
 
 @Composable

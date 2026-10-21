@@ -136,7 +136,7 @@ fun BookDetailScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    if (lastReadAt == null) "Start reading" else "Continue reading",
+                    if (lastReadAt == null || (progress ?: 0f) == 0f) "Start reading" else "Continue reading",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = onAccent,
@@ -156,7 +156,7 @@ fun BookDetailScreen(
 
             Spacer(Modifier.height(24.dp))
             Text(
-                if (finished) "Mark as not finished" else "Mark as finished",
+                if (finished) "Mark as unread" else "Mark as finished",
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,

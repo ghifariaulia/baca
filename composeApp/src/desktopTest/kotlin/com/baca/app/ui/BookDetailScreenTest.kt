@@ -77,7 +77,7 @@ class BookDetailScreenTest {
         rule.onNodeWithText("Mark as finished").performClick()
         rule.waitForIdle()
         rule.onNodeWithText("Finished").assertExists()
-        rule.onNodeWithText("Mark as not finished").performClick()
+        rule.onNodeWithText("Mark as unread").performClick()
         rule.waitForIdle()
         rule.onNodeWithText("Mark as finished").assertExists()
     }

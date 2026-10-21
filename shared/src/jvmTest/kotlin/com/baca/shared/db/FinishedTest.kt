@@ -3,6 +3,8 @@ package com.baca.shared.db
 import com.baca.shared.sync.MemoryTransport
 import com.baca.shared.sync.SyncBoundary
 import kotlinx.coroutines.runBlocking
+import com.baca.shared.domain.Locator
+import com.baca.shared.domain.isFinished
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -26,6 +28,28 @@ class FinishedTest {
         assertTrue(books.isFinished("h1"))
         books.setFinished("h1", false)
         assertFalse(books.isFinished("h1"))
+    }
+
+    @Test
+    fun `a read-through book counts as finished without the mark`() {
+        assertTrue(isFinished(markedFinished = false, progress = 1f))
+        assertTrue(isFinished(markedFinished = true, progress = 0.2f))
+        assertFalse(isFinished(markedFinished = false, progress = 0.5f))
+        assertFalse(isFinished(markedFinished = false, progress = null))
+    }
+
+    @Test
+    fun `reset to start makes a read-through book unread`() {
+        val (db, books) = device("dev-A")
+        val store = DbPositionStore(db, now = { 5L })
+        store.savePosition("h1", Locator("OEBPS/end.xhtml", 3, 10, 1.0))
+        store.saveBookProgress("h1", 1f)
+        assertTrue(isFinished(books.isFinished("h1"), books.progressFor("h1")))
+
+        store.resetToStart("h1", fixedLayout = false)
+
+        assertFalse(isFinished(books.isFinished("h1"), books.progressFor("h1")))
+        assertEquals(Locator("", 0, 0, 0.0), store.loadPosition("h1"))
     }
 
     @Test
