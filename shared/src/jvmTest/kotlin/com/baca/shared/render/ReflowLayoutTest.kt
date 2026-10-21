@@ -241,4 +241,13 @@ class ReflowLayoutTest {
         val short = layout(para, pageHeight = 100)
         assertTrue(tall.pageCount() < short.pageCount())
     }
+
+    @Test
+    fun `the room under a page's last whole line is split above and below`() {
+        // 20px type at 1.5 is a 30px line: 7 lines fill 210 of 230px, 10px above and below
+        val settings = ReflowSettings(fontSizePx = 20, lineHeightRatio = 1.5f)
+        assertEquals(10, settings.evenLinesPx(230))
+        assertEquals(0, settings.evenLinesPx(240))
+        assertEquals(0, settings.evenLinesPx(20))
+    }
 }

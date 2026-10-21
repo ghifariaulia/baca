@@ -42,7 +42,7 @@ class EdgeLongPressTest {
         val before = pageLabel()
 
         // left third, on the text block below the top bar
-        rule.onRoot().performTouchInput { longClick(Offset(40f, 300f)) }
+        rule.onRoot().performTouchInput { longClick(Offset(60f, 300f)) }
         rule.waitForIdle()
 
         rule.waitUntil(5_000) { rule.onAllNodesWithText("Note").fetchSemanticsNodes().isNotEmpty() }

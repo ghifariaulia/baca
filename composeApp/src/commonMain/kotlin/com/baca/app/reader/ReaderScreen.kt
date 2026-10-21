@@ -2,6 +2,7 @@ package com.baca.app.reader
 
 import kotlin.math.ceil
 
+import com.baca.shared.render.evenLinesPx
 import com.baca.shared.render.gapBeforePx
 import com.baca.shared.render.hangs
 import com.baca.shared.render.insetPx
@@ -161,7 +162,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
@@ -285,7 +285,6 @@ fun ReaderScreen(
     }
 
     val colors = ReaderThemes.forTheme(display.theme)
-    val margin = marginDpOf(display.margins)
 
     val chapterIndex = session.chapterIndex.coerceIn(0, book.chapters.lastIndex)
     val chapter = book.chapters[chapterIndex]
@@ -444,6 +443,8 @@ fun ReaderScreen(
             Modifier.fillMaxSize().windowInsetsPadding(stableReaderInsets()),
         ) {
         val isDesktop = maxWidth >= 900.dp
+        // LibreraX's side padding: a share of the page's width (on a wide window, the column's)
+        val margin = minOf(maxWidth, DESKTOP_COLUMN) * marginFractionOf(display.margins)
         var panelOpen by remember { mutableStateOf(false) }
         // Back closes what's open on top of the page first, then leaves the book
         PlatformBackHandler {
@@ -579,17 +580,22 @@ fun ReaderScreen(
                 ) {
                     val desktopColumn = maxWidth >= 900.dp
                     val columnWidthPx = with(density) {
-                        val limit = if (desktopColumn) 680.dp.roundToPx() else constraints.maxWidth
+                        val limit = if (desktopColumn) DESKTOP_COLUMN.roundToPx() else constraints.maxWidth
                         (limit - margin.roundToPx() * 2).coerceAtLeast(0)
                     }
+                    // LibreraX's page: a band above the text, then whole lines, with what is
+                    // left under the last one split above and below
+                    val bandPx = with(density) { PAGE_TOP_BAND.roundToPx() }
+                    val textHeightPx = (constraints.maxHeight - bandPx).coerceAtLeast(0)
+                    val evenPx = reflowSettingsOf(display, density).evenLinesPx(textHeightPx)
                     val inner = Viewport(
                         columnWidthPx = columnWidthPx,
-                        pageHeightPx = constraints.maxHeight,
+                        pageHeightPx = textHeightPx - evenPx * 2,
                     )
                     LaunchedEffect(inner) { viewport = inner }
 
                         Column(
-                            Modifier.fillMaxSize().graphicsLayer {
+                            Modifier.fillMaxSize().padding(top = with(density) { (bandPx + evenPx).toDp() }).graphicsLayer {
                                 translationX = pageShift.value
                                 alpha = pageAlpha.value
                             },
@@ -762,7 +768,7 @@ fun ReaderScreen(
                     ink = colors.ink,
                     horizontalMargin = margin,
                     // same width as the desktop text column
-                    modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = 680.dp),
+                    modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = DESKTOP_COLUMN),
                 )
 
                 AnimatedVisibility(
@@ -1622,12 +1628,18 @@ private fun reflowSettingsOf(display: DisplaySettings, density: Density): Reflow
     )
 }
 
-private fun marginDpOf(name: String): Dp = when (name) {
-    "narrow" -> 8.dp
-    "medium" -> 16.dp
-    "wide" -> 32.dp
-    else -> 16.dp
+/** Side margin as a share of the page width; medium is LibreraX's default 6%. */
+private fun marginFractionOf(name: String): Float = when (name) {
+    "narrow" -> 0.03f
+    "wide" -> 0.09f
+    else -> 0.06f
 }
+
+// LibreraX's default top padding, 6 × 4 CSS px
+private val PAGE_TOP_BAND = 24.dp
+
+// the text column on a wide window
+private val DESKTOP_COLUMN = 680.dp
 
 private const val TAG_LINK = "baca.href"
 

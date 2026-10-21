@@ -34,6 +34,17 @@ fun Block.Text.hangs(): Boolean = kind != BlockKind.HEADING && hanging && align 
 /** How far the book's CSS (a left border's padding) sets the text in. Shared by layout and renderer. */
 fun Block.Text.insetPx(fontSizePx: Int): Int = (insetEm * fontSizePx).roundToInt()
 
+/**
+ * Room above the text of a page [heightPx] tall, as LibreraX lays its page out: a page
+ * holds whole lines of body text, and what is left under the last one is split between
+ * top and bottom, so the text sits centred instead of a line short at the foot.
+ */
+fun ReflowSettings.evenLinesPx(heightPx: Int): Int {
+    val lineHeightPx = ceil(fontSizePx * lineHeightRatio).toInt()
+    if (heightPx < lineHeightPx || lineHeightPx <= 0) return 0
+    return heightPx % lineHeightPx / 2
+}
+
 /** Space above the block: the book's CSS margins, else the reader's paragraph gap. Shared by layout and renderer. */
 fun Block.gapBeforePx(fontSizePx: Int, defaultGapPx: Int): Int =
     gapBeforeEm?.let { (it * fontSizePx).roundToInt() } ?: defaultGapPx

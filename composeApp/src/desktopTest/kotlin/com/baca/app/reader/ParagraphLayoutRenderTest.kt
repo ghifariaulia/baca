@@ -40,7 +40,7 @@ class ParagraphLayoutRenderTest {
         val book = parseEpub(path)
         rule.setContent {
             AppTheme {
-                // phone width: 420 - 2 × 16 margin = 388 column (test density 1)
+                // phone width: 420 - 2 × 25 margin (6% of the page) = 370 column (test density 1)
                 Box(Modifier.size(420.dp, 800.dp)) {
                     ReaderScreen(book, path.toString(), "hash", ParagraphTestStore(), onBack = {})
                 }
@@ -63,7 +63,7 @@ class ParagraphLayoutRenderTest {
             }
         assertTrue(lines.size > 10, "page should be full of body text")
         assertTrue(lines.all { it.lineCount == 1 }, "a drawn line wrapped: ${lines.filter { it.lineCount > 1 }.map { it.layoutInput.text }}")
-        val justified = lines.count { it.size.width >= 388 - 4 }
+        val justified = lines.count { it.size.width >= 370 - 4 }
         assertTrue(justified >= lines.size / 2, "most lines should be stretched to the column edge, got $justified of ${lines.size}")
     }
 }
