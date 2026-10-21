@@ -28,3 +28,11 @@ expect fun clockText(): String
 
 /** Battery charge in percent; null where there is no battery to report (desktop). */
 expect fun batteryPercent(): Int?
+
+/** Hides the phone's status and navigation bars while [enabled] (a swipe from the edge shows them briefly). No-op on desktop. */
+@androidx.compose.runtime.Composable
+expect fun FullScreen(enabled: Boolean)
+
+/** The reader's safe area, measured as if the system bars were showing, so [FullScreen] doesn't move the page. */
+@androidx.compose.runtime.Composable
+expect fun stableReaderInsets(): androidx.compose.foundation.layout.WindowInsets

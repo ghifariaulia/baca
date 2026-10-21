@@ -1,5 +1,6 @@
 package com.baca.app.reader
 
+import androidx.compose.foundation.layout.safeDrawing
 import java.awt.Desktop
 import java.net.URI
 
@@ -26,3 +27,12 @@ actual fun clockText(): String =
 
 // a laptop's battery is already on screen in the menu bar
 actual fun batteryPercent(): Int? = null
+
+@androidx.compose.runtime.Composable
+actual fun FullScreen(enabled: Boolean) {
+    // a desktop window has no system bars to hide
+}
+
+@androidx.compose.runtime.Composable
+actual fun stableReaderInsets(): androidx.compose.foundation.layout.WindowInsets =
+    androidx.compose.foundation.layout.WindowInsets.safeDrawing

@@ -8,6 +8,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
 
 actual val tapZonesForPageTurnEnabled: Boolean = true
 
@@ -46,4 +49,26 @@ actual fun clockText(): String =
 actual fun batteryPercent(): Int? {
     val manager = AndroidContexts.current.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
     return manager?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 0..100 }
+}
+
+@Composable
+actual fun FullScreen(enabled: Boolean) {
+    val view = LocalView.current
+    androidx.compose.runtime.DisposableEffect(enabled) {
+        val window = (view.context as? Activity)?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        val bars = androidx.core.view.WindowInsetsCompat.Type.systemBars()
+        controller?.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (enabled) controller?.hide(bars) else controller?.show(bars)
+        // leaving the reader brings the bars back
+        onDispose { controller?.show(bars) }
+    }
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+actual fun stableReaderInsets(): androidx.compose.foundation.layout.WindowInsets {
+    val insets = androidx.compose.foundation.layout.WindowInsets
+    // not the keyboard: the note sheet moves above it, the page behind stays as it is
+    return insets.systemBarsIgnoringVisibility.union(insets.displayCutout)
 }

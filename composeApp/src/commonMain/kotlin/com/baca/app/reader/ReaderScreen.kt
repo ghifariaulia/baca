@@ -66,9 +66,7 @@ import androidx.compose.animation.core.Animatable
 
 import androidx.compose.foundation.layout.windowInsetsPadding
 
-import androidx.compose.foundation.layout.safeDrawing
 
-import androidx.compose.foundation.layout.WindowInsets
 
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.filled.FormatAlignJustify
@@ -412,7 +410,12 @@ fun ReaderScreen(
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         // the edge color fills behind the system bars; content stays clear of them
-        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+        // Focus mode: the phone's status and navigation bars hide with the reader's bars.
+        // The page keeps the room they take when shown, so hiding them never re-paginates.
+        FullScreen(enabled = !barsVisible)
+        BoxWithConstraints(
+            Modifier.fillMaxSize().windowInsetsPadding(stableReaderInsets()),
+        ) {
         val isDesktop = maxWidth >= 900.dp
         var panelOpen by remember { mutableStateOf(false) }
         // Back closes what's open on top of the page first, then leaves the book
