@@ -177,6 +177,7 @@ import com.baca.shared.domain.encode
 import com.baca.shared.domain.reader.ReaderSession
 import com.baca.shared.parser.Block
 import com.baca.shared.parser.LeftRule
+import com.baca.shared.domain.reader.TextSelection
 import com.baca.shared.parser.BlockKind
 import com.baca.shared.parser.Chapter
 import com.baca.shared.parser.ParsedEpub
@@ -218,8 +219,8 @@ fun ReaderScreen(
     var tick by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
 
-    // "Reader selection" toolbar: blockIndex long-pressed + screen offset
-    var toolbarAt by remember { mutableStateOf<Pair<Int, Offset>?>(null) }
+    // Text being selected: a long press picks a word, its handles drag the ends
+    var selection by remember { mutableStateOf<TextSelection?>(null) }
     // Note editor sheet (new or existing annotation)
     var editing by remember { mutableStateOf<EditorState?>(null) }
 
@@ -290,6 +291,10 @@ fun ReaderScreen(
     val pageCount = layout.pageCount()
     val pageNo = session.pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
     val page = layout.pages[pageNo]
+    // where each drawn line of this page sits, for selection handles to find text under a finger
+    val lineGeometry = remember(chapter.href, pageNo, layout) { HashMap<Pair<Int, Int>, LineGeometry>() }
+    LaunchedEffect(chapter.href, pageNo) { selection = null }
+    val selectionTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
 
 
     // Page turns slide: the page moves out toward the turn and fades, the next
@@ -422,7 +427,7 @@ fun ReaderScreen(
         PlatformBackHandler {
             when {
                 editing != null -> editing = null
-                toolbarAt != null -> toolbarAt = null
+                selection != null -> selection = null
                 sheet != SheetKind.NONE -> sheet = SheetKind.NONE
                 panelOpen -> panelOpen = false
                 else -> onBack()
@@ -614,6 +619,8 @@ fun ReaderScreen(
                                             ranges,
                                             line.start,
                                             line.endExclusive,
+                                            selection?.rangeIn(line.blockIndex, block.text.length),
+                                            selectionTint,
                                         ).let { text ->
                                             // a hyphenated break: the text has no hyphen, the measured line drew one
                                             if (breaksWord(block.text, line.endExclusive)) text + AnnotatedString("-") else text
@@ -638,6 +645,10 @@ fun ReaderScreen(
                                                 LinkText(
                                                     lineText,
                                                     style,
+                                                    onPlaced = { textLayout, topLeft ->
+                                                        lineGeometry[line.blockIndex to line.start] =
+                                                            LineGeometry(line.blockIndex, line.start, line.endExclusive, textLayout, topLeft)
+                                                    },
                                                     onLink = { href ->
                                                         textUsedTap[0] = true
                                                         if (href.startsWith("http")) openExternalLink(href)
@@ -654,7 +665,14 @@ fun ReaderScreen(
                                                         textUsedTap[0] = true
                                                         editing = EditorState(existing = entry)
                                                     },
-                                                    onLongPress = { pos -> toolbarAt = line.blockIndex to pos },
+                                                    onPlaced = { textLayout, topLeft ->
+                                                        lineGeometry[line.blockIndex to line.start] =
+                                                            LineGeometry(line.blockIndex, line.start, line.endExclusive, textLayout, topLeft)
+                                                    },
+                                                    onLongPress = { offset ->
+                                                        val at = (line.start + offset).coerceAtMost(line.endExclusive - 1)
+                                                        selection = TextSelection.wordAt(chapter.blocks, line.blockIndex, at)
+                                                    },
                                                 )
                                             }
                                             if (joined != null) {
@@ -668,7 +686,10 @@ fun ReaderScreen(
                                                     joined.endExclusive,
                                                 )
                                                 TappableText(
-                                                    highlighted(blockStrings[joined.blockIndex], floatRanges, joined.start, joined.endExclusive),
+                                                    highlighted(
+                                                        blockStrings[joined.blockIndex], floatRanges, joined.start, joined.endExclusive,
+                                                        selection?.rangeIn(joined.blockIndex, floatBlock.text.length), selectionTint,
+                                                    ),
                                                     lineStyle(floatBlock, display, colors.ink),
                                                     floatRanges,
                                                     joined.start,
@@ -676,7 +697,14 @@ fun ReaderScreen(
                                                         textUsedTap[0] = true
                                                         editing = EditorState(existing = entry)
                                                     },
-                                                    onLongPress = { pos -> toolbarAt = joined.blockIndex to pos },
+                                                    onPlaced = { textLayout, topLeft ->
+                                                        lineGeometry[joined.blockIndex to joined.start] =
+                                                            LineGeometry(joined.blockIndex, joined.start, joined.endExclusive, textLayout, topLeft)
+                                                    },
+                                                    onLongPress = { offset ->
+                                                        val at = (joined.start + offset).coerceAtMost(joined.endExclusive - 1)
+                                                        selection = TextSelection.wordAt(chapter.blocks, joined.blockIndex, at)
+                                                    },
                                                     modifier = Modifier.align(Alignment.TopEnd),
                                                 )
                                             }
@@ -852,81 +880,50 @@ fun ReaderScreen(
                 }
             }
 
-            // "Reader selection" toolbar (design page): long-press a paragraph
-            toolbarAt?.let { (blockIndex, pos) ->
-                val copyBlock = rememberCopyToClipboard()
-                Box(Modifier.fillMaxSize()) {
-                    Box(
-                        Modifier.fillMaxSize().pointerInput(Unit) {
-                            detectTapGestures { toolbarAt = null }
-                        },
-                    )
-                    val block = book.chapters[chapterIndex].blocks.getOrNull(blockIndex) as? Block.Text
-                    if (block != null) {
+            // "Reader selection" (design page): the selected text, its two handles and the toolbar
+            selection?.let { current ->
+                val copyText = rememberCopyToClipboard()
+                val blocks = book.chapters[chapterIndex].blocks
+                SelectionOverlay(
+                    selection = current,
+                    geometry = lineGeometry,
+                    onChange = { selection = it },
+                    onDismiss = { selection = null },
+                    toolbar = { modifier ->
                         SelectionToolbar(
                             onColor = { colorName ->
-                                onAnnotationUpsert(newHighlightEntry(book, chapterIndex, blockIndex, colorName))
-                                toolbarAt = null
+                                onAnnotationUpsert(
+                                    newHighlightEntry(current.anchor(chapter.href, blocks), current.text(blocks), colorName),
+                                )
+                                selection = null
                             },
                             onNote = {
-                                editing = EditorState(blockIndex = blockIndex)
-                                toolbarAt = null
+                                editing = EditorState(anchor = current.anchor(chapter.href, blocks), quote = current.text(blocks))
+                                selection = null
                             },
                             onCopy = {
-                                copyBlock(block.text)
-                                toolbarAt = null
+                                copyText(current.text(blocks))
+                                selection = null
                             },
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .offset(
-                                    x = with(density) { pos.x.toDp() } - 40.dp,
-                                    y = with(density) { pos.y.toDp() } - 56.dp,
-                                ),
+                            modifier = modifier,
                         )
-                    } else {
-                        toolbarAt = null
-                    }
-                }
+                    },
+                )
             }
 
             // Note editor sheet (design 'Note editor')
             editing?.let { editor ->
                 val existing = editor.existing
-                val block = if (editor.blockIndex >= 0) {
-                    book.chapters[chapterIndex].blocks.getOrNull(editor.blockIndex) as? Block.Text
-                } else {
-                    null
-                }
                 NoteEditorSheet(
-                    quote = existing?.text ?: block?.text.orEmpty(),
+                    quote = editor.quote,
                     color = editor.color,
                     note = editor.note,
                     onColor = { editing = editor.copy(color = it) },
                     onNoteChange = { editing = editor.copy(note = it) },
                     onCancel = { editing = null },
                     onSave = {
-                        val anchor = if (existing != null) {
-                            existing.reflowAnchor
-                        } else {
-                            block?.let {
-                                ReflowAnchorDto(
-                                    href = book.chapters[chapterIndex].href,
-                                    start = PointDto(blockIndex = editor.blockIndex, charOffset = 0),
-                                    end = PointDto(blockIndex = editor.blockIndex, charOffset = it.text.length),
-                                    quote = it.text.take(64),
-                                )
-                            }
-                        }
-                        if (anchor != null) {
-                            onAnnotationUpsert(
-                                (existing ?: newHighlightEntry(book, chapterIndex, editor.blockIndex, editor.color)).copy(
-                                    color = editor.color,
-                                    note = editor.note,
-                                    reflowAnchor = anchor,
-                                    text = existing?.text ?: block?.text.orEmpty(),
-                                ),
-                            )
-                        }
+                        val entry = existing ?: editor.anchor?.let { newHighlightEntry(it, editor.quote, editor.color) }
+                        if (entry != null) onAnnotationUpsert(entry.copy(color = editor.color, note = editor.note))
                         editing = null
                     },
                     onDelete = if (existing != null) {
@@ -962,48 +959,29 @@ private enum class ContentsTab { CONTENTS, NOTES, BOOKMARKS }
 /** Open-the-reader-on-an-anchor parameter (Notes list entry points). */
 data class AnchorJump(val href: String, val blockIndex: Int, val charOffset: Int)
 
-/** State for the note editor sheet; [existing] null = creating. */
+/** State for the note editor sheet; [existing] null = creating one for [anchor]. */
 private data class EditorState(
     val existing: com.baca.shared.sync.AnnotationEntry? = null,
-    val blockIndex: Int = -1,
-    val color: String = "yellow",
-    val note: String = "",
-) {
-    constructor(existing: com.baca.shared.sync.AnnotationEntry) : this(
-        existing = existing,
-        blockIndex = existing.reflowAnchor?.start?.blockIndex ?: -1,
-        color = existing.color,
-        note = existing.note,
-    )
-}
+    val anchor: ReflowAnchorDto? = existing?.reflowAnchor,
+    val quote: String = existing?.text.orEmpty(),
+    val color: String = existing?.color ?: "yellow",
+    val note: String = existing?.note.orEmpty(),
+)
 
 /** Text copy for the selection toolbar's Copy action. */
 @Composable
 expect fun rememberCopyToClipboard(): (String) -> Unit
 
-private fun newHighlightEntry(
-    book: ParsedEpub,
-    chapterIndex: Int,
-    blockIndex: Int,
-    colorName: String,
-): com.baca.shared.sync.AnnotationEntry {
-    val chapter = book.chapters[chapterIndex]
-    val block = chapter.blocks[blockIndex] as Block.Text
-    return com.baca.shared.sync.AnnotationEntry(
+private fun newHighlightEntry(anchor: ReflowAnchorDto, text: String, colorName: String) =
+    com.baca.shared.sync.AnnotationEntry(
         id = kotlin.uuid.Uuid.random().toString(),
         kind = "highlight",
-        reflowAnchor = ReflowAnchorDto(
-            href = chapter.href,
-            start = PointDto(blockIndex = blockIndex, charOffset = 0),
-            end = PointDto(blockIndex = blockIndex, charOffset = block.text.length),
-            quote = block.text.take(64),
-        ),
-        text = block.text,
+        reflowAnchor = anchor,
+        text = text,
         color = colorName,
         createdAt = 0L, // repository stamps wall time via now()
         lamport = 0L,
     )
-}
 
 private data class HighlightRange(val start: Int, val end: Int, val colorName: String, val entry: com.baca.shared.sync.AnnotationEntry)
 
@@ -1046,13 +1024,25 @@ private fun highlightRangesOf(
     return out
 }
 
-private fun highlighted(base: AnnotatedString, ranges: List<HighlightRange>, lineStart: Int, lineEnd: Int): AnnotatedString =
-    if (ranges.isEmpty()) base.subSequence(lineStart, lineEnd) else buildAnnotatedString {
+private fun highlighted(
+    base: AnnotatedString,
+    ranges: List<HighlightRange>,
+    lineStart: Int,
+    lineEnd: Int,
+    /** the text being selected, in block offsets */
+    selected: IntRange? = null,
+    selectionTint: Color = Color.Unspecified,
+): AnnotatedString {
+    val selectedHere = selected?.let { maxOf(it.first, lineStart) until minOf(it.last + 1, lineEnd) }?.takeIf { !it.isEmpty() }
+    if (ranges.isEmpty() && selectedHere == null) return base.subSequence(lineStart, lineEnd)
+    return buildAnnotatedString {
         append(base.subSequence(lineStart, lineEnd))
         ranges.forEach { r ->
             addStyle(SpanStyle(background = HighlightColors.of(r.colorName)), r.start, r.end)
         }
+        selectedHere?.let { addStyle(SpanStyle(background = selectionTint), it.first - lineStart, it.last + 1 - lineStart) }
     }
+}
 
 /** Text line with annotation gestures: tap on a highlight opens the editor. */
 @Composable
@@ -1062,11 +1052,13 @@ private fun TappableText(
     ranges: List<HighlightRange>,
     lineStart: Int,
     onTapAnnotation: (com.baca.shared.sync.AnnotationEntry) -> Unit,
-    onLongPress: (Offset) -> Unit,
+    /** this drawn line's layout and its top-left in the root (selection hit-testing) */
+    onPlaced: (TextLayoutResult, Offset) -> Unit,
+    /** a long press at this char offset into the line */
+    onLongPress: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
-    var positionInRoot by remember { mutableStateOf(Offset.Zero) }
     // foundation BasicText: M3's Text merges LocalTextStyle (bodyLarge's
     // lineHeight wins over ours — the compressed-line-height bug)
     androidx.compose.foundation.text.BasicText(
@@ -1076,7 +1068,7 @@ private fun TappableText(
         maxLines = 1,
         onTextLayout = { layout = it },
         modifier = modifier
-            .onGloballyPositioned { positionInRoot = it.positionInRoot() }
+            .onGloballyPositioned { coordinates -> layout?.let { onPlaced(it, coordinates.positionInRoot()) } }
             .pointerInput(text, ranges, lineStart) {
                 detectTapGestures(
                     onTap = { pos ->
@@ -1086,8 +1078,7 @@ private fun TappableText(
                             onTapAnnotation(r.entry)
                         }
                     },
-                    // report ROOT coordinates so overlays can position themselves
-                    onLongPress = { pos -> onLongPress(positionInRoot + pos) },
+                    onLongPress = { pos -> layout?.let { onLongPress(it.getOffsetForPosition(pos)) } },
                 )
             },
     )
@@ -1615,7 +1606,12 @@ private fun annotatedOf(block: Block, ink: Color, accent: Color, sans: FontFamil
 
 /** Text with tappable internal/external links; part of text selection downstream. */
 @Composable
-private fun LinkText(text: AnnotatedString, style: TextStyle, onLink: (String) -> Unit) {
+private fun LinkText(
+    text: AnnotatedString,
+    style: TextStyle,
+    onPlaced: (TextLayoutResult, Offset) -> Unit,
+    onLink: (String) -> Unit,
+) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     androidx.compose.foundation.text.BasicText(
         text = text,
@@ -1623,7 +1619,7 @@ private fun LinkText(text: AnnotatedString, style: TextStyle, onLink: (String) -
         softWrap = false,
         maxLines = 1,
         onTextLayout = { layout = it },
-        modifier = Modifier.pointerInput(text) {
+        modifier = Modifier.onGloballyPositioned { coordinates -> layout?.let { onPlaced(it, coordinates.positionInRoot()) } }.pointerInput(text) {
             detectTapGestures { pos ->
                 layout?.let { l ->
                     val offset = l.getOffsetForPosition(pos)

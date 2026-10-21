@@ -8,6 +8,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.performTextInput
@@ -88,5 +90,44 @@ class AnnotationFlowTest {
         assertEquals("the hallway", stored.first().entry.note)
         assertTrue(stored.first().entry.text.isNotBlank(), "highlight anchors to the block text")
         assertEquals("highlight", stored.first().entry.kind)
+    }
+
+    @Test
+    fun `long press selects a word, a handle drags the selection, and the highlight keeps that range`() {
+        val bytes = javaClass.classLoader.getResourceAsStream("books/frankenstein.epub")!!.readBytes()
+        val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "select-test.epub"
+        FileSystem.SYSTEM.write(path) { write(bytes) }
+        val book = parseEpub(path)
+        val driver = JdbcSqliteDriver("jdbc:sqlite:")
+        Baca.Schema.create(driver)
+        val repo = DbAnnotationRepository(Baca(driver), now = { 1L })
+        rule.setContent {
+            ReaderScreen(
+                book = book, bookPath = path.toString(), bookHash = "hash", store = AStore, onBack = {},
+                annotations = repo.forBookDetailed("hash").map { it.entry },
+                onAnnotationUpsert = { entry -> repo.upsert(entry, "hash") },
+                onAnnotationDelete = {},
+            )
+        }
+        rule.waitUntil(20_000) { rule.onAllNodesWithText("Title:", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        val line = rule.onNodeWithText("Title: Frankenstein", substring = true)
+        line.performTouchInput { longClick(centerLeft + androidx.compose.ui.geometry.Offset(10f, 0f)) }
+        rule.waitForIdle()
+        val handles = rule.onAllNodesWithTag(SELECTION_HANDLE_TAG)
+        assertEquals(2, handles.fetchSemanticsNodes().size)
+
+        // "Title" is selected; drag the end handle along the line
+        handles[1].performTouchInput { swipe(center, center + androidx.compose.ui.geometry.Offset(120f, 0f), 400) }
+        rule.waitForIdle()
+        rule.onNodeWithText("Note").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("Save").performClick()
+
+        val anchor = repo.forBookDetailed("hash").single().entry.reflowAnchor!!
+        assertEquals(anchor.start.blockIndex, anchor.end.blockIndex)
+        assertEquals(0, anchor.start.charOffset)
+        val selected = anchor.end.charOffset - anchor.start.charOffset
+        assertTrue(selected > "Title".length, "the drag extended the selection past the word, got $selected chars")
+        assertTrue(anchor.quote.startsWith("Title: Fr"), "quote follows the selection: ${anchor.quote}")
     }
 }
