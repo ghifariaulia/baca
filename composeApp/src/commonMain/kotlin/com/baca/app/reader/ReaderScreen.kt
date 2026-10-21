@@ -95,6 +95,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
@@ -815,6 +816,7 @@ fun ReaderScreen(
                 )
                 Column(
                     Modifier.fillMaxWidth().align(Alignment.BottomCenter)
+                        .keepsTaps()
                         .background(MaterialTheme.colorScheme.surface, SheetShape)
                         .padding(horizontal = 20.dp, vertical = 12.dp)
                         .heightIn(max = 560.dp),
@@ -938,6 +940,9 @@ fun ReaderScreen(
         }
     }
 }
+
+/** A sheet keeps taps on its blank areas; otherwise they reach the dimmed backdrop under it, which closes it. */
+private fun Modifier.keepsTaps(): Modifier = pointerInput(Unit) { detectTapGestures { } }
 
 /** Annotation colors (design toolbar: yellow/green/blue/pink). */
 object HighlightColors {
@@ -1147,6 +1152,9 @@ private fun NoteEditorSheet(
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).clickable(onClick = onCancel))
         Column(
         Modifier.fillMaxWidth().align(Alignment.BottomCenter)
+            // above the keyboard while typing the note
+            .imePadding()
+            .keepsTaps()
             .background(MaterialTheme.colorScheme.surface, SheetShape)
             .padding(horizontal = 20.dp, vertical = 12.dp),
     ) {
@@ -1196,15 +1204,19 @@ private fun NoteEditorSheet(
                     .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp))
                     .padding(12.dp),
             ) {
+                // the whole box takes the tap, not just the placeholder's width
                 androidx.compose.foundation.text.BasicTextField(
                     value = note,
                     onValueChange = onNoteChange,
-                    textStyle = Type.body,
+                    textStyle = Type.body.copy(color = MaterialTheme.colorScheme.onSurface),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
                 ) { inner ->
-                    if (note.isEmpty()) {
-                        Text("Add a note…", style = Type.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
+                    Box {
+                        if (note.isEmpty()) {
+                            Text("Add a note…", style = Type.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        // always composed, so the cursor shows in an empty note
                         inner()
                     }
                 }

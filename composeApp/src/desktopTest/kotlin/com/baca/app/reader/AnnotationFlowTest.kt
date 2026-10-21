@@ -8,6 +8,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.click
 import com.baca.shared.db.DbAnnotationRepository
 import com.baca.shared.db.Baca
@@ -70,10 +73,19 @@ class AnnotationFlowTest {
         rule.onNodeWithText("Note").performTouchInput { click(center) }
         // editor opens with the quoted text; type a note and save
         rule.waitForIdle()
-        rule.onRoot().printToLog("EDITOR")
+        // a tap on the sheet's blank space keeps it open (it used to fall through to the backdrop)
+        rule.onNodeWithText("COLOR").performTouchInput { click(center) }
+        rule.waitForIdle()
+        rule.onNodeWithText("Save").assertExists()
+        // the whole note box takes the tap, not just the placeholder's width
+        rule.onNode(hasSetTextAction()).performTouchInput { click(centerRight - androidx.compose.ui.geometry.Offset(4f, 0f)) }
+        rule.waitForIdle()
+        rule.onNode(hasSetTextAction()).assertIsFocused()
+        rule.onNode(hasSetTextAction()).performTextInput("the hallway")
         rule.onNodeWithText("Save").performClick()
         val stored = repo.forBookDetailed("hash")
         assertEquals(1, stored.size)
+        assertEquals("the hallway", stored.first().entry.note)
         assertTrue(stored.first().entry.text.isNotBlank(), "highlight anchors to the block text")
         assertEquals("highlight", stored.first().entry.kind)
     }
