@@ -76,6 +76,22 @@ class BookImporterTest {
     }
 
     @Test
+    fun pagesAndDocumentsImportAsBooksWithTheirOwnTitles() {
+        val (importer, repo) = importer()
+        val dir = java.nio.file.Files.createTempDirectory("import-pages").toFile()
+        val files = mapOf(
+            "page.html" to ("html" to "<html><head><title>Page Title</title></head><body><h1>A</h1><p>text</p></body></html>"),
+            "notes.md" to ("md" to "# Notes\n\nSome *text*."),
+            "letter.rtf" to ("rtf" to "{\\rtf1 Dear reader\\par}"),
+        )
+        files.forEach { (name, spec) ->
+            val imported = assertNotNull(importer.import(java.io.File(dir, name).apply { writeText(spec.second) }.absolutePath), name)
+            assertEquals(spec.first, imported.row.format)
+        }
+        assertEquals(setOf("Page Title", "notes", "letter"), repo.all().map { it.title }.toSet())
+    }
+
+    @Test
     fun cbzImportUsesFirstPageAsCover() {
         val (importer, repo) = importer()
         val zip = java.io.File.createTempFile("import-cbz", ".cbz")

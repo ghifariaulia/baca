@@ -17,6 +17,12 @@ internal data class CssStyle(
     val italic: Boolean? = null,
     val smallCaps: Boolean? = null,
     val align: TextAlign? = null,
+    /** `writing-mode` is vertical (`vertical-rl`, `tb-rl`…): its lines run down the page, from the right */
+    val vertical: Boolean? = null,
+    /** `direction: rtl` (true) or `ltr`; inherited */
+    val rtl: Boolean? = null,
+    /** `text-align` as written, `left` and `right` physical: they mean the other side of a right-to-left block */
+    val alignSide: String? = null,
     /** `text-align: left` (true) or `justify` (false), both [TextAlign.START]: kept where the reader's justification isn't set */
     val alignLeft: Boolean? = null,
     /** `text-align: -webkit-center` or `-webkit-right`, which also push narrower blocks inside; inherited */
@@ -119,6 +125,9 @@ internal data class CssStyle(
         align = other.align ?: align,
         pushesBlocks = if (other.align != null) other.pushesBlocks else pushesBlocks,
         alignLeft = if (other.align != null) other.alignLeft else alignLeft,
+        alignSide = if (other.align != null) other.alignSide else alignSide,
+        rtl = other.rtl ?: rtl,
+        vertical = other.vertical ?: vertical,
         indent = other.indent ?: indent,
         floatRight = other.floatRight ?: floatRight,
         floatLeft = other.floatLeft ?: floatLeft,
@@ -365,12 +374,20 @@ private val READER_RULES by lazy {
         parseCss(LIBRERAX_CSS, firstOrder = Int.MAX_VALUE / 2)
 }
 
+// after any rule a book can have
+private const val USER_RULE_ORDER = 1_000_000
+
 /** All rules seen so far in a chapter, in document order, with the reader's rules. */
 internal class Stylesheet(private val darkScheme: Boolean = false) {
     private val rules = READER_RULES.toMutableList()
 
     fun add(css: String) {
         parseCss(css, firstOrder = rules.size, darkScheme).forEach { rules.add(it) }
+    }
+
+    /** The reader's own CSS: after every sheet of the book in order, so it wins where the weight is equal. */
+    fun addUser(css: String) {
+        parseCss(css, firstOrder = USER_RULE_ORDER, darkScheme).forEach { rules.add(it) }
     }
 
     /**
@@ -627,7 +644,17 @@ private fun CssStyle.declare(name: String, value: String, written: String): CssS
     "font-weight" -> copy(bold = weightIsBold(value) ?: bold)
     "font-style" -> copy(italic = value == "italic" || value == "oblique")
     "font-variant", "font-variant-caps" -> copy(smallCaps = value.contains("small-caps"))
+    "direction" -> copy(rtl = when (value) { "rtl" -> true; "ltr" -> false; else -> rtl })
+    "writing-mode", "-webkit-writing-mode", "-epub-writing-mode" ->
+        copy(vertical = if (value.startsWith("vertical") || value == "tb-rl" || value == "tb") true else if (value.startsWith("horizontal") || value == "lr-tb" || value == "lr") false else vertical)
     "text-align" -> copy(
+        alignSide = when (value) {
+            "left", "-webkit-left" -> "left"
+            "right", "-webkit-right" -> "right"
+            "center", "-webkit-center" -> "center"
+            "end" -> "end"
+            else -> "start"
+        },
         align = when (value) {
             "center", "-webkit-center" -> TextAlign.CENTER
             "right", "end", "-webkit-right" -> TextAlign.END
@@ -664,8 +691,8 @@ private fun CssStyle.declare(name: String, value: String, written: String): CssS
     )
     "margin" -> boxSides(value, signed = true)?.let { (top, right, bottom, left) ->
         copy(
-            marginTop = top ?: marginTop, marginRight = right?.takeUnless { it.isNegative() } ?: marginRight,
-            marginBottom = bottom ?: marginBottom, marginLeft = left?.takeUnless { it.isNegative() } ?: marginLeft,
+            marginTop = top ?: marginTop, marginRight = right ?: marginRight,
+            marginBottom = bottom ?: marginBottom, marginLeft = left ?: marginLeft,
         )
     } ?: this
     "padding" -> boxSides(value)?.let { (top, right, bottom, left) ->
@@ -674,9 +701,9 @@ private fun CssStyle.declare(name: String, value: String, written: String): CssS
             paddingBottom = bottom ?: paddingBottom, paddingLeft = left ?: paddingLeft,
         )
     } ?: this
-    "margin-left" -> copy(marginLeft = cssLength(value) ?: marginLeft)
+    "margin-left" -> copy(marginLeft = cssLength(value, signed = true) ?: marginLeft)
     "padding-left" -> copy(paddingLeft = cssLength(value) ?: paddingLeft)
-    "margin-right" -> copy(marginRight = cssLength(value) ?: marginRight)
+    "margin-right" -> copy(marginRight = cssLength(value, signed = true) ?: marginRight)
     "padding-right" -> copy(paddingRight = cssLength(value) ?: paddingRight)
     "border" -> borderOf(value).let { copy(borderTop = it, borderRight = it, borderBottom = it, borderLeft = it) }
     "border-top" -> copy(borderTop = borderOf(value))
@@ -942,8 +969,6 @@ internal fun attrLength(value: String): CssLength? {
     val number = match.groupValues[1].toFloat()
     return if (match.groupValues[2] == "%") CssLength.Percent(number) else CssLength.Px(number)
 }
-
-private fun CssLength.isNegative() = (this is CssLength.Em && em < 0f) || (this is CssLength.Px && px < 0f) || (this is CssLength.Percent && percent < 0f)
 
 /** A length; `auto`, `none`, anything unknown and (unless [signed]) negatives are null, the browser's default. */
 internal fun cssLength(value: String, signed: Boolean = false): CssLength? {

@@ -52,16 +52,22 @@ private const val DEFAULT_NORMAL_RATIO = 1.2f
  */
 data class LineBox(val startPx: Int, val endPx: Int, val firstLinePx: Int, val restLinePx: Int) {
     fun linePx(firstLine: Boolean): Int = startPx + if (firstLine) firstLinePx else restLinePx
+
+    /** The room on the right of a right-to-left line, where its text starts: its side's inset and the indent. */
+    fun rightPx(firstLine: Boolean): Int = endPx + if (firstLine) firstLinePx else restLinePx
 }
 
-fun Block.Text.lineBox(bodyFontPx: Float, cssPx: Float, columnPx: Int): LineBox {
-    val inset = inset.toPx(bodyFontPx, cssPx) + (insetShare * columnPx).roundToInt()
-    val end = insetEnd.toPx(bodyFontPx, cssPx) + (insetEndShare * columnPx).roundToInt()
+fun Block.Text.lineBox(bodyFontPx: Float, cssPx: Float, columnPx: Int, room: Room = Room.NONE): LineBox {
+    val inset = inset.toPx(bodyFontPx, cssPx, room) + (insetShare * columnPx).roundToInt()
+    val end = insetEnd.toPx(bodyFontPx, cssPx, room) + (insetEndShare * columnPx).roundToInt()
     // a percent indent is of the block's own width
-    val indent = indent.toPx(bodyFontPx, cssPx) + (indentShare * (columnPx - inset - end)).roundToInt()
+    val indent = indent.toPx(bodyFontPx, cssPx, room) + (indentShare * (columnPx - inset - end)).roundToInt()
     val hang = maxOf(-indent, 0)
-    // like LibreraX's keepIndentsInside: a hanging first line never pulls out past the column
-    return LineBox(maxOf(inset - hang, 0), end, maxOf(indent, 0), hang)
+    // like LibreraX's keepIndentsInside: a hanging first line never pulls out past the column; a
+    // negative margin does, into the page's padding, as a browser lets it
+    // right-to-left text starts at the right edge: its indent and hang are there, [LineBox.endPx] being that side
+    if (rtl) return LineBox(inset, maxOf(end - hang, minOf(end, 0)), maxOf(indent, 0), hang)
+    return LineBox(maxOf(inset - hang, minOf(inset, 0)), end, maxOf(indent, 0), hang)
 }
 
 /**
@@ -175,9 +181,10 @@ class ReflowLayout(
     private val imageHeight: (Block.Image) -> Int? = { null },
     /** the reader's whole window, which a linked stylesheet's `vh` is of */
     windowHeightPx: Int = 0,
+    windowWidthPx: Int = 0,
 ) {
     // what a margin's share of the page, window or column comes to
-    private val room = Room(pageHeightPx.toFloat(), windowHeightPx.toFloat(), columnWidthPx.toFloat())
+    private val room = Room(pageHeightPx.toFloat(), windowHeightPx.toFloat(), columnWidthPx.toFloat(), windowWidthPx.toFloat())
 
     /**
      * Each table's column edges in px, from 0 to the column's width, laid out as a
@@ -358,7 +365,7 @@ class ReflowLayout(
      */
     fun lineBoxOf(blockIndex: Int, column: Int = 0): LineBox {
         val block = blocks[blockIndex] as Block.Text
-        val box = block.lineBox(settings.fontSizePx, settings.cssPx, columnWidthPx)
+        val box = block.lineBox(settings.fontSizePx, settings.cssPx, columnWidthPx, room)
         val columns = block.columns
         if (columns != null) {
             val gapPx = columns.gap.px()
@@ -404,6 +411,7 @@ class ReflowLayout(
                 box.firstLinePx,
                 block.hyphenate,
                 block.lang,
+                block.rtl,
             )
         }
         return Measured(box, spans.filter { it.endExclusive > it.start }, cap)
@@ -553,8 +561,8 @@ class ReflowLayout(
         val widths = cells.first().widths
         val count = maxOf(widths.size, cells.maxOf { it.column + it.span })
         // the table's own room: each cell's box less the cell's own border and padding, which its column holds
-        val tableStarts = cellBlocks.map { i -> (blocks[i] as Block.Text).let { it.lineBox(settings.fontSizePx, settings.cssPx, columnWidthPx).startPx - it.cell!!.ownStart.px() } }
-        val tableEnds = cellBlocks.map { i -> (blocks[i] as Block.Text).let { it.lineBox(settings.fontSizePx, settings.cssPx, columnWidthPx).endPx - it.cell!!.ownEnd.px() } }
+        val tableStarts = cellBlocks.map { i -> (blocks[i] as Block.Text).let { it.lineBox(settings.fontSizePx, settings.cssPx, columnWidthPx, room).startPx - it.cell!!.ownStart.px() } }
+        val tableEnds = cellBlocks.map { i -> (blocks[i] as Block.Text).let { it.lineBox(settings.fontSizePx, settings.cssPx, columnWidthPx, room).endPx - it.cell!!.ownEnd.px() } }
         val shared = TableColumns(tableStarts.min(), tableEnds.min(), emptyList())
         val spacingPx = cells.first().spacing.px()
         val total = (columnWidthPx - shared.start - shared.end - spacingPx * (count + 1)).coerceAtLeast(0).toFloat()
@@ -602,7 +610,7 @@ class ReflowLayout(
     /** A cell's text on one line (each hard line), with the cell's own insets: what its column would take with room to spare. */
     private fun maxContentPx(blockIndex: Int): Int {
         val block = blocks[blockIndex] as Block.Text
-        val box = block.lineBox(settings.fontSizePx, settings.cssPx, columnWidthPx)
+        val box = block.lineBox(settings.fontSizePx, settings.cssPx, columnWidthPx, room)
         val widest = metrics.layoutLines(block.text, fontPxOf(block), lineHeightPxOf(block), MAX_CONTENT_PX, settings.fontFamily, styleRangesOf(block))
             .maxOfOrNull { it.rightPx } ?: 0
         return widest + box.startPx + box.endPx + maxOf(box.firstLinePx, 0)
@@ -612,7 +620,7 @@ class ReflowLayout(
     private fun minContentPx(blockIndex: Int): Int {
         val block = blocks[blockIndex] as Block.Text
         val styles = styleRangesOf(block)
-        val box = block.lineBox(settings.fontSizePx, settings.cssPx, columnWidthPx)
+        val box = block.lineBox(settings.fontSizePx, settings.cssPx, columnWidthPx, room)
         val widest = Regex("\\S+").findAll(block.text).sortedByDescending { it.value.length }.take(MIN_CONTENT_WORDS).maxOfOrNull { word ->
             val from = word.range.first
             val wordStyles = styles.mapNotNull { r ->
@@ -652,6 +660,7 @@ class ReflowLayout(
             },
             hyphenate = block.hyphenate,
             language = block.lang,
+            rtl = block.rtl,
         ).map { it.copy(start = it.start + from, endExclusive = it.endExclusive + from) }
         if (capEnd >= text.length) return listOf(TextMetrics.LineSpan(0, text.length))
         val beside = measure(capEnd, widthPx - cap.widthPx).take(cap.lines)
@@ -681,6 +690,7 @@ class ReflowLayout(
             },
             hyphenate = block.hyphenate,
             language = block.lang,
+            rtl = block.rtl,
         )
         val first = measure(0, widthPx).firstOrNull() ?: return emptyList()
         var restStart = first.endExclusive

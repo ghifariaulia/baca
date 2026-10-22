@@ -98,6 +98,27 @@ class ComposeTextMetricsTest {
     }
 
     @Test
+    fun `right-to-left text breaks into lines no wider than the column`() {
+        // Arabic runs backwards in its one-line layout: each line must still measure as the sum of its letters
+        val text = "في قديم الزمان كان هناك ملك عظيم يحكم أرضاً واسعة، وكان له حديقة جميلة مليئة بالأشجار والزهور الملونة"
+        var lines: List<TextMetrics.LineSpan> = emptyList()
+        var whole = 0
+        rule.setContent {
+            AppTheme {
+                val serif = LocalAppFonts.current.serif
+                val metrics = ComposeTextMetrics(rememberTextMeasurer(), LocalDensity.current) { serif }
+                whole = metrics.layoutLines(text, 20f, 30, 100_000, "serif", rtl = true).single().rightPx
+                lines = metrics.layoutLines(text, 20f, 30, whole / 3, "serif", rtl = true)
+            }
+        }
+        rule.waitForIdle()
+        assertTrue(lines.size in 3..5, "broke into ${lines.size} lines")
+        assertTrue(lines.all { it.rightPx <= whole / 3 }, "a line is wider than the column: ${lines.map { it.rightPx }}")
+        // the lines cover the text, in order
+        assertEquals(text.length, lines.last().endExclusive)
+    }
+
+    @Test
     fun `a no-break space stretches with the other spaces`() {
         var stretchedAt = emptyList<Int>()
         rule.setContent {

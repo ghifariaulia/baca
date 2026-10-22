@@ -102,7 +102,7 @@ private fun BlockBox.runningIn(size: Float) = copy(
  * it, as LibreraX's `pinType` pins it.
  */
 private fun spacing(space: Spacing, size: Float): Spacing =
-    space.partsOrSelf().fold(space.relative()) { sum, part -> sum + partIn(part, size) }.let { Spacing(it.em, it.px, pageH = it.pageH, windowH = it.windowH, width = it.width) }
+    space.partsOrSelf().fold(space.relative()) { sum, part -> sum + partIn(part, size) }.let { Spacing(it.em, it.px, pageH = it.pageH, windowH = it.windowH, width = it.width, windowW = it.windowW) }
 
 /** One element's spacing in em of the running text, halved when it's 4em of it or more. */
 private fun partIn(part: Spacing, size: Float): Spacing {

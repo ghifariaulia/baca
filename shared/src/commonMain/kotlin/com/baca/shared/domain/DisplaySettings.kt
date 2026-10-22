@@ -1,6 +1,8 @@
 package com.baca.shared.domain
 
 import com.baca.shared.domain.reader.PositionStore
+import com.baca.shared.parser.ParseOptions
+import com.baca.shared.parser.TextReplacement
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -29,6 +31,16 @@ data class DisplaySettings(
     val tapToTurn: Boolean = true,
     /** phones: the status and navigation bars hide with the reader's bars (focus mode) */
     val fullScreen: Boolean = true,
+    /** the page's root direction: the book's own (auto), or forced left to right or right to left */
+    val direction: String = "auto",
+    /** the reader's own CSS, over the book's */
+    val userCss: String = "",
+    /** find and replace in the book's text */
+    val replacements: List<TextReplacement> = emptyList(),
+    /** columns across a wide page (1 or 2) */
+    val columns: Int = 1,
+    /** `paged`, or `scrolled`: the book as one continuous column to scroll */
+    val flow: String = "paged",
 ) {
     init {
         require(font in FONTS) { "unknown font: $font" }
@@ -36,7 +48,18 @@ data class DisplaySettings(
         require(fontSizePercent in FONT_SIZE_PERCENTS) { "font size out of range: $fontSizePercent" }
         require(lineSpacingTenths in LINE_SPACING_TENTHS) { "line spacing out of range: $lineSpacingTenths" }
         require(paddingPercent in PADDING_PERCENTS) { "padding out of range: $paddingPercent" }
+        require(direction in DIRECTIONS) { "unknown direction: $direction" }
+        require(columns in 1..2) { "columns out of range: $columns" }
+        require(flow in FLOWS) { "unknown flow: $flow" }
     }
+
+    /** What these settings change in how a book is read, for a page of [darkScheme]'s kind. */
+    fun parseOptions(darkScheme: Boolean) = ParseOptions(
+        darkScheme = darkScheme,
+        rtl = when (direction) { "rtl" -> true; "ltr" -> false; else -> null },
+        userCss = userCss,
+        replacements = replacements.filter { it.find.isNotEmpty() },
+    )
 
     val fontSizeSp: Float get() = BROWSER_FONT_SP * fontSizePercent / 100f
 
@@ -49,6 +72,8 @@ data class DisplaySettings(
 
     companion object {
         val FONTS = setOf("serif", "sans", "mono", "libron")
+        val DIRECTIONS = setOf("auto", "ltr", "rtl")
+        val FLOWS = setOf("paged", "scrolled")
         val THEMES = setOf("white", "paper", "grey", "dim", "dusk", "black")
         val FONT_SIZE_PERCENTS = 50..250
         val LINE_SPACING_TENTHS = 10..25

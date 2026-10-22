@@ -90,6 +90,13 @@ class EpubParserTest {
     }
 
     @Test
+    fun `a document knows the block each id is in`() {
+        val blocks = HashMap<String, Int>()
+        parseXhtml("""<html><body><p id="a">one</p><h2 id="b">two</h2><p>three <span id="c">x</span></p><a id="d"/><p>four</p></body></html>""", anchorBlocks = blocks)
+        assertEquals(mapOf("a" to 0, "b" to 1, "c" to 2, "d" to 3), blocks)
+    }
+
+    @Test
     fun `a break outside paragraphs is a line of its own`() {
         val blocks = parseXhtml("<html><body><p>One</p><br/><p>Two</p><div><br/></div></body></html>")
         assertEquals(listOf("One", "\n", "Two", "\n"), blocks.map { it.text })

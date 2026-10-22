@@ -17,8 +17,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.baca.app.ui.ReaderThemes
 import com.baca.app.ui.Type
 import com.baca.shared.domain.DisplaySettings
+import com.baca.shared.parser.TextReplacement
 
 /** Display settings body, shared by the reader's Display sheet and the Settings screen. */
 
@@ -88,6 +94,26 @@ internal fun DisplayContent(display: DisplaySettings, onChange: (DisplaySettings
         SheetSection("MARGINS") {
             Stepper("${display.paddingPercent}%") { onChange(display.stepPadding(it)) }
         }
+        SheetSection("DIRECTION") {
+            SegmentedRow(
+                options = listOf("auto" to "Book's own", "ltr" to "Left to right", "rtl" to "Right to left"),
+                selected = display.direction,
+            ) { onChange(display.copy(direction = it)) }
+        }
+        SheetSection("COLUMNS") {
+            SegmentedRow(
+                options = listOf("1" to "One", "2" to "Two"),
+                selected = display.columns.toString(),
+            ) { onChange(display.copy(columns = it.toInt())) }
+        }
+        SheetSection("FLOW") {
+            SegmentedRow(
+                options = listOf("paged" to "Paged", "scrolled" to "Scrolled"),
+                selected = display.flow,
+            ) { onChange(display.copy(flow = it)) }
+        }
+        SheetSection("CUSTOM CSS") { CustomCss(display, onChange) }
+        SheetSection("FIND AND REPLACE") { Replacements(display, onChange) }
         if (tapZonesForPageTurnEnabled) {
             SheetSection("PAGE TURN") {
                 SegmentedRow(
@@ -109,6 +135,49 @@ internal fun DisplayContent(display: DisplaySettings, onChange: (DisplaySettings
         )
     }
 }
+/** The reader's own CSS, over the book's; applied when asked, as the book is read again for it. */
+@Composable
+private fun CustomCss(display: DisplaySettings, onChange: (DisplaySettings) -> Unit) {
+    var css by remember(display.userCss) { mutableStateOf(display.userCss) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = css,
+            onValueChange = { css = it },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("p { text-align: left }") },
+            minLines = 3,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ChoiceChip("Apply", css != display.userCss) { onChange(display.copy(userCss = css)) }
+            if (display.userCss.isNotEmpty()) ChoiceChip("Clear", false) { onChange(display.copy(userCss = "")) }
+        }
+    }
+}
+
+/** Find-and-replace rules for the book's text: the rules in force, each removable, and fields for a new one. */
+@Composable
+private fun Replacements(display: DisplaySettings, onChange: (DisplaySettings) -> Unit) {
+    var find by remember { mutableStateOf("") }
+    var replace by remember { mutableStateOf("") }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        display.replacements.forEachIndexed { index, rule ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("“${rule.find}”  →  “${rule.replace}”", Modifier.weight(1f), style = Type.body)
+                ChoiceChip("Remove", false) { onChange(display.copy(replacements = display.replacements.filterIndexed { i, _ -> i != index })) }
+            }
+        }
+        OutlinedTextField(value = find, onValueChange = { find = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Find") }, singleLine = true)
+        OutlinedTextField(value = replace, onValueChange = { replace = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Replace with") }, singleLine = true)
+        ChoiceChip("Add", find.isNotEmpty()) {
+            if (find.isNotEmpty()) {
+                onChange(display.copy(replacements = display.replacements + TextReplacement(find, replace)))
+                find = ""
+                replace = ""
+            }
+        }
+    }
+}
+
 /** − value +: [onStep] gets -1 or +1. */
 @Composable
 private fun Stepper(value: String, onStep: (Int) -> Unit) {

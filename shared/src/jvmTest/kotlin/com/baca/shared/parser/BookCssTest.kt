@@ -755,6 +755,52 @@ class BookCssTest {
     }
 
     @Test
+    fun `a negative side margin pulls the text out past the column's edge`() {
+        val b = blocks(".out { margin-left: -20px; margin-right: -1em } .all { margin: 0 -10px }", """<p class="out">a</p><p class="all">b</p>""")
+        assertEquals(Spacing(px = -20f), b[0].inset)
+        assertEquals(Spacing(-1f), b[0].insetEnd)
+        assertEquals(-20, b[0].lineBox(bodyFontPx = 16f, cssPx = 1f, columnPx = 400).startPx)
+        assertEquals(Spacing(px = -10f) to Spacing(px = -10f), b[1].inset to b[1].insetEnd)
+    }
+
+    @Test
+    fun `vh and vw in side margins are shares of the page and window, a style element's vw nothing`() {
+        val linked = blocks(".w { margin-left: 10vw; padding-right: 5vh }", """<p class="w">a</p>""").single()
+        assertEquals(Spacing(windowW = 0.1f), linked.inset)
+        assertEquals(Spacing(pageH = 0f, windowH = 0.05f), linked.insetEnd)
+        val styled = parseXhtml("""<html><head><style>.w { margin-left: 10vw; margin-right: 5vh }</style></head><body><p class="w">a</p></body></html>""").single() as Block.Text
+        assertEquals(Spacing.ZERO, styled.inset)
+        assertEquals(Spacing(pageH = 0.05f), styled.insetEnd)
+        // measured: 10% of a 1000px window, 5% of a 600px page
+        val box = linked.lineBox(bodyFontPx = 16f, cssPx = 1f, columnPx = 400, room = com.baca.shared.parser.Room(600f, 800f, 400f, 1000f))
+        assertEquals(100 to 40, box.startPx to box.endPx)
+    }
+
+    @Test
+    fun `direction comes from dir, direction and the book's language, and left and right are physical`() {
+        val b = blocks(
+            ".r { direction: rtl } .right { text-align: right } .left { text-align: left }",
+            """<p>plain</p><p dir="rtl">dir</p><div class="r"><p>css</p><p class="right">right</p><p class="left">left</p><p dir="ltr" class="right">ltr right</p></div>""",
+        )
+        assertEquals(listOf(false, true, true, true, true, false), b.map { it.rtl })
+        // right is where right-to-left text begins (START), left its far end; in left-to-right text the other way
+        assertEquals(listOf(TextAlign.START, TextAlign.END, TextAlign.END), b.drop(3).map { it.align })
+        // a Hebrew or Arabic book, with nothing else said, reads right to left
+        val arabic = parseXhtml("<html><body><p>text</p></body></html>", defaultRtl = true).single() as Block.Text
+        assertEquals(true, arabic.rtl)
+        assertEquals(true to false, rtlLanguage("ar-EG") to rtlLanguage("en"))
+        assertEquals(true, rtlLanguage("he"))
+    }
+
+    @Test
+    fun `an EPUB turns pages right to left by its spine, its language or its first page`() {
+        val ar = parseEpub(FixedLayoutPaths.epub("""<dc:language>ar</dc:language>""", listOf("<p>مرحبا</p>")))
+        assertEquals(true, ar.pageRtl)
+        val en = parseEpub(FixedLayoutPaths.epub("", listOf("<p>Hello</p>")))
+        assertEquals(false, en.pageRtl)
+    }
+
+    @Test
     fun `a paragraph inside a heading keeps the heading's leading`() {
         val b = blocks("h1 { line-height: 1.1 }", """<h1><p>In a heading</p></h1><p>Body</p>""")
         assertEquals(listOf(1.1f, null), b.map { it.lineRatio })

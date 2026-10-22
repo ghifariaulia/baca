@@ -92,6 +92,23 @@ class ReaderSessionTest {
     }
 
     @Test
+    fun `a contents entry with an id opens the page of the block it points at`() = runTest {
+        // one chapter, its second heading far down: block 1 is the first, block 2 the last
+        val blocks = (0 until 3).map { i ->
+            Block.Text(listOf(FormattedSpan(if (i == 1) "Heading" else PARA, false, false)), if (i == 1) BlockKind.HEADING else BlockKind.PARAGRAPH, if (i == 1) 1 else 0)
+        }
+        val chapter = Chapter("book.html", null, blocks, anchorBlocks = mapOf("late" to 2))
+        val s = ReaderSession("h", listOf(chapter), FakeStore(), { _, vp, st -> ReflowLayout(blocks, GridMetrics(), st, vp.columnWidthPx, vp.pageHeightPx) }, {})
+        s.ensureView(VIEWPORT, SETTINGS)
+        assertEquals(0, s.pageIndex)
+        s.jumpToHref("book.html#late")
+        assertTrue(s.pageIndex > 0)
+        // an unknown id opens the chapter's start
+        s.jumpToHref("book.html#nowhere")
+        assertEquals(0, s.pageIndex)
+    }
+
+    @Test
     fun `page turns pass over chapters out of the reading order`() = runTest {
         val chapters = listOf(
             chapter("OEBPS/c0.xhtml", "one"),

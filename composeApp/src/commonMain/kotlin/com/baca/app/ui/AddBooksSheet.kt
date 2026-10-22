@@ -55,7 +55,7 @@ fun ImportProgressSheet(
             SheetOption(
                 icon = "⎙",
                 title = "From files",
-                subtitle = "Pick EPUB, FB2, TXT or CBZ files",
+                subtitle = "Pick EPUB, FB2, HTML, Markdown, DOCX, RTF, TXT or CBZ files",
                 onClick = onFromFiles,
             )
             if (onFromFolder != null) {

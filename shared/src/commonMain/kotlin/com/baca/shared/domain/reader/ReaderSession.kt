@@ -131,6 +131,15 @@ class ReaderSession(
         onChange()
     }
 
+    /** The reader scrolled to [page] of the chapter shown. */
+    suspend fun showPage(page: Int) {
+        val target = page.coerceIn(0, (layoutFor(chapterIndex).pageCount() - 1).coerceAtLeast(0))
+        if (target == pageIndex) return
+        pageIndex = target
+        save()
+        onChange()
+    }
+
     /** False at the book's first page going back and its last page going forward. */
     fun canTurn(delta: Int): Boolean = if (delta < 0) {
         adjacentChapter(chapterIndex, -1) != null || pageIndex > 0
@@ -278,7 +287,17 @@ class ReaderSession(
      */
     suspend fun jumpToHref(href: String) {
         val target = indexOfChapter(href, chapters)
-        if (target >= 0) jumpToChapter(target)
+        if (target < 0) return
+        // `#id`: the page of the block the id is in
+        val block = href.substringAfter('#', "").takeIf { it.isNotEmpty() }?.let { chapters[target].anchorBlocks[it] }
+        if (block == null) {
+            jumpToChapter(target)
+            return
+        }
+        chapterIndex = target
+        pageIndex = layoutFor(target).pageForPosition(block, 0, "")?.pageIndex ?: 0
+        save()
+        onChange()
     }
 
     /** Jump to an annotation anchor (Notes list / contents panel). */

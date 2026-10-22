@@ -101,6 +101,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -117,6 +119,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -174,6 +180,7 @@ import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
@@ -208,6 +215,7 @@ import com.baca.shared.domain.reader.SelectionPoint
 import com.baca.shared.domain.reader.TextSelection
 import com.baca.shared.parser.BlockKind
 import com.baca.shared.parser.Chapter
+import com.baca.shared.parser.ParseOptions
 import com.baca.shared.parser.ParsedEpub
 import com.baca.shared.sync.PointDto
 import com.baca.shared.sync.ReflowAnchorDto
@@ -241,8 +249,8 @@ fun ReaderScreen(
     onAnnotationDelete: (id: String) -> Unit = {},
     /** Open the reader straight on an annotation anchor (Notes list). */
     jumpToAnchor: AnchorJump? = null,
-    /** The reading theme turned dark or light in a book whose CSS asks for the scheme: read it again for it. */
-    onSchemeChange: (dark: Boolean) -> Unit = {},
+    /** A setting that changes how the book is read (colour scheme, direction, CSS, replacements) changed: read it again under [ParseOptions]. */
+    onOptionsChange: (ParseOptions) -> Unit = {},
 ) {
     var display by remember { mutableStateOf(store.loadDisplay()) }
     var sheet by remember { mutableStateOf(if (openContents) SheetKind.CONTENTS else SheetKind.NONE) }
@@ -278,7 +286,7 @@ fun ReaderScreen(
 
     /** Chapter [index]'s page height: the room for text less its own even lines. */
     fun pageHeightOf(index: Int, vp: Viewport, settings: ReflowSettings): Int =
-        (vp.textHeightPx - settings.chapterEvenPx(book.chapters[index].blocks, vp.textHeightPx) * 2).toInt()
+        if (book.vertical) vp.pageHeightPx else (vp.textHeightPx - settings.chapterEvenPx(book.chapters[index].blocks, vp.textHeightPx) * 2).toInt()
 
     val session = remember(bookHash, book) {
         ReaderSession(
@@ -300,11 +308,12 @@ fun ReaderScreen(
                     imageHeight = { img: Block.Image ->
                         images.preload(img.src)?.let { bitmap ->
                             // within its containing block, as foliate holds it to 100% of that
-                            val (_, widthPx) = img.placeIn(settings.fontSizePx, settings.cssPx, vp.columnWidthPx)
+                            val (_, widthPx) = img.placeIn(settings.fontSizePx, settings.cssPx, vp.columnWidthPx, vp.roomFor(pageHeightOf(index, vp, settings)))
                             img.box.sizePx(bitmap.width, bitmap.height, density.density, settings.fontSizePx, widthPx, pageHeightOf(index, vp, settings), vp.marginPx, vp.windowWidthPx, vp.windowHeightPx).heightPx
                         }
                     },
                     windowHeightPx = vp.windowHeightPx,
+                    windowWidthPx = vp.windowWidthPx,
                 )
             },
             onChange = { tick++ },
@@ -321,7 +330,7 @@ fun ReaderScreen(
 
     LaunchedEffect(display) { store.saveDisplay(display) }
     // debounce so continuous window drags do not re-layout every frame
-    LaunchedEffect(viewport, display, bookFontsState.value != null, hyphenatorsState.value != null) {
+    LaunchedEffect(session, viewport, display, bookFontsState.value != null, hyphenatorsState.value != null) {
         val vp = viewport ?: return@LaunchedEffect
         // pages are measured in the book's own fonts and hyphenated by its languages' patterns: wait for them
         if (bookFontsState.value == null || hyphenatorsState.value == null) return@LaunchedEffect
@@ -331,7 +340,8 @@ fun ReaderScreen(
 
     val colors = ReaderThemes.forTheme(display.theme)
     val schemeDark = isDarkScheme(colors.background)
-    LaunchedEffect(schemeDark) { if (book.schemeAware && book.darkScheme != schemeDark) onSchemeChange(schemeDark) }
+    val readOptions = display.parseOptions(schemeDark)
+    LaunchedEffect(readOptions) { if (book.options.needsReread(book, readOptions)) onOptionsChange(readOptions) }
 
     val chapterIndex = session.chapterIndex.coerceIn(0, book.chapters.lastIndex)
     val chapter = book.chapters[chapterIndex]
@@ -357,6 +367,9 @@ fun ReaderScreen(
     }
     val pageCount = layout.pageCount()
     val pageNo = session.pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+    // a vertical book's page is one square; the others may show a spread of columns, or scroll
+    val scrolled = display.flow == "scrolled" && !book.vertical
+    val columns = if (book.vertical || scrolled) 1 else display.columns
     val page = layout.pages[pageNo]
     // where each drawn line of this page sits, for selection handles to find text under a finger
     val lineGeometry = remember(chapter.href, pageNo, layout) { HashMap<Pair<Int, Int>, LineGeometry>() }
@@ -384,17 +397,23 @@ fun ReaderScreen(
     val pageTurn: (Int) -> Unit = { delta ->
         scope.launch {
             turnLock.withLock {
+                if (scrolled) {
+                    // the list follows the page; nothing slides
+                    if (session.canTurn(delta)) session.turnPage(delta)
+                    return@withLock
+                }
                 if (!session.canTurn(delta)) {
                     pageShift.animateTo(0f, spring())
                     return@withLock
                 }
-                val toward = if (delta > 0) -1f else 1f // next page: content leaves to the left
+                // next page: content leaves to the left, to the right in a book read right to left
+                val toward = (if (delta > 0) -1f else 1f) * (if (book.pageRtl) -1f else 1f)
                 val travel = maxOf(abs(pageShift.value), pageWidthPx * TURN_TRAVEL)
                 coroutineScope {
                     launch { pageShift.animateTo(toward * travel, tween(TURN_MS, easing = FastOutLinearInEasing)) }
                     launch { pageAlpha.animateTo(0f, tween(TURN_MS)) }
                 }
-                session.turnPage(delta)
+                session.turnPage(delta * columns)
                 pageShift.snapTo(-toward * pageWidthPx * TURN_TRAVEL)
                 coroutineScope {
                     launch { pageShift.animateTo(0f, tween(TURN_MS, easing = LinearOutSlowInEasing)) }
@@ -406,10 +425,13 @@ fun ReaderScreen(
 
     // released swipe: turn when dragged far enough or flicked, else spring back
     val swipeEnded: (velocityX: Float) -> Unit = { velocityX ->
-        val dragged = pageShift.value
+        // a book read right to left is turned by swiping the other way
+        val flip = if (book.pageRtl) -1f else 1f
+        val dragged = pageShift.value * flip
+        val velocity = velocityX * flip
         val delta = when {
-            dragged < -pageWidthPx * SWIPE_FRACTION || velocityX < -FLING_VELOCITY -> 1
-            dragged > pageWidthPx * SWIPE_FRACTION || velocityX > FLING_VELOCITY -> -1
+            dragged < -pageWidthPx * SWIPE_FRACTION || velocity < -FLING_VELOCITY -> 1
+            dragged > pageWidthPx * SWIPE_FRACTION || velocity > FLING_VELOCITY -> -1
             else -> 0
         }
         if (delta == 0) scope.launch { pageShift.animateTo(0f, spring()) } else pageTurn(delta)
@@ -483,8 +505,11 @@ fun ReaderScreen(
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
-                    Key.DirectionRight, Key.PageDown -> { pageTurn(1); true }
-                    Key.DirectionLeft, Key.PageUp -> { pageTurn(-1); true }
+                    Key.PageDown -> { pageTurn(1); true }
+                    Key.PageUp -> { pageTurn(-1); true }
+                    // the arrow toward the page's far edge, which is the left one in a book read right to left
+                    Key.DirectionRight -> { pageTurn(if (book.pageRtl) -1 else 1); true }
+                    Key.DirectionLeft -> { pageTurn(if (book.pageRtl) 1 else -1); true }
                     else -> false
                 }
             },
@@ -615,8 +640,8 @@ fun ReaderScreen(
                                 if (moved || held || textUsedTap[0]) return@awaitEachGesture
                                 val edgeTurns = tapZonesForPageTurnEnabled && display.tapToTurn
                                 when {
-                                    down.position.x < size.width / 3f -> if (edgeTurns) pageTurn(-1)
-                                    down.position.x > size.width * 2f / 3f -> if (edgeTurns) pageTurn(1)
+                                    down.position.x < size.width / 3f -> if (edgeTurns) pageTurn(if (book.pageRtl) 1 else -1)
+                                    down.position.x > size.width * 2f / 3f -> if (edgeTurns) pageTurn(if (book.pageRtl) -1 else 1)
                                     else -> barsVisible = !barsVisible
                                 }
                             }
@@ -642,9 +667,17 @@ fun ReaderScreen(
                         // the footer's strip, in the page colour; text stops above it
                         .padding(bottom = maxOf(READER_FOOTER_HEIGHT, band - barBelow)),
                 ) {
-                    val columnWidthPx = with(density) {
+                    val physicalColumnPx = with(density) {
                         (pageWidth.toPx() - margin.toPx() * 2).roundToInt().coerceAtLeast(0)
                     }
+                    // a vertical book is laid out turned a quarter: its lines are as long as the page is tall,
+                    // and stack across the width (drawn rotated, see rotatedPage)
+                    val vertical = book.vertical
+                    // LibreraX's vertical page is a square, a page's width on each side, centred in the height
+                    // each column of a spread has its own margins
+                    val columnWidthPx = if (columns > 1) with(density) {
+                        (pageWidth.toPx() / columns - margin.toPx() * 2).roundToInt().coerceAtLeast(0)
+                    } else physicalColumnPx
                     // LibreraX's page: a band above the text, then whole lines, with what is
                     // left under the last one split above and below
                     // to the fraction of a px, as the WebView's page is laid out in css px
@@ -655,7 +688,7 @@ fun ReaderScreen(
                     val evenPx = reflowSettingsOf(display, density).chapterEvenPx(chapter.blocks, textHeightPx)
                     val inner = Viewport(
                         columnWidthPx = columnWidthPx,
-                        pageHeightPx = (textHeightPx - runningEvenPx * 2).toInt(),
+                        pageHeightPx = if (vertical) physicalColumnPx else (textHeightPx - runningEvenPx * 2).toInt(),
                         textHeightPx = textHeightPx,
                         marginPx = bandPx,
                         windowWidthPx = constraints.maxWidth,
@@ -665,12 +698,23 @@ fun ReaderScreen(
                     LaunchedEffect(inner) { viewport = inner }
 
                         Column(
-                            Modifier.fillMaxSize().padding(top = with(density) { (bandPx + evenPx).toDp() }).graphicsLayer {
-                                translationX = pageShift.value
-                                alpha = pageAlpha.value
+                            if (vertical) {
+                                // the swipe moves the page across the screen; the rotation is inside it
+                                Modifier.fillMaxSize().graphicsLayer {
+                                    translationX = pageShift.value
+                                    alpha = pageAlpha.value
+                                }.wrapContentSize(Alignment.Center).requiredSize(pageWidth).rotatedPage().padding(top = margin)
+                            } else {
+                                Modifier.fillMaxSize().padding(top = with(density) { (bandPx + evenPx).toDp() }).graphicsLayer {
+                                    translationX = pageShift.value
+                                    alpha = pageAlpha.value
+                                }
                             },
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
+                        // one page's lines, drawn in a column of its own; two columns draw two pages side by side
+                        val pageColumn: @Composable (Int) -> Unit = { pageNo ->
+                        val page = layout.pages[pageNo]
                         Column(
                             Modifier.width(with(density) { (columnWidthPx + margin.roundToPx() * 2).toDp() })
                                 .padding(horizontal = margin)
@@ -698,6 +742,9 @@ fun ReaderScreen(
                                 val box = layout.lineBoxOf(line.blockIndex, line.column)
                                 // beside a drop cap, lines start after it, as ReflowLayout measured them
                                 val indentPx = if (block.dropCap != null) box.startPx + line.floatIndentPx else box.linePx(firstLine = line.start == 0)
+                                // right-to-left lines start at the right edge: the indent is there, and the left is the block's own inset
+                                val leftPx = if (block.rtl) box.startPx else indentPx
+                                val rightPx = if (block.rtl) box.rightPx(line.start == 0) else box.endPx
                                 val lineText = highlighted(
                                     blockStrings[line.blockIndex],
                                     ranges,
@@ -710,9 +757,9 @@ fun ReaderScreen(
                                     val soft = line.endExclusive > 0 && block.text[line.endExclusive - 1] == SOFT_HYPHEN
                                     if (soft || (block.hyphenate && breaksWord(block.text, line.endExclusive))) text + AnnotatedString("-") else text
                                 }.let { text ->
-                                    if (body && endsMidParagraph(block.text, line.endExclusive)) {
+                                    if (body && !vertical && endsMidParagraph(block.text, line.endExclusive)) {
                                         justified(
-                                            text, style, columnWidthPx - indentPx - box.endPx, textMeasurer, density,
+                                            text, style, columnWidthPx - leftPx - rightPx, textMeasurer, density,
                                             inlinePlaceholders(block, textStart, line.endExclusive, images, layout.spacersOf(block), density),
                                         )
                                     } else {
@@ -723,11 +770,12 @@ fun ReaderScreen(
                                     Modifier.fillMaxWidth()
                                         // a line grown round a raised mark keeps its own height lower down
                                         .padding(top = with(density) { line.growAbove.toDp() })
-                                        .padding(start = with(density) { indentPx.toDp() }, end = with(density) { box.endPx.toDp() }),
+                                        .insetBy(leftPx, rightPx),
+                                    // START is where the text begins: the right edge for right-to-left text
                                     contentAlignment = when (block.align) {
                                         BookAlign.CENTER -> Alignment.TopCenter
-                                        BookAlign.END -> Alignment.TopEnd
-                                        BookAlign.START -> Alignment.TopStart
+                                        BookAlign.END -> if (block.rtl) Alignment.TopStart else Alignment.TopEnd
+                                        BookAlign.START -> if (block.rtl) Alignment.TopEnd else Alignment.TopStart
                                     },
                                 ) {
                                     if (line.start == 0 && block.marker != null) {
@@ -739,7 +787,9 @@ fun ReaderScreen(
                                             style, block.spans.first().scale * cap.lineRatio, line.floatIndentPx,
                                         )
                                     }
-                                    if (block.spans.any { it.href != null }) {
+                                    if (vertical) {
+                                        VerticalLineText(lineText, style, Modifier.fillMaxWidth().height(with(density) { style.lineHeight.toDp() }))
+                                    } else if (block.spans.any { it.href != null }) {
                                         LinkText(
                                             lineText,
                                             style,
@@ -815,6 +865,33 @@ fun ReaderScreen(
                                         }
                                     }
                                 }
+                            }
+                        }
+                        }
+                        if (scrolled) {
+                            // the chapter's pages one under another; the page on top is the reading position
+                            key(layout) {
+                                val listState = rememberLazyListState(pageNo)
+                                var jumping by remember { mutableStateOf(false) }
+                                LaunchedEffect(pageNo) {
+                                    if (listState.firstVisibleItemIndex == pageNo) return@LaunchedEffect
+                                    jumping = true
+                                    listState.animateScrollToItem(pageNo)
+                                    jumping = false
+                                }
+                                LaunchedEffect(listState) {
+                                    snapshotFlow { listState.firstVisibleItemIndex }.collect { if (!jumping) session.showPage(it) }
+                                }
+                                LazyColumn(Modifier.fillMaxSize(), listState) {
+                                    items(pageCount) { index ->
+                                        Box(Modifier.padding(bottom = with(density) { (evenPx * 2).toDp() })) { pageColumn(index) }
+                                    }
+                                }
+                            }
+                        } else Row {
+                            repeat(columns) { c ->
+                                if (pageNo + c < pageCount) pageColumn(pageNo + c)
+                                else Spacer(Modifier.width(with(density) { (columnWidthPx + margin.roundToPx() * 2).toDp() }))
                             }
                         }
                     }
@@ -1572,6 +1649,10 @@ private fun RuleLine(rule: Block.Rule, heightPx: Int, color: Color) {
     }
 }
 
+/** What a margin's shares are of, for a page [pageHeightPx] tall in this viewport. */
+private fun Viewport.roomFor(pageHeightPx: Int) =
+    com.baca.shared.parser.Room(pageHeightPx.toFloat(), windowHeightPx.toFloat(), columnWidthPx.toFloat(), windowWidthPx.toFloat())
+
 internal const val NO_BREAK_SPACE = '\u00A0'
 
 // a browser's `hr { color: gray }`; on a dark page LibreraX gives it the theme's text
@@ -1592,11 +1673,11 @@ private fun ImageLine(chapter: Chapter, blockIndex: Int, reservedHeightPx: Int?,
     if (bitmap != null) {
         val density = LocalDensity.current
         // the size ReflowLayout reserved, and the width that goes with it, in its containing block
-        val (startPx, widthPx) = block.placeIn(fontPx, density.density, vp.columnWidthPx)
+        val (startPx, widthPx) = block.placeIn(fontPx, density.density, vp.columnWidthPx, vp.roomFor(vp.pageHeightPx))
         val size = block.box.sizePx(bitmap.width, bitmap.height, density.density, fontPx, widthPx, vp.pageHeightPx, vp.marginPx, vp.windowWidthPx, vp.windowHeightPx)
         val height = reservedHeightPx ?: size.heightPx
         Box(
-            Modifier.padding(start = with(density) { startPx.toDp() })
+            Modifier.offset { androidx.compose.ui.unit.IntOffset(startPx, 0) }
                 .width(with(density) { widthPx.toDp() })
                 .height(with(density) { height.toDp() }),
             contentAlignment = when (block.align) {
@@ -1641,7 +1722,7 @@ private fun ContentsList(
         // the accent dot moves as soon as the chapter/page changes
         val isCurrent = tick >= 0 && chapterAt == session.chapterIndex && chapterAt >= 0
         Row(
-            Modifier.fillMaxWidth().clickable(onClick = { onJump(entry.href) }).padding(vertical = 14.dp),
+            Modifier.fillMaxWidth().clickable(onClick = { onJump(entry.anchor?.let { "${entry.href}#$it" } ?: entry.href) }).padding(vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(
@@ -1702,6 +1783,7 @@ private fun lineStyle(block: Block.Text, lineRatio: Float, display: DisplaySetti
             lineHeightStyle = PageLineHeightStyle,
             // letters at their exact advance, as a browser places them; hinted ones set lines narrower
             textMotion = TextMotion.Animated,
+            textDirection = if (block.rtl) TextDirection.Rtl else TextDirection.Unspecified,
         )
     }
 }
@@ -1757,8 +1839,11 @@ private fun ListMarker(marker: String, style: TextStyle, shiftPx: Int) {
 }
 
 /** A paragraph's last line and lines before a <br> stay ragged. */
-private fun breaksWord(text: String, lineEnd: Int): Boolean =
-    lineEnd in 1 until text.length && text[lineEnd - 1].isLetter() && text[lineEnd].isLetter()
+// a line that ends between letters shows a hyphen, except in scripts written without spaces (CJK, kana, Hangul),
+// which break anywhere
+internal fun breaksWord(text: String, lineEnd: Int): Boolean =
+    lineEnd in 1 until text.length && text[lineEnd - 1].isLetter() && text[lineEnd].isLetter() &&
+        !isUpright(text[lineEnd - 1]) && !isUpright(text[lineEnd])
 
 private fun endsMidParagraph(text: String, lineEnd: Int): Boolean =
     lineEnd < text.length && text[lineEnd - 1] != '\n' && text[lineEnd] != '\n'

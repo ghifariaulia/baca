@@ -4,6 +4,7 @@ import com.baca.shared.parser.Block
 
 import com.baca.shared.parser.CssLength
 import com.baca.shared.parser.ImageBox
+import com.baca.shared.parser.Room
 import kotlin.math.roundToInt
 
 /** A picture's drawn size in px. */
@@ -21,9 +22,9 @@ data class ImageSize(val widthPx: Int, val heightPx: Int)
  * Where a picture's containing block sits in the column: px in from the left, and its
  * width, which a picture's percent sizes and its `max-width: 100%` are of.
  */
-fun Block.Image.placeIn(bodyFontPx: Float, cssPx: Float, columnPx: Int): Pair<Int, Int> {
-    val start = inset.toPx(bodyFontPx, cssPx) + (insetShare * columnPx).roundToInt()
-    val end = insetEnd.toPx(bodyFontPx, cssPx) + (insetEndShare * columnPx).roundToInt()
+fun Block.Image.placeIn(bodyFontPx: Float, cssPx: Float, columnPx: Int, room: Room = Room.NONE): Pair<Int, Int> {
+    val start = inset.toPx(bodyFontPx, cssPx, room) + (insetShare * columnPx).roundToInt()
+    val end = insetEnd.toPx(bodyFontPx, cssPx, room) + (insetEndShare * columnPx).roundToInt()
     return start to (columnPx - start - end).coerceAtLeast(1)
 }
 

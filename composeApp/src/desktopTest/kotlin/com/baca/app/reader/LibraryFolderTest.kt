@@ -28,7 +28,7 @@ class LibraryFolderTest {
         File(folder, "Shelley").mkdirs()
         val epub = File(folder, "Shelley/frankenstein.epub").apply { writeBytes(epubBytes()) }
         val txt = File(folder, "Short Story.txt").apply { writeText("Once upon a time.") }
-        File(folder, "notes.md").writeText("not a book")
+        File(folder, "notes.pdf").writeText("not a book")
         val store = tempDir("store")
         val repo = repo()
 

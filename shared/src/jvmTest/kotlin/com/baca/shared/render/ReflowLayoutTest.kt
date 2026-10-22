@@ -389,7 +389,7 @@ class ReflowLayoutTest {
     fun `a row whose cells have no lines yet lays out as nothing`() {
         // before the page is measured the metrics give no lines
         val none = object : TextMetrics by GridMetrics() {
-            override fun layoutLines(text: String, fontSizePx: Float, lineHeightPx: Int, maxWidthPx: Int, fontFamily: String?, styles: List<TextMetrics.StyleRange>, firstLineIndentPx: Int, hyphenate: Boolean, language: String?) =
+            override fun layoutLines(text: String, fontSizePx: Float, lineHeightPx: Int, maxWidthPx: Int, fontFamily: String?, styles: List<TextMetrics.StyleRange>, firstLineIndentPx: Int, hyphenate: Boolean, language: String?, rtl: Boolean) =
                 emptyList<TextMetrics.LineSpan>()
         }
         val cell = TableCell(table = 1, row = 1, column = 0, span = 1, widths = emptyList())
@@ -473,6 +473,19 @@ class ReflowLayoutTest {
         assertEquals(4, rule.heightPx(fontSizePx = 52.5f, cssPx = 2.625f))
         assertEquals(2, rule.heightPx(fontSizePx = 16f, cssPx = 1f))
         assertEquals(0, rule.copy(line = false).heightPx(fontSizePx = 16f, cssPx = 1f))
+    }
+
+    @Test
+    fun `a right-to-left block's first line is indented on the right`() {
+        val para = text("abc").copy(indent = Spacing(px = 20f), inset = Spacing(px = 5f), insetEnd = Spacing(px = 7f), rtl = true)
+        val box = para.lineBox(bodyFontPx = 16f, cssPx = 1f, columnPx = 400)
+        // the left is the block's own inset; the right is its inset and, on the first line, the indent
+        assertEquals(5, box.startPx)
+        assertEquals(27, box.rightPx(firstLine = true))
+        assertEquals(7, box.rightPx(firstLine = false))
+        // left to right, the same block puts it on the left
+        val ltr = para.copy(rtl = false).lineBox(bodyFontPx = 16f, cssPx = 1f, columnPx = 400)
+        assertEquals(25, ltr.linePx(firstLine = true))
     }
 
     @Test

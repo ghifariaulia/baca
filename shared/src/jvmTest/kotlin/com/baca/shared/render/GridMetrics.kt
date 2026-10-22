@@ -17,6 +17,7 @@ class GridMetrics(private val charW: Int = 10) : TextMetrics {
         firstLineIndentPx: Int,
         hyphenate: Boolean,
         language: String?,
+        rtl: Boolean,
     ): List<TextMetrics.LineSpan> {
         val fullCols = (maxWidthPx / charW).coerceAtLeast(1)
         val lines = mutableListOf<TextMetrics.LineSpan>()

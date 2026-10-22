@@ -10,7 +10,7 @@ import kotlin.io.encoding.ExperimentalEncodingApi
  * notes) into one more, out of the reading order. The same conversion here feeds Baca's
  * XHTML pipeline, so FB2 gets the CSS handling EPUB has.
  */
-internal fun fb2Epub(fileName: String, bytes: ByteArray): ParsedEpub = fb2Epub(fileName, decodeFb2(bytes))
+internal fun fb2Epub(fileName: String, bytes: ByteArray, options: ParseOptions = ParseOptions()): ParsedEpub = fb2Epub(fileName, decodeFb2(bytes), options)
 
 /** FB2 bytes as text, in the encoding its XML declaration names (UTF-8 if none). */
 internal fun decodeFb2(bytes: ByteArray): String {
@@ -22,7 +22,7 @@ internal fun decodeFb2(bytes: ByteArray): String {
 /** [bytes] decoded as [charset] (`windows-1251`, `koi8-r`…). */
 internal expect fun decodeText(bytes: ByteArray, charset: String): String
 
-internal fun fb2Epub(fileName: String, xml: String): ParsedEpub {
+internal fun fb2Epub(fileName: String, xml: String, options: ParseOptions = ParseOptions()): ParsedEpub {
     // <FictionBook>
     val root = parseXmlTree(xml).children().firstOrNull() ?: XNode("FictionBook", emptyMap())
     val bodies = root.children().filter { it.name == "body" }
@@ -45,7 +45,7 @@ internal fun fb2Epub(fileName: String, xml: String): ParsedEpub {
         Chapter(
             href = "fb2:$index",
             title = sectionTitle(node),
-            blocks = parseXhtml(document),
+            blocks = parseXhtml(document, options = options, darkScheme = options.darkScheme),
             size = if (notes) 0 else size,
             linear = !notes,
         )
@@ -64,6 +64,8 @@ internal fun fb2Epub(fileName: String, xml: String): ParsedEpub {
         toc = toc,
         language = info?.find("lang")?.text()?.normalized()?.ifEmpty { null },
         binaries = binaries,
+        options = options,
+        pageRtl = options.rtl == true,
     )
 }
 

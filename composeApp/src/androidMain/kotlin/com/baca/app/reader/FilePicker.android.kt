@@ -82,6 +82,10 @@ private fun guessExt(context: Context, uri: Uri): String =
         "application/epub+zip" -> "epub"
         "application/zip" -> "fb2.zip"
         "text/plain" -> "txt"
+        "text/html", "application/xhtml+xml" -> "html"
+        "text/markdown" -> "md"
+        "application/rtf", "text/rtf" -> "rtf"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> "docx"
         "application/xml", "text/xml" -> "fb2"
         else -> "epub"
     }

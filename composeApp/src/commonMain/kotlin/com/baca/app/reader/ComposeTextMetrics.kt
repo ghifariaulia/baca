@@ -9,6 +9,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.intl.LocaleList
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.BaselineShift
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -58,6 +59,7 @@ class ComposeTextMetrics(
         firstLineIndentPx: Int,
         hyphenate: Boolean,
         language: String?,
+        rtl: Boolean,
     ): List<TextMetrics.LineSpan> {
         // nothing to measure before the page is: a table cell's widest line asks unbounded, at size 0
         if (text.isEmpty() || maxWidthPx <= 0 || fontSizePx <= 0f) return emptyList()
@@ -70,6 +72,7 @@ class ComposeTextMetrics(
                 localeList = lang?.let { LocaleList(it) },
                 // as the renderer draws: letters at their exact advance, not hinted to whole px
                 textMotion = TextMotion.Animated,
+                textDirection = if (rtl) TextDirection.Rtl else TextDirection.Unspecified,
             )
         }
         val annotated = if (styles.isEmpty()) {
@@ -110,7 +113,7 @@ class ComposeTextMetrics(
         val images = BooleanArray(text.length).also { at -> styles.filter { it.image != null }.forEach { at[it.start] = true } }
         return greedyLines(
             text,
-            edgesOf(text, boxes),
+            edgesOf(text, boxes, rtl),
             maxWidthPx,
             firstLineIndentPx,
             hyphenator = if (hyphenate) hyphenatorFor(lang) else null,
@@ -140,14 +143,21 @@ internal expect fun characterBoxes(layout: TextLayoutResult, length: Int): Float
  * The x of each place between [text]'s characters from the start of its hard line,
  * from the characters' boxes (left, top, right, bottom each) as laid on one line.
  */
-private fun edgesOf(text: String, boxes: FloatArray): FloatArray {
+private fun edgesOf(text: String, boxes: FloatArray, rtl: Boolean = false): FloatArray {
     val edges = FloatArray(text.length + 1)
     var lineStart = 0
     var origin = 0f
+    var bidi = rtl
     for (i in 0..text.length) {
         val atLineEnd = i == text.length || text[i] == '\n'
         if (i == lineStart) {
             origin = if (atLineEnd) 0f else boxes[i * 4]
+            // a hard line with right-to-left letters in it has glyphs running backwards, even in a left-to-right block
+            if (!rtl) bidi = (i until (text.indexOf('\n', i).let { if (it < 0) text.length else it })).any { isRtlChar(text[it]) }
+        } else if (bidi) {
+            // right-to-left glyphs run backwards: a character is as wide as its box
+            val w = boxes[(i - 1) * 4 + 2] - boxes[(i - 1) * 4]
+            edges[i] = edges[i - 1] + maxOf(w, 0f)
         } else {
             // where the next character starts (a picture's box can come out empty); never back,
             // as joined glyphs can share a box
@@ -158,6 +168,9 @@ private fun edgesOf(text: String, boxes: FloatArray): FloatArray {
     }
     return edges
 }
+
+/** A letter of a script written right to left: Hebrew, Arabic, Syriac, Thaana and their presentation forms. */
+internal fun isRtlChar(c: Char): Boolean = c in '\u0590'..'\u08FF' || c in '\uFB1D'..'\uFDFF' || c in '\uFE70'..'\uFEFF'
 
 // the size a font's ascent and descent are measured at
 private const val METRICS_PX = 1000f

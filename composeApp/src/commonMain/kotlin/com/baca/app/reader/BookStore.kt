@@ -10,7 +10,12 @@ import com.baca.shared.parser.parseCbz
 import com.baca.shared.parser.EpubImages
 import com.baca.shared.parser.ParsedEpub
 import com.baca.shared.parser.parseEpub
+import com.baca.shared.parser.ParseOptions
+import com.baca.shared.parser.parseDocxFile
 import com.baca.shared.parser.parseFb2
+import com.baca.shared.parser.parseHtmlFile
+import com.baca.shared.parser.parseMarkdownFile
+import com.baca.shared.parser.parseRtfFile
 import com.baca.shared.parser.parsePlainTextOrFb2
 import okio.FileSystem
 import okio.Path
@@ -36,6 +41,12 @@ object BookFormats {
         "application/xml", // .fb2
         "text/xml",
         "text/plain",
+        "text/html",
+        "application/xhtml+xml",
+        "text/markdown",
+        "application/rtf",
+        "text/rtf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
 
     fun of(fileName: String): String? = when {
@@ -45,6 +56,11 @@ object BookFormats {
         fileName.endsWith(".cbz", ignoreCase = true) ||
             fileName.endsWith(".zip", ignoreCase = true) -> "cbz"
         fileName.endsWith(".txt", ignoreCase = true) -> "txt"
+        fileName.endsWith(".html", ignoreCase = true) || fileName.endsWith(".htm", ignoreCase = true) ||
+            fileName.endsWith(".xhtml", ignoreCase = true) -> "html"
+        fileName.endsWith(".md", ignoreCase = true) || fileName.endsWith(".markdown", ignoreCase = true) -> "md"
+        fileName.endsWith(".rtf", ignoreCase = true) -> "rtf"
+        fileName.endsWith(".docx", ignoreCase = true) -> "docx"
         else -> null
     }
 
@@ -53,12 +69,16 @@ object BookFormats {
         parseCbz(path, fileName)
     }.getOrNull()
 
-    /** [darkScheme]: read for a dark reading theme, the book's `prefers-color-scheme: dark` rules holding. */
-    fun parse(path: Path, format: String, darkScheme: Boolean = false): ParsedEpub? = runCatching {
+    /** [options]: what the reader's settings change in how the book is read. */
+    fun parse(path: Path, format: String, options: ParseOptions = ParseOptions()): ParsedEpub? = runCatching {
         when (format) {
-            "epub" -> parseEpub(path, darkScheme)
-            "fb2" -> parseFb2(path)
-            else -> parsePlainTextOrFb2(path)
+            "epub" -> parseEpub(path, options)
+            "fb2" -> parseFb2(path, options)
+            "html" -> parseHtmlFile(path, options)
+            "md" -> parseMarkdownFile(path, options)
+            "rtf" -> parseRtfFile(path, options)
+            "docx" -> parseDocxFile(path, options)
+            else -> parsePlainTextOrFb2(path, options)
         }
     }.getOrNull()
 }

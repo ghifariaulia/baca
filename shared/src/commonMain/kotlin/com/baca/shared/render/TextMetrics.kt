@@ -55,6 +55,8 @@ interface TextMetrics {
         hyphenate: Boolean = true,
         /** the text's own language (`lang`); null is the book's */
         language: String? = null,
+        /** right-to-left text: its glyphs run from the right, so a line's width is the sum of its characters' */
+        rtl: Boolean = false,
     ): List<LineSpan>
 
     /** A font's [ascent] and [descent] (both positive), as fractions of its size. */

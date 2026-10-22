@@ -140,14 +140,16 @@ class Spacing(
     val pageH: Float = 0f,
     val windowH: Float = 0f,
     val width: Float = 0f,
+    /** a linked stylesheet's `vw`, of the window's width */
+    val windowW: Float = 0f,
 ) {
     operator fun plus(other: Spacing) =
-        Spacing(em + other.em, px + other.px, joined(other) { a, b -> a + b }, pageH + other.pageH, windowH + other.windowH, width + other.width)
+        Spacing(em + other.em, px + other.px, joined(other) { a, b -> a + b }, pageH + other.pageH, windowH + other.windowH, width + other.width, windowW + other.windowW)
     operator fun minus(other: Spacing) =
-        Spacing(em - other.em, px - other.px, joined(other) { a, b -> a.without(b) }, pageH - other.pageH, windowH - other.windowH, width - other.width)
+        Spacing(em - other.em, px - other.px, joined(other) { a, b -> a.without(b) }, pageH - other.pageH, windowH - other.windowH, width - other.width, windowW - other.windowW)
 
     /** Its share of the page, window and column, without its em and px. */
-    fun relative() = Spacing(pageH = pageH, windowH = windowH, width = width)
+    fun relative() = Spacing(pageH = pageH, windowH = windowH, width = width, windowW = windowW)
 
     /** Its parts, itself as one where it has none listed (a zero adds none). */
     fun partsOrSelf(): List<Spacing> = parts ?: if (em == 0f && px == 0f) emptyList() else listOf(Spacing(em, px))
@@ -162,24 +164,24 @@ class Spacing(
     }
 
     override fun equals(other: Any?) =
-        other is Spacing && em == other.em && px == other.px && pageH == other.pageH && windowH == other.windowH && width == other.width
-    override fun hashCode() = listOf(em, px, pageH, windowH, width).hashCode()
-    override fun toString() = "Spacing(em=$em, px=$px" + (if (pageH != 0f || windowH != 0f || width != 0f) ", pageH=$pageH, windowH=$windowH, width=$width" else "") + ")"
+        other is Spacing && em == other.em && px == other.px && pageH == other.pageH && windowH == other.windowH && width == other.width && windowW == other.windowW
+    override fun hashCode() = listOf(em, px, pageH, windowH, width, windowW).hashCode()
+    override fun toString() = "Spacing(em=$em, px=$px" + (if (pageH != 0f || windowH != 0f || width != 0f || windowW != 0f) ", pageH=$pageH, windowH=$windowH, width=$width, windowW=$windowW" else "") + ")"
 
     /** In device px, [cssPx] device px to a CSS px. */
     fun toPx(fontPx: Float, cssPx: Float, room: Room = Room.NONE): Int = exactPx(fontPx, cssPx, room).roundToInt()
 
     /** In device px to the fraction, as a browser stacks blocks. */
     fun exactPx(fontPx: Float, cssPx: Float, room: Room = Room.NONE): Float =
-        em * fontPx + px * cssPx + pageH * room.pageHeightPx + windowH * room.windowHeightPx + width * room.widthPx
+        em * fontPx + px * cssPx + pageH * room.pageHeightPx + windowH * room.windowHeightPx + width * room.widthPx + windowW * room.windowWidthPx
 
     companion object {
         val ZERO = Spacing()
     }
 }
 
-/** What a [Spacing]'s shares are of, in device px: the page's height, the window's, the column's width. */
-data class Room(val pageHeightPx: Float, val windowHeightPx: Float, val widthPx: Float) {
+/** What a [Spacing]'s shares are of, in device px: the page's height, the window's height and width, the column's width. */
+data class Room(val pageHeightPx: Float, val windowHeightPx: Float, val widthPx: Float, val windowWidthPx: Float = 0f) {
     companion object {
         val NONE = Room(0f, 0f, 0f)
     }
@@ -264,6 +266,8 @@ sealed class Block {
         val lang: String? = null,
         /** a percent `text-indent`: the share of the block's width the first line is set in by, on top of [indent] */
         val indentShare: Float = 0f,
+        /** right-to-left text: lines begin at the right edge, and the first line's indent is there */
+        val rtl: Boolean = false,
         /** the book's `line-height` in CSS px, over [lineRatio]: it doesn't grow with the font */
         val linePx: Float? = null,
     ) : Block() {
@@ -360,9 +364,13 @@ data class Chapter(
     val linear: Boolean = true,
     /** the share of the document's text (its body's `textContent`) before each element id: where a contents entry pointing inside it starts */
     val anchors: Map<String, Float> = emptyMap(),
+    /** the index of the block each element id is in, or comes before: where a link or contents entry to the id lands */
+    val anchorBlocks: Map<String, Int> = emptyMap(),
     /** its body's font size (over a browser's 16px) and family: the running text, in a book with too little text to tell */
     val bodyScale: Float = 1f,
     val bodyFamily: String? = null,
+    /** set in a vertical writing mode: lines run down the page, from the right edge */
+    val vertical: Boolean = false,
 )
 
 /** A contents entry; [level] 1 for the top of the contents, 2 for an entry under one of those… */
@@ -391,8 +399,17 @@ data class ParsedEpub(
     val binaries: Map<String, ByteArray> = emptyMap(),
     /** The chapter where the text starts (the `bodymatter` landmark or the guide's `text`), which a new book opens at; null: none given. */
     val textStart: String? = null,
-    /** read for a dark reading theme: its `prefers-color-scheme: dark` rules held */
-    val darkScheme: Boolean = false,
+    /**
+     * A fixed-layout (pre-paginated) book whose pages are each a picture: the pictures' zip paths in reading order,
+     * to be read page by page like a comic. Null otherwise: a fixed-layout book with text is read reflowed.
+     */
+    val fixedPages: List<String>? = null,
+    /** set in a vertical writing mode (its first chapter of text is): its pages are drawn turned a quarter, lines down the page */
+    val vertical: Boolean = false,
+    /** pages turn right to left: the spine says so, or the book's language or first page reads that way */
+    val pageRtl: Boolean = false,
+    /** what the reader's settings changed in how it was read: see [ParseOptions] */
+    val options: ParseOptions = ParseOptions(),
     /** the book's CSS asks for the colour scheme, so a theme of the other kind must read it again */
     val schemeAware: Boolean = false,
 )
@@ -401,7 +418,7 @@ data class ParsedEpub(
  * The zip path of the parsed OPF document is the base for resolving chapter
  * hrefs; [Chapter.href] values are full zip paths usable as locator hrefs.
  */
-fun parseEpub(path: Path, darkScheme: Boolean = false): ParsedEpub {
+fun parseEpub(path: Path, options: ParseOptions = ParseOptions()): ParsedEpub {
     val zip = FileSystem.SYSTEM.openZip(path)
     val containerXml = zip.read(CONTAINER) { readUtf8() }
     val opfPath = findRootfilePath(containerXml)?.toPath()
@@ -444,7 +461,9 @@ fun parseEpub(path: Path, darkScheme: Boolean = false): ParsedEpub {
         // next to the OPF, which is why Frankenstein parsed 'correctly').
         val chapterDir = chapterPath.parent ?: ROOT
         val anchors = HashMap<String, Float>()
+        val anchorBlocks = HashMap<String, Int>()
         var body = 1f to (null as String?)
+        var vertical = false
         Chapter(
             href = chapterPath.toString(),
             title = titles[chapterPath.toString()],
@@ -453,14 +472,20 @@ fun parseEpub(path: Path, darkScheme: Boolean = false): ParsedEpub {
                 resolveSrc = { src -> (chapterDir / src.toPath()).normalized().toString() },
                 loadCss = { href -> css((chapterDir / href.substringBefore('#').toPath()).normalized()) },
                 anchors = anchors,
-                darkScheme = darkScheme,
+                anchorBlocks = anchorBlocks,
+                darkScheme = options.darkScheme,
+                options = options,
+                defaultRtl = rtlLanguage(opf.language),
                 onBody = { scale, family -> body = scale to family },
+                onVertical = { vertical = true },
             ),
             anchors = anchors,
+            anchorBlocks = anchorBlocks,
             size = if (idref in opf.nonLinear) 0 else zip.metadata(chapterPath).size?.toInt() ?: 0,
             linear = idref !in opf.nonLinear,
             bodyScale = body.first,
             bodyFamily = body.second,
+            vertical = vertical,
         )
     }
     // Normalize the cover href like spine hrefs: it is relative to the OPF dir
@@ -475,7 +500,10 @@ fun parseEpub(path: Path, darkScheme: Boolean = false): ParsedEpub {
     return ParsedEpub(
         opf.title, opf.author, cover, withRunningText(chapters, fonts.map { it.family }.toSet()), toc, opf.identifier, opf.language, fonts,
         textStart = textStart,
-        darkScheme = darkScheme,
+        fixedPages = if (opf.fixedLayout) imagePagesOf(chapters) else null,
+        vertical = chapters.firstOrNull { c -> c.blocks.any { it is Block.Text && it.text.isNotBlank() } }?.vertical == true,
+        pageRtl = opf.pageRtl || rtlLanguage(opf.language) || chapters.any { it.vertical } || chapters.firstNotNullOfOrNull { c -> c.blocks.firstOrNull { it is Block.Text && it.text.isNotBlank() } as? Block.Text }?.rtl == true,
+        options = options,
         schemeAware = schemeAware || cssFiles.values.any { it?.contains(COLOR_SCHEME, ignoreCase = true) == true },
     )
 }
@@ -573,6 +601,14 @@ internal fun parseNavToc(xml: String, resolve: (String) -> String): List<TocEntr
     return navs.firstOrNull { it.first }?.second ?: navs.firstOrNull()?.second ?: emptyList()
 }
 
+/** The picture on each page of a fixed-layout book, if every page in the reading order is only one. */
+private fun imagePagesOf(chapters: List<Chapter>): List<String>? {
+    val pages = chapters.filter { it.linear }.map { chapter ->
+        chapter.blocks.filter { it !is Block.Text || it.text.isNotBlank() }.singleOrNull()?.let { (it as? Block.Image)?.src }?.takeIf { it.isNotEmpty() }
+    }
+    return pages.takeIf { it.isNotEmpty() && it.all { page -> page != null } }?.filterNotNull()
+}
+
 /** The nav document's landmark for the start of the text (`bodymatter`), resolved; null when it has none. */
 internal fun parseNavTextStart(xml: String, resolve: (String) -> String): String? {
     val reader = newXmlReader(xml)
@@ -595,6 +631,15 @@ internal fun parseNavTextStart(xml: String, resolve: (String) -> String): String
 private fun fragmentOf(href: String): String? = href.substringAfter('#', "").ifEmpty { null }
 
 private const val COLOR_SCHEME = "prefers-color-scheme"
+
+// languages written right to left (a script's direction, as `Intl.Locale.textInfo` gives it)
+private val RTL_LANGUAGES = setOf("ar", "he", "iw", "fa", "ur", "yi", "ps", "sd", "ug", "dv", "ckb", "prs", "arc", "ks", "az-arab")
+
+/** Whether a language tag is written right to left. */
+fun rtlLanguage(tag: String?): Boolean {
+    val lower = tag?.lowercase()?.replace('_', '-') ?: return false
+    return lower.substringBefore('-') in RTL_LANGUAGES && !lower.contains("-latn")
+}
 
 // a landmark's or guide reference's type, as foliate's goToTextStart takes it
 private fun isTextStart(type: String) = type.split(' ').any { it == "bodymatter" || it == "text" }
@@ -632,6 +677,10 @@ private data class Opf(
     val navHref: String?,
     /** the EPUB 2 guide's start of the text (`<reference type="text">`), relative to the OPF */
     val guideText: String?,
+    /** `rendition:layout` pre-paginated, or the iBooks/Kobo `fixed-layout` option */
+    val fixedLayout: Boolean = false,
+    /** the spine's `page-progression-direction` is right to left */
+    val pageRtl: Boolean = false,
 )
 
 private fun parseOpf(opfXml: String): Opf {
@@ -647,6 +696,8 @@ private fun parseOpf(opfXml: String): Opf {
     var navHref: String? = null
     var ncxHref: String? = null
     var guideText: String? = null
+    var fixedLayout = false
+    var pageRtl = false
     var inMetadata = false
     var capture: ((String) -> Unit)? = null
     // package@unique-identifier names the dc:identifier that identifies the book
@@ -679,6 +730,7 @@ private fun parseOpf(opfXml: String): Opf {
                         }
                     }
                 }
+                "spine" -> if (reader.attr("page-progression-direction")?.lowercase() == "rtl") pageRtl = true
                 "itemref" -> reader.attr("idref")?.let { idref ->
                     spine.add(idref)
                     if (reader.attr("linear") == "no") nonLinear.add(idref)
@@ -686,12 +738,17 @@ private fun parseOpf(opfXml: String): Opf {
                 "title" -> if (inMetadata) capture = { title = it }
                 "creator" -> if (inMetadata) capture = { author = it }
                 "language" -> if (inMetadata && language == null) capture = { language = it.trim().ifEmpty { null } }
-                "meta" -> if (reader.attrOrEmpty("name") == "cover") coverId = reader.attr("content")
+                "meta" -> {
+                    if (reader.attrOrEmpty("name") == "cover") coverId = reader.attr("content")
+                    if (reader.attrOrEmpty("name") == "fixed-layout" && reader.attrOrEmpty("content").equals("true", true)) fixedLayout = true
+                    if (reader.attrOrEmpty("property") == "rendition:layout") capture = { if (it.trim() == "pre-paginated") fixedLayout = true }
+                }
                 "reference" -> if (guideText == null && isTextStart(reader.attrOrEmpty("type"))) guideText = reader.attr("href")
             }
             EventType.TEXT, EventType.CDSECT -> capture?.invoke(reader.text)
             EventType.END_ELEMENT -> when (reader.localName) {
                 "title" -> capture = null
+                "meta" -> capture = null
                 "creator" -> capture = null
                 "language" -> capture = null
                 "identifier" -> capture = null
@@ -703,7 +760,7 @@ private fun parseOpf(opfXml: String): Opf {
     val coverByMeta = coverId?.let { manifest[it] }
     val identifier = (identifiers.firstOrNull { it.first != null && it.first == uniqueId } ?: identifiers.firstOrNull())
         ?.second?.trim()?.takeIf { it.isNotEmpty() }
-    return Opf(title.trim(), author.trim(), coverHref ?: coverByMeta, navHref ?: ncxHref, manifest, spine, identifier, language, nonLinear, navHref, guideText)
+    return Opf(title.trim(), author.trim(), coverHref ?: coverByMeta, navHref ?: ncxHref, manifest, spine, identifier, language, nonLinear, navHref, guideText, fixedLayout, pageRtl)
 }
 
 // <br> placeholder while collecting text: source newlines are plain whitespace
@@ -759,20 +816,32 @@ private fun isPageMarker(reader: XmlReader): Boolean {
 private val PAGE_NUMBER_CLASSES = setOf("pagenum", "pageno", "page-number", "pagenumber", "page_number", "pagebreak")
 
 internal fun parseXhtml(
-    xhtml: String,
+    source: String,
     resolveSrc: (String) -> String = { it },
     /** stylesheet text for a `<link>` href, relative to this document */
     loadCss: (String) -> String? = { null },
     /** filled with [Chapter.anchors] */
     anchors: MutableMap<String, Float>? = null,
+    /** filled with [Chapter.anchorBlocks] */
+    anchorBlocks: MutableMap<String, Int>? = null,
     /** the reading theme is dark: the book's `prefers-color-scheme: dark` rules hold */
     darkScheme: Boolean = false,
     /** told the body's size (over 16px) and family, which stand for the running text where there's too little of it */
     onBody: (scale: Float, family: String?) -> Unit = { _, _ -> },
+    /** the book's language reads right to left: where the page doesn't say otherwise, so does its text */
+    defaultRtl: Boolean = false,
+    /** told when the page's root sets a vertical `writing-mode` */
+    onVertical: () -> Unit = {},
+    /** what the reader's settings change in the page */
+    options: ParseOptions = ParseOptions(),
 ): List<Block> {
+    // MathML written out along the line, which the blocks below then read as text
+    val xhtml = mathmlToHtml(source)
     val reader = newXmlReader(xhtml)
     val blocks = mutableListOf<Block>()
-    val stylesheet = Stylesheet(darkScheme)
+    val stylesheet = Stylesheet(darkScheme || options.darkScheme)
+    // the reader's own CSS comes after the book's, which it is added after in order
+    if (options.userCss.isNotBlank()) stylesheet.addUser(options.userCss)
     // each element's place among its siblings, for :last-child and the like; the ordinal counts elements
     val facts = elementFacts(xhtml)
     var ordinal = -1
@@ -881,6 +950,7 @@ internal fun parseXhtml(
         // a table's border="N": an N px outset border round it, and 1px inset ones round its cells, in gray
         fun bordered(px: Float, style: String) = BorderSide(px, style, BORDER_GRAY).let { CssStyle(borderTop = it, borderRight = it, borderBottom = it, borderLeft = it) }
         return listOfNotNull(
+            when (reader.attr("dir")?.lowercase()) { "rtl" -> CssStyle(rtl = true); "ltr" -> CssStyle(rtl = false); else -> null },
             if (tag == "td" || tag == "th") table?.cellPadding?.let { CssLength.Px(it) }?.let { CssStyle(paddingTop = it, paddingRight = it, paddingBottom = it, paddingLeft = it) } else null,
             if ((tag == "td" || tag == "th") && (table?.border ?: 0f) > 0f) bordered(1f, "inset") else null,
             if (tag == "table") reader.attr("cellspacing")?.toFloatOrNull()?.let { CssStyle(borderSpacing = CssLength.Px(it) to CssLength.Px(it)) } else null,
@@ -906,8 +976,8 @@ internal fun parseXhtml(
             while (table.widths.size <= table.column) table.widths.add(null)
             if (table.widths[table.column] == null) table.widths[table.column] = width.percent / 100f
         }
-        val ownStart = Spacing(px = declared.borderLeft.drawnPx) + declared.paddingLeft.spacing(style.scale)
-        val ownEnd = Spacing(px = declared.borderRight.drawnPx) + declared.paddingRight.spacing(style.scale)
+        val ownStart = Spacing(px = declared.borderLeft.drawnPx) + declared.paddingLeft.sideSpacing(style.scale)
+        val ownEnd = Spacing(px = declared.borderRight.drawnPx) + declared.paddingRight.sideSpacing(style.scale)
         val cell = TableCell(table.id, table.row, table.column, span, table.widths.toList(), table.spacing.first, style.rowAlign, ownStart, ownEnd)
         table.column += span
         return style.copy(cell = cell)
@@ -949,7 +1019,7 @@ internal fun parseXhtml(
     // the depth of the floated element, 0 when not inside one
     var floatDepth = 0
     // computed (inherited) style of each open element, innermost last
-    val styles = ArrayDeque<Computed>().apply { add(Computed()) }
+    val styles = ArrayDeque<Computed>().apply { add(Computed(rtl = options.rtl ?: defaultRtl)) }
     // the open elements as CSS selectors see them, outermost first, and each one's declared style
     val path = ArrayDeque<CssElement>()
     val declaredStyles = ArrayDeque<CssStyle>()
@@ -1031,7 +1101,7 @@ internal fun parseXhtml(
                     collapsed, kind, headingLevel, blockAlign, blockIndent, blockScale, takeGap(),
                     style.inset, emptyList(), blockFloatsRight, style.insetEnd, pendingMarker, blockKeepsSpaces,
                     style.insetShare, style.insetEndShare, blockDropCap, blockLineRatio, blockHyphenate, style.cell,
-                    takeBreak(), blockRagged, style.columns, lang = style.lang, indentShare = blockIndentShare, linePx = blockLinePx,
+                    takeBreak(), blockRagged, style.columns, lang = style.lang, indentShare = blockIndentShare, linePx = blockLinePx, rtl = style.rtl,
                 ).let { if (it.ragged) it.copy(align = TextAlign.START) else it },
             )
             pendingMarker = null
@@ -1065,13 +1135,18 @@ internal fun parseXhtml(
     var inBody = false
     var bodyText = 0
     val idsAt = HashMap<String, Int>()
+    val idBlocks = HashMap<String, Int>()
     while (reader.hasNext()) {
         val event = reader.next()
         if (event == EventType.START_ELEMENT) ordinal++
         when (event) {
             EventType.START_ELEMENT -> {
                 if (reader.localName == "body") inBody = true
-                if (inBody) reader.attr("id")?.let { idsAt.getOrPut(it) { bodyText } }
+                if (inBody) reader.attr("id")?.let {
+                    idsAt.getOrPut(it) { bodyText }
+                    // the block the id is in, or the next one to be made
+                    idBlocks.getOrPut(it) { blocks.size }
+                }
             }
             EventType.TEXT, EventType.CDSECT, EventType.ENTITY_REF, EventType.IGNORABLE_WHITESPACE -> if (inBody) bodyText += reader.text.length
             else -> {}
@@ -1113,8 +1188,10 @@ internal fun parseXhtml(
                 lastChild[lastChild.lastIndex] = element
                 path.addLast(element)
                 val declared = stylesheet.styleFor(path, reader.attr("style"), hintsOf(tag))
-                    // foliate sets the root's padding over the book's
-                    .let { if (tag == "html") it.copy(paddingTop = null, paddingRight = null, paddingBottom = null, paddingLeft = null) else it }
+                    // foliate sets the root's padding over the book's, and the reader its direction
+                    .let {
+                        if (tag == "html") it.copy(paddingTop = null, paddingRight = null, paddingBottom = null, paddingLeft = null, rtl = options.rtl ?: it.rtl) else it
+                    }
                 if (isPageMarker(reader) || declared.hidden == true) {
                     if (declared.hidden != true && spans != null) blockHadMarker = true
                     path.removeLast()
@@ -1131,7 +1208,7 @@ internal fun parseXhtml(
                     if (!isBlock) return@let inherited
                     // foliate zeroes the body's margins; every other block keeps the book's
                     val hasMargins = tag != "body" && tag != "html"
-                    val marginLeft = if (hasMargins) declared.marginLeft.spacing(inherited.scale) else Spacing.ZERO
+                    val marginLeft = if (hasMargins) declared.marginLeft.sideSpacing(inherited.scale) else Spacing.ZERO
                     val ruleAt = inherited.inset + marginLeft
                     // percent margins are of the containing block; a narrower width leaves room its auto margins take
                     val parentShare = styles.last().widthShare
@@ -1146,7 +1223,7 @@ internal fun parseXhtml(
                         else -> 0f to free
                     }
                     fun share(length: CssLength?) = (length as? CssLength.Percent)?.let { it.percent / 100f * parentShare } ?: 0f
-                    val marginRight = if (hasMargins) declared.marginRight.spacing(inherited.scale) else Spacing.ZERO
+                    val marginRight = if (hasMargins) declared.marginRight.sideSpacing(inherited.scale) else Spacing.ZERO
                     val outerShare = inherited.insetShare + freeLeft + (if (hasMargins) share(declared.marginLeft) else 0f)
                     val outerEndShare = inherited.insetEndShare + freeRight + (if (hasMargins) share(declared.marginRight) else 0f)
                     val borders = listOf(declared.borderTop, declared.borderRight, declared.borderBottom, declared.borderLeft).map { it.drawnPx }
@@ -1167,8 +1244,8 @@ internal fun parseXhtml(
                         ),
                     )
                     inherited.copy(
-                        inset = ruleAt + Spacing(px = borders[3]) + declared.paddingLeft.spacing(inherited.scale),
-                        insetEnd = inherited.insetEnd + Spacing(px = borders[1]) + declared.paddingRight.spacing(inherited.scale) + marginRight,
+                        inset = ruleAt + Spacing(px = borders[3]) + declared.paddingLeft.sideSpacing(inherited.scale),
+                        insetEnd = inherited.insetEnd + Spacing(px = borders[1]) + declared.paddingRight.sideSpacing(inherited.scale) + marginRight,
                         insetShare = outerShare + share(declared.paddingLeft),
                         insetEndShare = outerEndShare + share(declared.paddingRight),
                     )
@@ -1202,6 +1279,7 @@ internal fun parseXhtml(
                 }
                 styles.addLast(style)
                 if (tag == "body") onBody(style.scale, style.family)
+                if ((tag == "body" || tag == "html") && declared.vertical == true) onVertical()
                 if (isBlock && declared.avoidInside == true) avoidInside.addLast(styles.size to blocks.size)
                 val fixedHeight = declared.height?.takeIf { it is CssLength.Em || it is CssLength.Px || it is CssLength.Vh || it is CssLength.WindowVh }
                 if (isBlock && fixedHeight != null && tag !in heightOwnTags) {
@@ -1353,8 +1431,8 @@ internal fun parseXhtml(
                 styleText?.append(reader.text) ?: run {
                     // text straight inside a <div>, <td>, <dd>… is a block of its own, as in a browser
                     if (svgDepth > 0) return@run
-                    if (spans == null && !inHead && reader.text.any { it !in HTML_SPACE }) openBlock(BlockKind.PARAGRAPH, 0)
-                    appendText(reader.text)
+                    if (spans == null && !inHead && options.replaced(reader.text).any { it !in HTML_SPACE }) openBlock(BlockKind.PARAGRAPH, 0)
+                    appendText(options.replaced(reader.text))
                 }
             EventType.END_ELEMENT -> {
                 val tag = reader.localName.lowercase()
@@ -1457,6 +1535,7 @@ internal fun parseXhtml(
             else -> {}
         }
     }
+    anchorBlocks?.putAll(idBlocks)
     anchors?.putAll(idsAt.mapValues { (_, at) -> if (bodyText > 0) at.toFloat() / bodyText else 0f })
     // each block with its boxes as they ended up, their insets known now they're closed
     return blocks.mapIndexed { i, block ->
@@ -1478,6 +1557,8 @@ private data class Computed(
     val bold: Boolean = false,
     val italic: Boolean = false,
     val smallCaps: Boolean = false,
+    /** right-to-left text: `dir`, `direction`, else the book's language; inherited */
+    val rtl: Boolean = false,
     val align: TextAlign = TextAlign.START,
     /** `text-indent`; inherited, as in CSS */
     val indent: Spacing = Spacing.ZERO,
@@ -1554,11 +1635,22 @@ private data class Computed(
             bold = declared.bold ?: (bold || tag in boldTags || tag in headingTags),
             italic = declared.italic ?: (italic || tag in italicTags),
             smallCaps = declared.smallCaps ?: smallCaps,
-            align = declared.align ?: align,
+            rtl = declared.rtl ?: rtl,
+            // `left` and `right` are physical: in right-to-left text `right` is where it begins
+            align = declared.alignSide?.let { side ->
+                val ownRtl = declared.rtl ?: rtl
+                when (side) {
+                    "center" -> TextAlign.CENTER
+                    "left" -> if (ownRtl) TextAlign.END else TextAlign.START
+                    "right" -> if (ownRtl) TextAlign.START else TextAlign.END
+                    "end" -> TextAlign.END
+                    else -> TextAlign.START
+                }
+            } ?: declared.align ?: align,
             // the reader's justification is set on running text only: elsewhere a book's `left` stays ragged
             ragged = when {
                 tag in JUSTIFIED_TAGS -> false
-                declared.align != null -> declared.alignLeft == true
+                declared.align != null -> if (declared.rtl ?: rtl) declared.alignSide == "left" || declared.alignSide == "center" || declared.alignSide == "end" else declared.alignLeft == true
                 else -> ragged
             },
             indent = declared.indent?.spacing(ownScale) ?: indent,
@@ -1677,6 +1769,14 @@ private fun CssLength?.verticalSpacing(scale: Float): Spacing = when (this) {
     is CssLength.Vh -> Spacing(pageH = percent / 100f)
     is CssLength.WindowVh -> Spacing(windowH = percent / 100f)
     is CssLength.Percent -> Spacing(width = percent / 100f)
+    else -> spacing(scale)
+}
+
+/** A left or right margin or padding: `vh` of the page, a linked sheet's `vh` and `vw` of the window; an in-document `vw` is nothing (probed). */
+private fun CssLength?.sideSpacing(scale: Float): Spacing = when (this) {
+    is CssLength.Vh -> Spacing(pageH = percent / 100f)
+    is CssLength.WindowVh -> Spacing(windowH = percent / 100f)
+    is CssLength.WindowVw -> Spacing(windowW = percent / 100f)
     else -> spacing(scale)
 }
 
