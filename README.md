@@ -4,10 +4,19 @@ An e-reader for Android and desktop that keeps your place, highlights, notes and
 
 Built with Kotlin Multiplatform and Compose Multiplatform. iOS is planned.
 
+## Preview
+
+| Reader | Display settings | Contents |
+|---|---|---|
+| <img src="docs/screenshots/reader.png" width="240" alt="A page of Frankenstein in the Paper theme"> | <img src="docs/screenshots/display.png" width="240" alt="The Display sheet: font size, font, theme, line spacing, margins"> | <img src="docs/screenshots/contents.png" width="240" alt="The contents sheet with the current chapter marked"> |
+
+Screenshots are from the Android app, reading [Frankenstein](https://www.gutenberg.org/ebooks/84) (public domain).
+
 ## Features
 
-- **Formats:** EPUB, FB2 (including `.fb2.zip`), TXT and CBZ comics.
-- **Reader:** paged layout with justified paragraphs and first-line indents; six reading themes (White, Paper, Grey, Dim, Dusk, Black); font, size, line spacing and margins; contents and chapter jumps; arrow keys turn pages on desktop.
+- **Formats:** EPUB, FB2 (including `.fb2.zip`), TXT, HTML, Markdown, RTF, DOCX and CBZ comics.
+- **Reader:** paged layout with justified paragraphs and first-line indents; six reading themes (White, Paper, Grey, Dim, Dusk, Black); font, size, line spacing and margins; contents and chapter jumps; in-book search; arrow keys turn pages on desktop.
+- **Reader options:** text direction (auto, left to right, right to left), custom CSS, find and replace in the book's text, two columns, and scrolled flow instead of pages. Right-to-left and vertical (Japanese) books are supported.
 - **Notes:** highlights, notes and bookmarks, listed per book in the reader and across all books on the Notes and Bookmarks screens.
 - **Sync:** each device writes its own JSON files into the shared folder; merges are conflict-free and order edits with Lamport clocks rather than wall time. Different files of the same EPUB edition are linked, so your place carries over even if each device has its own copy.
 - **Backup:** one `.zip` with your library, positions, notes, settings and book files, restorable on any device.
@@ -15,9 +24,52 @@ Built with Kotlin Multiplatform and Compose Multiplatform. iOS is planned.
 
 Book files themselves don't sync. Import the book on each device; positions and notes then match up automatically.
 
-## Build and run
+## Install
 
-Requires JDK 17 or newer. The Android build also needs the Android SDK (set `sdk.dir` in `local.properties`).
+### Android
+
+Requires Android 8.0 (API 26) or newer. There is no store release yet, so build the APK from source (see [Build from source](#build-from-source)):
+
+```bash
+./gradlew :android:assembleDebug
+```
+
+The APK is `android/build/outputs/apk/debug/android-debug.apk`. Copy it to the phone and open it (allow installs from that source when asked), or install it over USB with the phone's developer options on:
+
+```bash
+adb install -r android/build/outputs/apk/debug/android-debug.apk
+```
+
+`./gradlew :android:assembleRelease` builds a release APK. It is signed only if a git-ignored `keystore.properties` sits in the repo root (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`); otherwise it is unsigned and Android won't install it.
+
+### Desktop
+
+Run it straight from source:
+
+```bash
+./gradlew :desktop:run
+```
+
+Or build an installer for the system you are on (output under `desktop/build/compose/binaries/main/`):
+
+```bash
+./gradlew :desktop:packageDmg    # macOS
+./gradlew :desktop:packageMsi    # Windows
+./gradlew :desktop:packageDeb    # Linux
+```
+
+Installers are built per platform: a `.dmg` is built on a Mac, an `.msi` on Windows, a `.deb` on Linux.
+
+## First steps
+
+1. **Add books.** Tap **+** in the Library and pick files or, on desktop, a folder. Baca copies each book into its own storage.
+2. **Or use a library folder.** In Settings, pick a folder of books. Baca reads them where they are, never copies them, and rescans on launch.
+3. **Sync.** On the Sync screen, pick a folder that your devices already share (Syncthing, Dropbox, iCloud Drive…). Do this on every device. Positions, highlights, notes and bookmarks then follow you. Book files don't: add each book on each device.
+4. **Backup.** The Sync screen also creates and restores a `.zip` backup.
+
+## Build from source
+
+Requires JDK 17 or newer. The Android build also needs the Android SDK (set `sdk.dir` in `local.properties`). Use the Gradle wrapper (`./gradlew`); nothing else needs installing.
 
 ```bash
 ./gradlew :desktop:run                     # run the desktop app
