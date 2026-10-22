@@ -26,19 +26,21 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Height the page gives up to the footer, so text never runs under it. */
-internal val READER_FOOTER_HEIGHT = 34.dp
+/** Height the page gives up to the footer, so text never runs under it: LibreraX's status bar. */
+internal val READER_FOOTER_HEIGHT = 40.dp
 
 /**
  * Always-on status line under the page, in the reading theme (LibreraX's
  * footer): book progress with a tick where each chapter starts, pages left
- * in the chapter, the time, the battery and the book page.
+ * in the chapter, the time, the battery and the book page, the pages counted
+ * as LibreraX counts them ([com.baca.shared.domain.reader.BookLocations]).
  */
 @Composable
 internal fun ReaderFooter(
     fraction: Float,
     chapterStarts: List<Float>,
-    chapterPagesLeft: Int,
+    /** null hides it: the contents mark no chapters */
+    chapterPagesLeft: Int?,
     page: Int,
     totalPages: Int,
     ink: Color,
@@ -63,7 +65,7 @@ internal fun ReaderFooter(
         }
         Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Pages left: $chapterPagesLeft", style = text, modifier = Modifier.weight(1f))
+            Text(chapterPagesLeft?.let { "Pages left: $it" } ?: "", style = text, modifier = Modifier.weight(1f))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(clock, style = text)
                 battery?.let { BatteryBadge(it, text, faint) }

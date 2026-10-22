@@ -56,6 +56,8 @@ import com.baca.app.reader.AnchorJump
 import com.baca.app.sync.SyncCoordinator
 import com.baca.app.sync.SyncTriggerStore
 import com.baca.app.ui.AppTheme
+import com.baca.app.ui.ReaderThemes
+import com.baca.app.ui.isDarkScheme
 import com.baca.shared.domain.isFinished
 import com.baca.app.ui.SettingsScreen
 import com.baca.app.ui.BookDetailScreen
@@ -123,6 +125,8 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
     // (System follows the OS); the reader wraps itself in its own theme from
     // the reading-theme setting
     val store = remember(db) { DbPositionStore(db, now = defaultNow()) }
+    // the reading theme's colour scheme, which a book's CSS is read for
+    fun readingSchemeDark() = isDarkScheme(ReaderThemes.forTheme(store.loadDisplay().theme).background)
     var appTheme by remember { mutableStateOf(AppThemeChoice.of(store.getLocal(AppThemeChoice.STORE_KEY))) }
     val dark = when (appTheme) {
         AppThemeChoice.SYSTEM -> isSystemInDarkTheme()
@@ -343,7 +347,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                 withContext(Dispatchers.IO) {
                     importer.import(initialBookPath)
                 }?.let { imported ->
-                    openBookOf(imported.row, libraryFolder)?.let { screenState = Screen.Reader(it) }
+                    openBookOf(imported.row, libraryFolder, readingSchemeDark())?.let { screenState = Screen.Reader(it) }
                 }
                 libraryTick++
             }
@@ -387,7 +391,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
         fun openAsync(row: BookRow) {
             openingTitle = row.title
             scope.launch(Dispatchers.IO) {
-                val book = openBookOf(row, libraryFolder)
+                val book = openBookOf(row, libraryFolder, readingSchemeDark())
                 // Compose snapshot writes are safe from any thread; Dispatchers.Main
                 // doesn't exist on desktop (that's kotlinx-coroutines-android)
                 openingTitle = null
@@ -438,7 +442,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
         fun openAnnotation(row: BookRow, picked: com.baca.shared.sync.AnnotationEntry) {
             val page = picked.fixedAnchor?.pageIndex
             if (picked.reflowAnchor == null && page == null) return
-            openBookOf(row, libraryFolder)?.let { book ->
+            openBookOf(row, libraryFolder, readingSchemeDark())?.let { book ->
                 // a note from another file of this edition jumps to its re-found spot
                 val anchor = (book as? OpenBook.Reflow)
                     ?.let { annotationsForReader(it, listOf(picked)).firstOrNull()?.entry?.reflowAnchor }
@@ -476,7 +480,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                             val annotations = remember(annotTick, book.bookHash) {
                                 annotationsForReader(book)
                             }
-                            CompositionLocalProvider(LocalBookImages provides rememberBookImages(book.path)) {
+                            CompositionLocalProvider(LocalBookImages provides rememberBookImages(book.path, book.parsed.binaries)) {
                                 ReaderScreen(
                                     book = book.parsed,
                                     bookPath = book.path,
@@ -505,6 +509,14 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                                         }
                                     },
                                     jumpToAnchor = current.jump,
+                                    onSchemeChange = { dark ->
+                                        // read again for the theme's colour scheme; the reader comes back where it was
+                                        scope.launch(Dispatchers.IO) {
+                                            BookFormats.parse(book.path.toPath(), "epub", dark)?.let { parsed ->
+                                                screenState = Screen.Reader(book.copy(parsed = parsed))
+                                            }
+                                        }
+                                    },
                                 )
                             }
                         }
@@ -732,12 +744,12 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
  * Library tap / launcher entry: parse from the row's stored path and format.
  * Android library-folder books are document URIs; [folder] stages a local copy.
  */
-private fun openBookOf(row: BookRow, folder: LibraryFolder?): OpenBook? {
+private fun openBookOf(row: BookRow, folder: LibraryFolder?, darkScheme: Boolean): OpenBook? {
     val readable = if (row.path.startsWith("content://")) folder?.stage(row.path) ?: return null else row.path
     return when (row.format) {
         "cbz" -> BookFormats.parseCbzFile(readable.toPath(), readable.substringAfterLast('/'))
             ?.let { OpenBook.Fixed(it, readable, row.bookHash) }
-        else -> BookFormats.parse(readable.toPath(), row.format)
+        else -> BookFormats.parse(readable.toPath(), row.format, darkScheme)
             ?.let { OpenBook.Reflow(it, readable, row.bookHash) }
     }
 }

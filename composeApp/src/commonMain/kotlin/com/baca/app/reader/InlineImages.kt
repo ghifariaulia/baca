@@ -7,11 +7,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.unit.Density
 import com.baca.shared.parser.Block
 import com.baca.shared.parser.Chapter
 import com.baca.shared.parser.InlineImage
@@ -24,29 +23,20 @@ internal fun BookImages.aspect(src: String): Float =
 internal val InlineImage.id: String get() = "$heightEm $src"
 
 /**
- * What each inline image of [chapter] draws in its placeholder. The image is a
- * mask in the page's [ink]: these are letter-sized marks (black circles on
- * white), so they read like the text around them on every reading theme.
+ * What each inline image of [chapter] draws in its placeholder: the picture as the book has
+ * it, under the same filter as any picture on the [page] (LibreraX's `img` rules).
  */
 @Composable
-internal fun rememberInlineImages(chapter: Chapter, images: BookImages, ink: Color): Map<String, InlineTextContent> =
-    remember(chapter, ink) {
-        val inkMask = ColorFilter.colorMatrix(
-            ColorMatrix(
-                floatArrayOf(
-                    0f, 0f, 0f, 0f, ink.red * 255,
-                    0f, 0f, 0f, 0f, ink.green * 255,
-                    0f, 0f, 0f, 0f, ink.blue * 255,
-                    // dark pixels opaque, light and transparent ones clear
-                    -0.299f, -0.587f, -0.114f, 1f, 0f,
-                ),
-            ),
-        )
+internal fun rememberInlineImages(chapter: Chapter, images: BookImages, page: Color): Map<String, InlineTextContent> =
+    remember(chapter, page) {
         chapter.blocks.flatMap { (it as? Block.Text)?.spans.orEmpty() }.mapNotNull { it.image }.distinct()
             .associate { image ->
                 image.id to InlineTextContent(inlineImagePlaceholder(image, images.aspect(image.src))) {
                     images.image(image.src)?.let { bitmap ->
-                        Image(bitmap, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds, colorFilter = inkMask)
+                        Image(
+                            bitmap, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds,
+                            colorFilter = pictureFilter(page) { images.onPlainGround(image.src) },
+                        )
                     }
                 }
             }
@@ -58,16 +48,27 @@ internal fun inlinePlaceholders(
     lineStart: Int,
     lineEnd: Int,
     images: BookImages,
+    /** each span's spacer width in px, from the layout ([com.baca.shared.render.ReflowLayout.spacersOf]) */
+    spacers: List<Int?>,
+    density: Density,
 ): List<AnnotatedString.Range<Placeholder>> {
     val out = mutableListOf<AnnotatedString.Range<Placeholder>>()
     var offset = 0
-    block.spans.forEach { span ->
-        val image = span.image
-        if (image != null && offset >= lineStart && offset < lineEnd) {
+    block.spans.forEachIndexed { i, span ->
+        val placeholder = span.image?.let { inlineImagePlaceholder(it, images.aspect(it.src)) }
+            ?: spacers.getOrNull(i)?.let { spacerPlaceholder(it, density) }
+        if (placeholder != null && offset >= lineStart && offset < lineEnd) {
             val at = offset - lineStart
-            out += AnnotatedString.Range(inlineImagePlaceholder(image, images.aspect(image.src)), at, at + span.text.length)
+            out += AnnotatedString.Range(placeholder, at, at + span.text.length)
         }
         offset += span.text.length
     }
     return out
 }
+
+/** The inline-content key a spacer is drawn under: spacers of one width share one. */
+internal fun spacerId(px: Int) = "space $px"
+
+/** Empty inline content for each spacer width [layoutSpacers] holds. */
+internal fun spacerContent(layoutSpacers: Collection<Int>, density: Density): Map<String, InlineTextContent> =
+    layoutSpacers.distinct().associate { px -> spacerId(px) to InlineTextContent(spacerPlaceholder(px, density)) {} }

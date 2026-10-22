@@ -1,5 +1,7 @@
 package com.baca.shared.render
 
+import com.baca.shared.parser.BookFace
+
 /**
  * Deterministic grid metrics for tests: every char is [charW] px wide, lines
  * wrap every (maxWidthPx / charW) chars, explicit newlines break.
@@ -7,12 +9,14 @@ package com.baca.shared.render
 class GridMetrics(private val charW: Int = 10) : TextMetrics {
     override fun layoutLines(
         text: String,
-        fontSizePx: Int,
+        fontSizePx: Float,
         lineHeightPx: Int,
         maxWidthPx: Int,
         fontFamily: String?,
         styles: List<TextMetrics.StyleRange>,
         firstLineIndentPx: Int,
+        hyphenate: Boolean,
+        language: String?,
     ): List<TextMetrics.LineSpan> {
         val fullCols = (maxWidthPx / charW).coerceAtLeast(1)
         val lines = mutableListOf<TextMetrics.LineSpan>()
@@ -29,4 +33,7 @@ class GridMetrics(private val charW: Int = 10) : TextMetrics {
         }
         return lines
     }
+
+    // every grid font: ascent 0.8 and descent 0.2 of its size
+    override fun verticalMetrics(fontFamily: String?, face: BookFace?, family: String?): TextMetrics.VerticalMetrics = TextMetrics.VerticalMetrics(0.8f, 0.2f)
 }

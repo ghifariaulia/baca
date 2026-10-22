@@ -7,7 +7,7 @@ Built with Kotlin Multiplatform and Compose Multiplatform. iOS is planned.
 ## Features
 
 - **Formats:** EPUB, FB2 (including `.fb2.zip`), TXT and CBZ comics.
-- **Reader:** paged layout with justified paragraphs and first-line indents; four reading themes (Paper, White, Dim, Black); font, size, line spacing and margins; contents and chapter jumps; arrow keys turn pages on desktop.
+- **Reader:** paged layout with justified paragraphs and first-line indents; six reading themes (White, Paper, Grey, Dim, Dusk, Black); font, size, line spacing and margins; contents and chapter jumps; arrow keys turn pages on desktop.
 - **Notes:** highlights, notes and bookmarks, listed per book in the reader and across all books on the Notes and Bookmarks screens.
 - **Sync:** each device writes its own JSON files into the shared folder; merges are conflict-free and order edits with Lamport clocks rather than wall time. Different files of the same EPUB edition are linked, so your place carries over even if each device has its own copy.
 - **Backup:** one `.zip` with your library, positions, notes, settings and book files, restorable on any device.
@@ -51,3 +51,9 @@ On desktop, the library database is `~/.baca/baca.db`, and imported books are st
 ## Fonts
 
 Bundled reading fonts are Literata, DM Sans and [Libron](https://github.com/nicoverbruggen/libron), all under the SIL Open Font License 1.1. License texts are in [`docs/licenses`](docs/licenses).
+
+## Acknowledgements
+
+- [Librera](https://librera.mobi): Baca's pages are laid out to match Librera's reader, page for page. Its layout rules, page numbering and reading themes are the reference Baca's layout is checked against.
+- [foliate-js](https://github.com/johnfactotum/foliate-js) by John Factotum (MIT License): Librera's reader is built on it, and Baca follows its rules for pagination, page numbering (locations) and FB2 conversion. The FB2 stylesheet in `shared/parser/Fb2.kt` is taken from its `fb2.js` ([license](docs/licenses/MIT-foliate-js.txt)).
+- English hyphenation patterns from the TeX hyphenation project ([`docs/licenses/hyph-en-us.txt`](docs/licenses/hyph-en-us.txt)). On Android, other languages are hyphenated with the system's own patterns.

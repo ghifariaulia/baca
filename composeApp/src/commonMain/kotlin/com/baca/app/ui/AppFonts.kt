@@ -14,6 +14,7 @@ import baca.composeapp.generated.resources.libron_bolditalic
 import baca.composeapp.generated.resources.libron_italic
 import baca.composeapp.generated.resources.libron_regular
 import baca.composeapp.generated.resources.literata
+import baca.composeapp.generated.resources.literata_italic
 
 /**
  * Bundled fonts (TECH 10.2): DM Sans for UI, Literata for book text and cover
@@ -27,19 +28,37 @@ val LocalAppFonts = androidx.compose.runtime.compositionLocalOf<UiFonts> {
     UiFonts(FontFamily.Default, FontFamily.Serif, FontFamily.SansSerif, FontFamily.Serif)
 }
 
+/** [opsz]: the optical size to draw at; null is the font's default. */
 @Composable
-fun dmSansFamily(): FontFamily = FontFamily(
-    Font(Res.font.dmsans, weight = FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
-    Font(Res.font.dmsans, weight = FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500))),
-    Font(Res.font.dmsans, weight = FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
+fun dmSansFamily(opsz: Float? = null): FontFamily = FontFamily(
+    Font(Res.font.dmsans, weight = FontWeight.Normal, variationSettings = variation(400, opsz)),
+    Font(Res.font.dmsans, weight = FontWeight.Medium, variationSettings = variation(500, opsz)),
+    Font(Res.font.dmsans, weight = FontWeight.Bold, variationSettings = variation(700, opsz)),
 )
 
+/** [opsz]: the optical size to draw at; null is the font's default. */
 @Composable
-fun literataFamily(): FontFamily = FontFamily(
-    Font(Res.font.literata, weight = FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400))),
-    Font(Res.font.literata, weight = FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600))),
-    Font(Res.font.literata, weight = FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700))),
+fun literataFamily(opsz: Float? = null): FontFamily = FontFamily(
+    Font(Res.font.literata, weight = FontWeight.Normal, variationSettings = variation(400, opsz)),
+    Font(Res.font.literata, weight = FontWeight.SemiBold, variationSettings = variation(600, opsz)),
+    Font(Res.font.literata, weight = FontWeight.Bold, variationSettings = variation(700, opsz)),
+    // the font's own italic, as LibreraX loads it: a slanted roman sets lines at other widths
+    Font(Res.font.literata_italic, weight = FontWeight.Normal, style = FontStyle.Italic, variationSettings = variation(400, opsz)),
+    Font(Res.font.literata_italic, weight = FontWeight.SemiBold, style = FontStyle.Italic, variationSettings = variation(600, opsz)),
+    Font(Res.font.literata_italic, weight = FontWeight.Bold, style = FontStyle.Italic, variationSettings = variation(700, opsz)),
 )
+
+private fun variation(weight: Int, opsz: Float?) =
+    if (opsz == null) FontVariation.Settings(FontVariation.weight(weight))
+    else FontVariation.Settings(FontVariation.weight(weight), FontVariation.Setting("opsz", opsz))
+
+/**
+ * The reader's own faces at the optical size a browser draws them at (`font-optical-sizing:
+ * auto`): the running text's size in CSS px, [opsz], which is its size in sp. The font's
+ * default optical size sets text a little wider than LibreraX's WebView does.
+ */
+@Composable
+fun readerFonts(opsz: Float): UiFonts = UiFonts(dmSansFamily(), literataFamily(opsz), dmSansFamily(opsz), libronFamily())
 
 /** Libron reading font: static TTFs per style (OFL, docs/licenses/OFL-libron.txt). */
 @Composable

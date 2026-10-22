@@ -23,7 +23,7 @@ class ReaderOpenPerfTest {
         // full-book pagination with grid metrics (deterministic, no Compose):
         // same total-work shape as the real TextMeasurer pass
         val metrics = GridMetrics()
-        val settings = ReflowSettings(fontSizePx = 38, lineHeightRatio = 1.7f)
+        val settings = ReflowSettings(fontSizePx = 38f, lineHeightRatio = 1.7f)
         val total = book.chapters.sumOf { chapter ->
             val layoutMs = measureTimeMillis {
                 ReflowLayout(chapter.blocks, metrics, settings, columnWidthPx = 648, pageHeightPx = 500)

@@ -35,7 +35,7 @@ class FontChoiceTest {
         val bytes = javaClass.classLoader.getResourceAsStream("books/frankenstein.epub")!!.readBytes()
         val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "font-test.epub"
         FileSystem.SYSTEM.write(path) { write(bytes) }
-        val book = parseEpub(path)
+        val book = parseEpub(path).openingAtText()
         lateinit var libron: FontFamily
         rule.setContent {
             AppTheme {

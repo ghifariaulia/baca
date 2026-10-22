@@ -45,7 +45,7 @@ class AnnotationFlowTest {
         val bytes = javaClass.classLoader.getResourceAsStream("books/frankenstein.epub")!!.readBytes()
         val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "annot-test.epub"
         FileSystem.SYSTEM.write(path) { write(bytes) }
-        val book = parseEpub(path)
+        val book = parseEpub(path).openingAtText()
         val driver = JdbcSqliteDriver("jdbc:sqlite:")
         Baca.Schema.create(driver)
         val repo = DbAnnotationRepository(Baca(driver), now = { 1L })
@@ -98,7 +98,7 @@ class AnnotationFlowTest {
         val bytes = javaClass.classLoader.getResourceAsStream("books/frankenstein.epub")!!.readBytes()
         val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "select-test.epub"
         FileSystem.SYSTEM.write(path) { write(bytes) }
-        val book = parseEpub(path)
+        val book = parseEpub(path).openingAtText()
         val driver = JdbcSqliteDriver("jdbc:sqlite:")
         Baca.Schema.create(driver)
         val repo = DbAnnotationRepository(Baca(driver), now = { 1L })

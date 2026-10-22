@@ -29,16 +29,20 @@ object Tokens {
 /** Reader color pairs for the display-settings themes (docs/TECH.md 10.4). */
 data class ReaderColors(val background: Color, val ink: Color)
 
+// LibreraX's themes (its Book, Day, Grey, Dark, Dusk and Black), read from its app
 object ReaderThemes {
-    val PAPER = ReaderColors(Color(0xFFF7F3EA), Color(0xFF1F1B16))
-    val WHITE = ReaderColors(Color(0xFFFFFFFF), Color(0xFF12151C))
-    // Dim/Black pairs keep body text at 7:1+ (docs/TECH.md 10.7)
-    val DIM = ReaderColors(Color(0xFF262A31), Color(0xFFD8D3C8))
-    val BLACK = ReaderColors(Color(0xFF000000), Color(0xFFC9C5BC))
+    val PAPER = ReaderColors(Color(0xFFF4ECD8), Color(0xFF5B4636))
+    val WHITE = ReaderColors(Color(0xFFFFFFFF), Color(0xFF111111))
+    val GREY = ReaderColors(Color(0xFFE9E9E9), Color(0xFF262626))
+    val DIM = ReaderColors(Color(0xFF303030), Color(0xFFDDDDDD))
+    val DUSK = ReaderColors(Color(0xFF1C1A17), Color(0xFFCFC5B3))
+    val BLACK = ReaderColors(Color(0xFF000000), Color(0xFFDDDDDD))
 
     fun forTheme(name: String): ReaderColors = when (name) {
         "white" -> WHITE
+        "grey" -> GREY
         "dim" -> DIM
+        "dusk" -> DUSK
         "black" -> BLACK
         else -> PAPER
     }
@@ -120,3 +124,6 @@ object Type {
     val caption: TextStyle = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Normal, lineHeight = 16.sp)
     val sectionLabel: TextStyle = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
 }
+
+/** Whether a reading theme's page is dark, as LibreraX tells it: Rec.601 luminance under 0.4. */
+fun isDarkScheme(page: Color): Boolean = 0.299f * page.red + 0.587f * page.green + 0.114f * page.blue < 0.4f

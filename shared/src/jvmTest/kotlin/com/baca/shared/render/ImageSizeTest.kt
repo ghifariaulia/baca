@@ -1,5 +1,9 @@
 package com.baca.shared.render
 
+import com.baca.shared.parser.Spacing
+
+import com.baca.shared.parser.Block
+
 import com.baca.shared.parser.CssLength
 import com.baca.shared.parser.ImageBox
 import kotlin.test.Test
@@ -8,7 +12,7 @@ import kotlin.test.assertEquals
 class ImageSizeTest {
 
     // a 1080px-wide phone at density 2.625: a 400dp column, an 800dp page
-    private fun ImageBox.size(w: Int, h: Int) = sizePx(w, h, cssPx = 2.625f, fontPx = 50, columnPx = 1050, pageHeightPx = 2100)
+    private fun ImageBox.size(w: Int, h: Int) = sizePx(w, h, cssPx = 2.625f, fontPx = 50f, columnPx = 1050, pageHeightPx = 2100)
 
     @Test
     fun `a picture without CSS keeps its own size in CSS px`() {
@@ -36,6 +40,15 @@ class ImageSizeTest {
     }
 
     @Test
+    fun `a linked stylesheet's vh is of the whole window, held to the page`() {
+        // the window a page's 2100 and 240 more: 70% of 2340 is 1638
+        val box = ImageBox(height = CssLength.WindowVh(70f))
+        assertEquals(1638, box.sizePx(300, 600, cssPx = 2.625f, fontPx = 50f, columnPx = 1050, pageHeightPx = 2100, windowWidthPx = 1080, windowHeightPx = 2340).heightPx)
+        // a vw of a style element or attribute is of the iframe's width, which is none: a pixel at most
+        assertEquals(1, ImageBox(width = CssLength.Vw(50f)).size(300, 600).widthPx)
+    }
+
+    @Test
     fun `the book's max-width holds a picture narrower than the column`() {
         assertEquals(ImageSize(735, 735), ImageBox(maxWidth = CssLength.Percent(70f)).size(1000, 1000))
     }
@@ -47,7 +60,21 @@ class ImageSizeTest {
 
     @Test
     fun `a page not measured yet gives a picture no height, not a crash`() {
-        val size = ImageBox(height = CssLength.Vh(95f)).sizePx(600, 900, cssPx = 1f, fontPx = 16, columnPx = 0, pageHeightPx = 0)
+        val size = ImageBox(height = CssLength.Vh(95f)).sizePx(600, 900, cssPx = 1f, fontPx = 16f, columnPx = 0, pageHeightPx = 0)
         assertEquals(ImageSize(1, 1), size)
+    }
+
+    @Test
+    fun `a picture is held to the page less the page's top and bottom margin`() {
+        // foliate caps pictures at the page height less twice its margin: 754 - 40 css px
+        val tall = ImageBox().sizePx(100, 1000, cssPx = 1f, fontPx = 20f, columnPx = 370, pageHeightPx = 754, marginPx = 20f)
+        assertEquals(714, tall.heightPx)
+    }
+
+    @Test
+    fun `a picture in an indented block is placed and sized inside it`() {
+        val quoted = Block.Image("", "a.png", inset = Spacing(px = 40f), insetEnd = Spacing(px = 40f))
+        val (start, width) = quoted.placeIn(bodyFontPx = 20f, cssPx = 1f, columnPx = 370)
+        assertEquals(40 to 290, start to width)
     }
 }

@@ -44,7 +44,7 @@ class ModelsTest {
     fun displaySettingsSavedBeforeTapToTurnKeepEdgeTapsOn() {
         val old = """{"fontSizeSp":21,"font":"serif","theme":"dim","lineSpacing":"normal","margins":"wide"}"""
         val decoded = decodeDisplay(old)
-        assertEquals(21, decoded.fontSizeSp)
+        assertEquals(130, decoded.fontSizePercent)
         assertEquals(true, decoded.tapToTurn)
         assertEquals(false, decodeDisplay(decoded.copy(tapToTurn = false).encode()).tapToTurn)
     }

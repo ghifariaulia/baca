@@ -1,8 +1,6 @@
 package com.baca.app.reader
 
 import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -29,30 +27,27 @@ class ArrowKeyPagingTest {
         val bytes = javaClass.classLoader.getResourceAsStream("books/frankenstein.epub")!!.readBytes()
         val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "arrow-test.epub"
         FileSystem.SYSTEM.write(path) { write(bytes) }
-        val book = parseEpub(path)
+        val book = parseEpub(path).openingAtText()
+        val store = ArrowTestStore()
         rule.setContent {
             ReaderScreen(
                 book = book,
                 bookPath = path.toString(),
                 bookHash = "hash",
-                store = ArrowTestStore(),
+                store = store,
                 onBack = {},
             )
         }
-        // re-pagination (theme change) moves the number, so assert relative steps
-        fun currentPage(): Int? = rule.onAllNodesWithText("Page ", substring = true).fetchSemanticsNodes()
-            .firstNotNullOfOrNull { node ->
-                node.config.getOrNull(SemanticsProperties.Text)?.joinToString()
-                    ?.let { Regex("""Page (\d+) of""").find(it)?.groupValues?.get(1)?.toInt() }
-            }
-        fun waitForPage(n: Int) = rule.waitUntil(10_000) { currentPage() == n }
-        rule.waitUntil(10_000) { currentPage() != null }
-        // let the debounced first layout settle (it moves from the cover to the text)
+        // where the page starts, as each turn saves it: page numbers count locations, not pages
+        fun currentPage(): Pair<Int, Int>? = store.saved?.let { it.blockIndex to it.charOffset }
+        fun waitForPage(test: (Pair<Int, Int>?) -> Boolean) = rule.waitUntil(10_000) { test(currentPage()) }
+        rule.waitUntil(10_000) { rule.onAllNodesWithText("Page ", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        // let the debounced first layout settle
         rule.mainClock.advanceTimeBy(1_000)
         rule.waitForIdle()
         val start = assertNotNull(currentPage())
         rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
-        waitForPage(start + 1)
+        waitForPage { it != start }
 
         // pick a theme, then close the Display sheet: the focused chip leaves
         // composition with the sheet and used to take keyboard focus with it
@@ -64,16 +59,19 @@ class ArrowKeyPagingTest {
 
         val before = assertNotNull(currentPage())
         rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
-        waitForPage(before + 1)
+        waitForPage { it != before }
         rule.onRoot().performKeyInput { pressKey(Key.DirectionLeft) }
-        waitForPage(before)
+        waitForPage { it == before }
     }
 }
 
 private class ArrowTestStore : com.baca.shared.domain.reader.PositionStore {
+    var saved: com.baca.shared.domain.Locator? = null
     override val deviceId = "test"
     override fun loadPosition(bookHash: String): com.baca.shared.domain.Locator? = null
-    override fun savePosition(bookHash: String, locator: com.baca.shared.domain.Locator) {}
+    override fun savePosition(bookHash: String, locator: com.baca.shared.domain.Locator) {
+        saved = locator
+    }
     override fun getLocal(key: String): String? = null
     override fun putLocal(key: String, value: String) {}
 }

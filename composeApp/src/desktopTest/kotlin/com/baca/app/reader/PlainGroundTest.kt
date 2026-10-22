@@ -22,4 +22,12 @@ class PlainGroundTest {
         val photo = picture(100, 60) { x, y -> grey(100 + (x + y) % 100) }
         assertFalse(isOnPlainGround(photo, 100, 60))
     }
+
+    @Test
+    fun `a big picture is read smoothed down, as a canvas draws it, not one pixel in so many`() {
+        // a 1024px screen of black and white dots: smoothed to 512, an even grey with no white
+        // in it; every other pixel taken alone, all white
+        val dots = IntArray(1024 * 1024) { i -> if ((i % 1024 + i / 1024) % 2 == 0) 0xFFFFFFFF.toInt() else 0xFF000000.toInt() }
+        assertFalse(isOnPlainGround(dots, 1024, 1024))
+    }
 }

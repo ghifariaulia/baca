@@ -42,7 +42,7 @@ class LinkedPositionSessionTest {
     )
 
     private val viewport = Viewport(100, 100)
-    private val settings = ReflowSettings(fontSizePx = 20, lineHeightRatio = 1.0f)
+    private val settings = ReflowSettings(fontSizePx = 20f, lineHeightRatio = 1.0f)
 
     @Test
     fun `newer position from another file restores by quote, not offsets`() = runTest {

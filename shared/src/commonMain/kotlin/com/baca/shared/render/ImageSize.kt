@@ -1,5 +1,7 @@
 package com.baca.shared.render
 
+import com.baca.shared.parser.Block
+
 import com.baca.shared.parser.CssLength
 import com.baca.shared.parser.ImageBox
 import kotlin.math.roundToInt
@@ -15,13 +17,28 @@ data class ImageSize(val widthPx: Int, val heightPx: Int)
  *
  * [cssPx] is device px per CSS px (the screen density), [fontPx] the em.
  */
+/**
+ * Where a picture's containing block sits in the column: px in from the left, and its
+ * width, which a picture's percent sizes and its `max-width: 100%` are of.
+ */
+fun Block.Image.placeIn(bodyFontPx: Float, cssPx: Float, columnPx: Int): Pair<Int, Int> {
+    val start = inset.toPx(bodyFontPx, cssPx) + (insetShare * columnPx).roundToInt()
+    val end = insetEnd.toPx(bodyFontPx, cssPx) + (insetEndShare * columnPx).roundToInt()
+    return start to (columnPx - start - end).coerceAtLeast(1)
+}
+
 fun ImageBox.sizePx(
     naturalWidth: Int,
     naturalHeight: Int,
     cssPx: Float,
-    fontPx: Int,
+    fontPx: Float,
     columnPx: Int,
     pageHeightPx: Int,
+    /** the page's top (and bottom) margin: foliate holds pictures to the page less twice it */
+    marginPx: Float = 0f,
+    /** the reader's whole window, which a linked stylesheet's vw and vh are of */
+    windowWidthPx: Int = 0,
+    windowHeightPx: Int = 0,
 ): ImageSize {
     if (naturalWidth <= 0 || naturalHeight <= 0) return ImageSize(columnPx, 0)
     fun resolve(length: CssLength?, percentOf: Int?): Float? = when (length) {
@@ -30,7 +47,9 @@ fun ImageBox.sizePx(
         is CssLength.Em -> length.em * fontPx
         is CssLength.Percent -> percentOf?.let { it * length.percent / 100f }
         is CssLength.Vh -> pageHeightPx * length.percent / 100f
-        is CssLength.Vw -> columnPx * length.percent / 100f
+        is CssLength.Vw -> 0f
+        is CssLength.WindowVh -> windowHeightPx * length.percent / 100f
+        is CssLength.WindowVw -> windowWidthPx * length.percent / 100f
     }
     val aspect = naturalWidth.toFloat() / naturalHeight
     val givenWidth = resolve(width, columnPx)
@@ -57,7 +76,7 @@ fun ImageBox.sizePx(
         }
     }
     val maxW = minOf(resolve(maxWidth, columnPx) ?: Float.MAX_VALUE, columnPx.toFloat())
-    val maxH = pageHeightPx.toFloat()
+    val maxH = (pageHeightPx - 2 * marginPx).coerceAtLeast(1f)
     if (givenWidth != null && givenHeight != null) {
         // both set: the box is clamped and the picture contained in it
         w = minOf(w, maxW)

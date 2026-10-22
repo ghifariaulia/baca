@@ -73,6 +73,29 @@ class EpubParserTest {
     }
 
     @Test
+    fun `the start of the text is the nav's bodymatter landmark`() {
+        val nav = """<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><body>""" +
+            """<nav epub:type="toc"><ol><li><a epub:type="bodymatter" href="toc-only.xhtml">x</a></li></ol></nav>""" +
+            """<nav epub:type="landmarks"><ol><li><a epub:type="cover" href="cover.xhtml">Cover</a></li>""" +
+            """<li><a epub:type="bodymatter" href="text/ch1.xhtml#start">Start</a></li></ol></nav></body></html>"""
+        assertEquals("OEBPS/text/ch1.xhtml", parseNavTextStart(nav) { "OEBPS/$it" })
+        assertEquals(null, parseNavTextStart("""<html><body><nav epub:type="landmarks"><ol/></nav></body></html>""") { it })
+    }
+
+    @Test
+    fun `a document knows how much of its text comes before each id`() {
+        val anchors = HashMap<String, Float>()
+        parseXhtml("""<html><head><title>ignored</title></head><body id="top"><p>aaaa</p><h2 id="two">bbbb</h2></body></html>""", anchors = anchors)
+        assertEquals(mapOf("top" to 0f, "two" to 0.5f), anchors)
+    }
+
+    @Test
+    fun `a break outside paragraphs is a line of its own`() {
+        val blocks = parseXhtml("<html><body><p>One</p><br/><p>Two</p><div><br/></div></body></html>")
+        assertEquals(listOf("One", "\n", "Two", "\n"), blocks.map { it.text })
+    }
+
+    @Test
     fun `text outside paragraphs is a block of its own, as a browser shows it`() {
         val blocks = parseXhtml(
             "<html><head><title>Cover</title></head><body><div>Hello <b>you</b></div><section>Before<p>Inside</p>after</section>" +
@@ -80,7 +103,7 @@ class EpubParserTest {
                 "<div>\n  </div></body></html>",
         )
         assertEquals(
-            listOf("Hello you", "Before", "Inside", "after", "cell one cell two", "Term", "Meaning"),
+            listOf("Hello you", "Before", "Inside", "after", "cell one", "cell two", "Term", "Meaning"),
             blocks.map { it.text },
         )
     }
@@ -259,6 +282,24 @@ class EpubParserTest {
         "<h2>The End</h2>",
         "<p>Goodbye.</p>",
     )
+
+    @Test
+    fun `each chapter knows its document's size in the book`() {
+        val book = parse(tempEpub(tinyEpubOf(xhtmlOf("<p>short</p>"), xhtmlOf("<p>${"long ".repeat(400)}</p>"))))
+        val (short, long) = book.chapters.map { it.size }
+        assertTrue(short > 0 && long > short + 1500, "sizes $short, $long")
+    }
+
+    @Test
+    fun `contents entries know how deep they are`() {
+        val nav = """<html xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc"><ol>
+            <li><a href="a.xhtml">Part</a><ol><li><a href="b.xhtml">Chapter</a></li></ol></li>
+            <li><a href="c.xhtml">Part 2</a></li></ol></nav></body></html>"""
+        assertEquals(listOf(1, 2, 1), parseNavToc(nav) { it }.map { it.level })
+        val ncx = """<ncx><navMap><navPoint><navLabel><text>Part</text></navLabel><content src="a.xhtml"/>
+            <navPoint><navLabel><text>Chapter</text></navLabel><content src="b.xhtml"/></navPoint></navPoint></navMap></ncx>"""
+        assertEquals(listOf(1, 2), parseNcxToc(ncx) { it }.map { it.level })
+    }
 
     private fun parse(path: okio.Path) = parseEpub(path)
 

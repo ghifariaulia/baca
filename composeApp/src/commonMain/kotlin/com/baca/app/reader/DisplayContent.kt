@@ -40,15 +40,7 @@ import com.baca.shared.domain.DisplaySettings
 internal fun DisplayContent(display: DisplaySettings, onChange: (DisplaySettings) -> Unit) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         SheetSection("FONT SIZE") {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ChoiceChip("A−", true) { onChange(display.copy(fontSizeSp = (display.fontSizeSp - 2).coerceAtLeast(12))) }
-                Text("${display.fontSizeSp}", style = Type.cardTitle, fontSize = 18.sp)
-                ChoiceChip("A+", true) { onChange(display.copy(fontSizeSp = (display.fontSizeSp + 2).coerceAtMost(28))) }
-            }
+            Stepper("${display.fontSizePercent}%") { onChange(display.stepFontSize(it)) }
         }
         SheetSection("FONT") {
             // 2×2: four font names in one row wrap on phone widths
@@ -63,9 +55,10 @@ internal fun DisplayContent(display: DisplaySettings, onChange: (DisplaySettings
         }
         SheetSection("READING THEME") {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                // in LibreraX's order
                 listOf(
-                    "paper" to "Paper", "white" to "White",
-                    "dim" to "Dim", "black" to "Black",
+                    "white" to "White", "paper" to "Paper", "grey" to "Grey",
+                    "dim" to "Dim", "dusk" to "Dusk", "black" to "Black",
                 ).forEach { (key, label) ->
                     val swatch = ReaderThemes.forTheme(key).background
                     Column(
@@ -90,20 +83,10 @@ internal fun DisplayContent(display: DisplaySettings, onChange: (DisplaySettings
             }
         }
         SheetSection("LINE SPACING") {
-            SegmentedRow(
-                options = listOf(
-                    "compact" to "Compact", "normal" to "Normal", "relaxed" to "Relaxed",
-                ),
-                selected = display.lineSpacing,
-            ) { onChange(display.copy(lineSpacing = it)) }
+            Stepper("${display.lineSpacingTenths / 10}.${display.lineSpacingTenths % 10}") { onChange(display.stepLineSpacing(it)) }
         }
         SheetSection("MARGINS") {
-            SegmentedRow(
-                options = listOf(
-                    "narrow" to "Narrow", "medium" to "Medium", "wide" to "Wide",
-                ),
-                selected = display.margins,
-            ) { onChange(display.copy(margins = it)) }
+            Stepper("${display.paddingPercent}%") { onChange(display.stepPadding(it)) }
         }
         if (tapZonesForPageTurnEnabled) {
             SheetSection("PAGE TURN") {
@@ -126,6 +109,20 @@ internal fun DisplayContent(display: DisplaySettings, onChange: (DisplaySettings
         )
     }
 }
+/** − value +: [onStep] gets -1 or +1. */
+@Composable
+private fun Stepper(value: String, onStep: (Int) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ChoiceChip("−", true) { onStep(-1) }
+        Text(value, style = Type.cardTitle, fontSize = 18.sp)
+        ChoiceChip("+", true) { onStep(1) }
+    }
+}
+
 @Composable
 internal fun SheetSection(label: String, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {

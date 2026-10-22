@@ -28,7 +28,7 @@ class EdgeLongPressTest {
         val bytes = javaClass.classLoader.getResourceAsStream("books/frankenstein.epub")!!.readBytes()
         val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "edge-test.epub"
         FileSystem.SYSTEM.write(path) { write(bytes) }
-        val book = parseEpub(path)
+        val book = parseEpub(path).openingAtText()
         rule.setContent {
             Box(Modifier.size(420.dp, 800.dp)) {
                 ReaderScreen(book, path.toString(), "hash", EdgeTestStore(), onBack = {})

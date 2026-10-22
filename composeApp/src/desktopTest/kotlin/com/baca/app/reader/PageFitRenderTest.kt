@@ -21,7 +21,6 @@ import com.baca.shared.parser.parseEpub
 import okio.FileSystem
 import org.junit.Rule
 import org.junit.Test
-import kotlin.math.roundToInt
 import kotlin.test.assertTrue
 
 /** Regression: the last line of a full page was drawn past the page's bottom edge. */
@@ -50,8 +49,7 @@ class PageFitRenderTest {
         rule.waitForIdle()
         val pageHeight = rule.onRoot().fetchSemanticsNode().size.height
 
-        // drawn with the measured px size, converted back to sp
-        val body = (DisplaySettings().fontSizeSp * FONT_SCALE * DENSITY).roundToInt() / (FONT_SCALE * DENSITY)
+        val body = DisplaySettings().fontSizeSp
         var checked = 0
         repeat(20) {
             rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }

@@ -61,12 +61,12 @@ private fun session(
 }
 
 private val VIEWPORT = Viewport(100, 100)
-private val SETTINGS = ReflowSettings(fontSizePx = 20, lineHeightRatio = 1.0f, imageHeightPx = 60)
+private val SETTINGS = ReflowSettings(fontSizePx = 20f, lineHeightRatio = 1.0f, imageHeightPx = 60)
 
 class ReaderSessionTest {
 
     @Test
-    fun `fresh open starts at first text chapter page 1 and saves position`() = runTest {
+    fun `fresh open starts at the first chapter page 1 and saves position`() = runTest {
         val store = FakeStore()
         val s = session(store)
         s.ensureView(VIEWPORT, SETTINGS)
@@ -74,6 +74,36 @@ class ReaderSessionTest {
         assertEquals(0, s.pageIndex)
         assertTrue(store.positions.containsKey("h"))
         assertEquals(0.0, store.positions["h"]!!.progression)
+    }
+
+    @Test
+    fun `a new book opens where its text starts, else at its first chapter in the reading order`() = runTest {
+        val chapters = listOf(
+            chapter("OEBPS/cover.xhtml", "cover").copy(linear = false),
+            chapter("OEBPS/title.xhtml", "title"),
+            chapter("OEBPS/c1.xhtml", "one"),
+        )
+        fun opened(textStart: String?) = ReaderSession(
+            "h", chapters, FakeStore(), { i, vp, st -> ReflowLayout(chapters[i].blocks, GridMetrics(), st, vp.columnWidthPx, vp.pageHeightPx) }, {},
+            textStart = textStart,
+        )
+        assertEquals(2, opened("OEBPS/c1.xhtml").also { it.ensureView(VIEWPORT, SETTINGS) }.chapterIndex)
+        assertEquals(1, opened(null).also { it.ensureView(VIEWPORT, SETTINGS) }.chapterIndex)
+    }
+
+    @Test
+    fun `page turns pass over chapters out of the reading order`() = runTest {
+        val chapters = listOf(
+            chapter("OEBPS/c0.xhtml", "one"),
+            chapter("OEBPS/notes.xhtml", "notes").copy(linear = false),
+            chapter("OEBPS/c2.xhtml", "two"),
+        )
+        val s = ReaderSession("h", chapters, FakeStore(), { i, vp, st -> ReflowLayout(chapters[i].blocks, GridMetrics(), st, vp.columnWidthPx, vp.pageHeightPx) }, {})
+        s.ensureView(VIEWPORT, SETTINGS)
+        s.turnPage(1)
+        assertEquals(2, s.chapterIndex)
+        s.turnPage(-1)
+        assertEquals(0, s.chapterIndex)
     }
 
     @Test
@@ -151,7 +181,7 @@ class ReaderSessionTest {
         repeat(7) { s.turnPage(1) }
         val before = store.positions["h"]!!
 
-        val big = ReflowSettings(fontSizePx = 20, lineHeightRatio = 2.0f, imageHeightPx = 60)
+        val big = ReflowSettings(fontSizePx = 20f, lineHeightRatio = 2.0f, imageHeightPx = 60)
         s.ensureView(VIEWPORT, big)
         assertEquals(0, s.chapterIndex)
         assertTrue(s.pageIndex > 0)
@@ -160,6 +190,23 @@ class ReaderSessionTest {
         assertEquals(before.quote, after.quote)
         assertEquals(before.href, after.href)
         assertEquals(before.blockIndex, after.blockIndex)
+    }
+
+    @Test
+    fun `changing the size back and forth keeps the place, never creeping back`() = runTest {
+        val store = FakeStore()
+        val s = session(store)
+        s.ensureView(VIEWPORT, SETTINGS)
+        repeat(5) { s.turnPage(1) }
+        val start = store.positions["h"]!!
+        repeat(3) {
+            s.ensureView(VIEWPORT, SETTINGS.copy(lineHeightRatio = 1.3f))
+            s.ensureView(VIEWPORT, SETTINGS.copy(lineHeightRatio = 1.7f))
+        }
+        assertEquals(start.blockIndex to start.charOffset, store.positions["h"]!!.let { it.blockIndex to it.charOffset })
+        // a page turn reads on from the page now shown
+        s.turnPage(1)
+        assertTrue(store.positions["h"]!!.charOffset > start.charOffset)
     }
 
     @Test
@@ -286,5 +333,31 @@ class ReaderSessionTest {
         s.jumpToBookPage(s.bookTotalPages())
         assertEquals(true, s.canTurn(-1))
         assertEquals(false, s.canTurn(1))
+    }
+
+    @Test
+    fun `an EPUB seeks and saves by locations without laying out the chapters it doesn't show`() = runTest {
+        // three documents of 3000, 6000 and 3000 bytes: the middle one is half the book
+        val chapters = listOf(chapter("OEBPS/c0.xhtml", PARA), chapter("OEBPS/c1.xhtml", PARA), chapter("OEBPS/c2.xhtml", PARA))
+            .zip(listOf(3000, 6000, 3000)) { c, size -> c.copy(size = size) }
+        val laidOut = mutableSetOf<Int>()
+        val store = FakeStore()
+        val s = ReaderSession(
+            bookHash = "h",
+            chapters = chapters,
+            repo = store,
+            layoutFactory = { i, vp, st ->
+                laidOut += i
+                ReflowLayout(chapters[i].blocks, GridMetrics(), st, vp.columnWidthPx, vp.pageHeightPx)
+            },
+            onChange = {},
+        )
+        s.ensureView(VIEWPORT, SETTINGS)
+        // the middle of the book is the middle of the second document
+        s.jumpToFraction(0.5)
+        val pages = s.layoutFor(1).pageCount()
+        assertEquals(1 to (pages + 1) / 2, s.chapterIndex to s.pageIndex)
+        assertEquals(8, s.locationTotal())
+        assertEquals(setOf(0, 1), laidOut)
     }
 }

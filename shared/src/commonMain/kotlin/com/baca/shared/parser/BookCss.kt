@@ -1,5 +1,7 @@
 package com.baca.shared.parser
 
+import nl.adaptivity.xmlutil.EventType
+
 /**
  * The part of a book's CSS that Baca applies (TECH 3.1), cascaded as in a
  * browser, which is how LibreraX shows a book: the book's rules win, by
@@ -15,6 +17,10 @@ internal data class CssStyle(
     val italic: Boolean? = null,
     val smallCaps: Boolean? = null,
     val align: TextAlign? = null,
+    /** `text-align: left` (true) or `justify` (false), both [TextAlign.START]: kept where the reader's justification isn't set */
+    val alignLeft: Boolean? = null,
+    /** `text-align: -webkit-center` or `-webkit-right`, which also push narrower blocks inside; inherited */
+    val pushesBlocks: TextAlign? = null,
     /** `text-indent`; negative hangs the first line out */
     val indent: CssLength? = null,
     val floatRight: Boolean? = null,
@@ -26,13 +32,20 @@ internal data class CssStyle(
     val display: String? = null,
     /** relative to the parent element: 1.2 for `1.2em` or `120%` */
     val fontScale: Float? = null,
-    /** relative to the browser's 16px, whatever the parent's: `20px`, `1.2rem`, `large` */
+    /** relative to the browser's 16px, whatever the parent's: `20px`, `1.2rem` */
     val fontAbsolute: Float? = null,
+    /** a size keyword, `xx-small` 0 to `xxx-large` 7, which plain monospace takes from a table of its own */
+    val fontKeyword: Int? = null,
     /** `color` as 0xAARRGGBB, or [TEXT_COLOR] for `inherit`/`currentColor` */
     val color: Long? = null,
     val underline: Boolean? = null,
+    val lineThrough: Boolean? = null,
     /** the generic face `font-family` names first */
     val face: BookFace? = null,
+    /** `font-family: monospace` and nothing else, which a browser sets at 13px rather than 16 */
+    val genericMono: Boolean? = null,
+    /** the first family `font-family` names, lowercased: a book's own font, or a generic name */
+    val family: String? = null,
     /** margins and padding; not inherited */
     val marginTop: CssLength? = null,
     val marginBottom: CssLength? = null,
@@ -42,20 +55,53 @@ internal data class CssStyle(
     val paddingLeft: CssLength? = null,
     val marginRight: CssLength? = null,
     val paddingRight: CssLength? = null,
-    /** `border-left`: a vertical rule beside the element (Strange Buildings' recollections) */
-    val borderLeft: Boolean? = null,
+    /** each side's border, as the book sets it: `border`, `border-top`, `border-width`… */
+    val borderTop: BorderSide = BorderSide(),
+    val borderRight: BorderSide = BorderSide(),
+    val borderBottom: BorderSide = BorderSide(),
+    val borderLeft: BorderSide = BorderSide(),
+    /** `border-radius` in CSS px */
+    val radius: CssLength? = null,
+    /** `background-color` (0xAARRGGBB), [TRANSPARENT] for none */
+    val background: Long? = null,
     /** `list-style-type`, inherited by list items: disc, decimal, none… */
     val listStyle: String? = null,
     /** `vertical-align` raising (positive) or lowering text, in em of its font */
     val baseline: Float? = null,
+    /** `vertical-align` in percent of the line height, which isn't known until laid out */
+    val baselineLine: Float? = null,
+    /** `page-break-before/after: always` (or `break-before/after: page`) */
+    val breakBefore: Boolean? = null,
+    val breakAfter: Boolean? = null,
+    /** `break-before/after/inside: avoid` (or `page-break-*: avoid`): no page break there if one can go elsewhere */
+    val avoidBefore: Boolean? = null,
+    val avoidAfter: Boolean? = null,
+    val avoidInside: Boolean? = null,
+    /** `vertical-align: super` (1) or `sub` (-1), which move text by its parent's size */
+    val shiftKeyword: Int? = null,
+    /** `vertical-align` as a keyword (`top`, `middle`…), which places a table cell in its row */
+    val rowAlign: String? = null,
+    /** `border-spacing`, across and down; inherited */
+    val borderSpacing: Pair<CssLength, CssLength>? = null,
+    /** `border-collapse: collapse`, which leaves no spacing between cells; inherited */
+    val borderCollapse: Boolean? = null,
     /** `text-transform`: uppercase, lowercase, capitalize or none */
     val transform: String? = null,
+    val minWidth: CssLength? = null,
+    /** `column-count`; 1 for `auto` */
+    val columnCount: Int? = null,
+    /** `column-gap`; null for `normal` */
+    val columnGap: CssLength? = null,
+    /** `line-height` in px, which [lineRatio] can't hold: a ratio of a font size not yet known */
+    val linePx: Float? = null,
+    val hyphenate: Boolean? = null,
+    val invisible: Boolean? = null,
+    /** `word-spacing` in em */
+    val wordSpacing: Float? = null,
     /** `letter-spacing` in em; 0 for `normal` */
     val letterSpacing: Float? = null,
     /** `white-space` keeps the text's spaces and line breaks (`pre`, `pre-wrap`, `pre-line`) */
     val keepsSpaces: Boolean? = null,
-    /** `border: none` (or 0) on an element a browser would draw a border on, like `<hr>` */
-    val noBorder: Boolean? = null,
     /** `background-image: url(…)`, as the book writes it */
     val backgroundImage: String? = null,
     /** box sizes as the book writes them; images and blocks use them */
@@ -64,38 +110,69 @@ internal data class CssStyle(
     val maxWidth: CssLength? = null,
 ) {
     /** [other]'s set values win. */
+    private val setsSize get() = fontScale != null || fontAbsolute != null || fontKeyword != null
+
     fun overriddenBy(other: CssStyle) = CssStyle(
         bold = other.bold ?: bold,
         italic = other.italic ?: italic,
         smallCaps = other.smallCaps ?: smallCaps,
         align = other.align ?: align,
+        pushesBlocks = if (other.align != null) other.pushesBlocks else pushesBlocks,
+        alignLeft = if (other.align != null) other.alignLeft else alignLeft,
         indent = other.indent ?: indent,
         floatRight = other.floatRight ?: floatRight,
         floatLeft = other.floatLeft ?: floatLeft,
-        lineRatio = other.lineRatio ?: lineRatio,
         hidden = other.hidden ?: hidden,
         display = other.display ?: display,
         // the later of a relative and an absolute size wins, as one font-size declaration
-        fontScale = if (other.fontScale != null || other.fontAbsolute != null) other.fontScale else fontScale,
-        fontAbsolute = if (other.fontScale != null || other.fontAbsolute != null) other.fontAbsolute else fontAbsolute,
+        fontScale = if (other.setsSize) other.fontScale else fontScale,
+        fontAbsolute = if (other.setsSize) other.fontAbsolute else fontAbsolute,
+        fontKeyword = if (other.setsSize) other.fontKeyword else fontKeyword,
         color = other.color ?: color,
         underline = other.underline ?: underline,
+        lineThrough = other.lineThrough ?: lineThrough,
         face = other.face ?: face,
+        genericMono = other.genericMono ?: genericMono,
+        family = other.family ?: family,
         marginTop = other.marginTop ?: marginTop,
         marginBottom = other.marginBottom ?: marginBottom,
         paddingTop = other.paddingTop ?: paddingTop,
         paddingBottom = other.paddingBottom ?: paddingBottom,
-        borderLeft = other.borderLeft ?: borderLeft,
+        borderTop = borderTop.overriddenBy(other.borderTop),
+        borderRight = borderRight.overriddenBy(other.borderRight),
+        borderBottom = borderBottom.overriddenBy(other.borderBottom),
+        borderLeft = borderLeft.overriddenBy(other.borderLeft),
+        radius = other.radius ?: radius,
+        background = other.background ?: background,
         marginLeft = other.marginLeft ?: marginLeft,
         paddingLeft = other.paddingLeft ?: paddingLeft,
         marginRight = other.marginRight ?: marginRight,
         paddingRight = other.paddingRight ?: paddingRight,
         listStyle = other.listStyle ?: listStyle,
-        baseline = other.baseline ?: baseline,
+        // one vertical-align declaration: in em or in line heights
+        baseline = if (other.baseline != null || other.baselineLine != null) other.baseline else baseline,
+        baselineLine = if (other.baseline != null || other.baselineLine != null) other.baselineLine else baselineLine,
+        breakBefore = other.breakBefore ?: breakBefore,
+        breakAfter = other.breakAfter ?: breakAfter,
+        avoidBefore = other.avoidBefore ?: avoidBefore,
+        avoidAfter = other.avoidAfter ?: avoidAfter,
+        avoidInside = other.avoidInside ?: avoidInside,
+        rowAlign = if (other.baseline != null || other.baselineLine != null) other.rowAlign else rowAlign,
+        shiftKeyword = if (other.baseline != null || other.baselineLine != null) other.shiftKeyword else shiftKeyword,
+        borderSpacing = other.borderSpacing ?: borderSpacing,
+        borderCollapse = other.borderCollapse ?: borderCollapse,
         transform = other.transform ?: transform,
         letterSpacing = other.letterSpacing ?: letterSpacing,
+        minWidth = other.minWidth ?: minWidth,
+        columnCount = other.columnCount ?: columnCount,
+        columnGap = other.columnGap ?: columnGap,
+        // one line-height declaration: a ratio or px
+        lineRatio = if (other.lineRatio != null || other.linePx != null) other.lineRatio else lineRatio,
+        linePx = if (other.lineRatio != null || other.linePx != null) other.linePx else linePx,
+        hyphenate = other.hyphenate ?: hyphenate,
+        invisible = other.invisible ?: invisible,
+        wordSpacing = other.wordSpacing ?: wordSpacing,
         keepsSpaces = other.keepsSpaces ?: keepsSpaces,
-        noBorder = other.noBorder ?: noBorder,
         backgroundImage = other.backgroundImage ?: backgroundImage,
         width = other.width ?: width,
         height = other.height ?: height,
@@ -113,7 +190,56 @@ internal class CssElement(
     val previous: CssElement? = null,
     val id: String? = null,
     val attributes: Map<String, String> = emptyMap(),
+    /** where it sits among its siblings, read ahead of the parse ([elementFacts]); null when unknown */
+    val facts: ElementFacts? = null,
 )
+
+/**
+ * An element's place among its siblings, which a parse reading forwards can't
+ * know yet: its 1-based [index] of [count] children, its [typeIndex] of
+ * [typeCount] siblings with its tag, and whether it holds nothing ([empty]).
+ */
+internal class ElementFacts(val index: Int, val count: Int, val typeIndex: Int, val typeCount: Int, val empty: Boolean)
+
+/** Each element's [ElementFacts], in document order. */
+internal fun elementFacts(xhtml: String): List<ElementFacts> {
+    class Frame(val tag: String) {
+        val children = mutableListOf<Pair<Int, String>>()
+        var content = false
+    }
+    val reader = newXmlReader(xhtml)
+    val counts = mutableListOf<IntArray>() // index, count, typeIndex, typeCount
+    val empty = mutableListOf<Boolean>()
+    val stack = ArrayDeque<Pair<Int, Frame>>()
+    val root = Frame("")
+    fun settle(frame: Frame) {
+        frame.children.forEachIndexed { i, (ordinal, tag) ->
+            val sameTag = frame.children.filter { it.second == tag }
+            counts[ordinal] = intArrayOf(i + 1, frame.children.size, sameTag.indexOfFirst { it.first == ordinal } + 1, sameTag.size)
+        }
+    }
+    while (reader.hasNext()) {
+        when (reader.next()) {
+            EventType.START_ELEMENT -> {
+                val ordinal = counts.size
+                counts.add(IntArray(4))
+                empty.add(true)
+                val tag = reader.localName.lowercase()
+                (stack.lastOrNull()?.second ?: root).let { it.children.add(ordinal to tag); it.content = true }
+                stack.addLast(ordinal to Frame(tag))
+            }
+            EventType.TEXT, EventType.CDSECT, EventType.ENTITY_REF ->
+                if (reader.text.isNotBlank()) stack.lastOrNull()?.second?.content = true
+            EventType.END_ELEMENT -> stack.removeLastOrNull()?.let { (ordinal, frame) ->
+                empty[ordinal] = !frame.content
+                settle(frame)
+            }
+            else -> {}
+        }
+    }
+    settle(root)
+    return counts.mapIndexed { i, c -> ElementFacts(c[0], c[1], c[2], c[3], empty[i]) }
+}
 
 internal enum class Combinator { DESCENDANT, CHILD, NEXT_SIBLING, LATER_SIBLING }
 
@@ -209,17 +335,27 @@ h6 { font-size: 0.67em; margin-top: 2.33em; margin-bottom: 2.33em }
 pre, code, kbd, samp, tt { font-family: monospace }
 pre { white-space: pre }
 hr { margin-top: 0.5em; margin-bottom: 0.5em }
-th { font-weight: bold }
+th { font-weight: bold; text-align: center }
+td, th { padding: 1px }
+table { border-spacing: 2px; text-indent: 0 }
 small, sub, sup { font-size: smaller }
+u, ins, abbr[title], acronym[title] { text-decoration: underline }
+s, strike, del { text-decoration: line-through }
+[hidden] { display: none }
 sub { vertical-align: sub }
 sup { vertical-align: super }
 cite, var, dfn, address { font-style: italic }
-center { text-align: center }
+center { text-align: -webkit-center }
+caption { text-align: -webkit-center }
+script, template, noscript, rp { display: none }
+big { font-size: larger }
+mark { background-color: yellow; color: black }
+rt { font-size: 50% }
 """
 
 /** What LibreraX's `css()` sets over a book's own rules: a contents page's links look like links. */
 private const val LIBRERAX_CSS = """
-nav a, ol a, ul a { text-decoration: underline !important }
+nav a[href], ol a[href], ul a[href] { text-decoration: underline !important }
 """
 
 // lazy: it's parsed with values declared further down this file
@@ -230,18 +366,25 @@ private val READER_RULES by lazy {
 }
 
 /** All rules seen so far in a chapter, in document order, with the reader's rules. */
-internal class Stylesheet {
+internal class Stylesheet(private val darkScheme: Boolean = false) {
     private val rules = READER_RULES.toMutableList()
 
     fun add(css: String) {
-        parseCss(css, firstOrder = rules.size).forEach { rules.add(it) }
+        parseCss(css, firstOrder = rules.size, darkScheme).forEach { rules.add(it) }
     }
 
-    /** The declared style of the last element in [path], cascaded with its inline style. */
-    fun styleFor(path: List<CssElement>, inline: String?): CssStyle {
+    /**
+     * The declared style of the last element in [path], cascaded with its inline style. [hints]
+     * are what its attributes say (`cellpadding`…), which a browser puts over its own rules and
+     * under the book's.
+     */
+    fun styleFor(path: List<CssElement>, inline: String?, hints: CssStyle = CssStyle()): CssStyle {
         val matching = rules.filter { it.matches(path) }.sortedWith(compareBy({ !it.isDefault }, { it.specificity }, { it.order }))
         val inlineDeclarations = inline?.let(::parseDeclarations) ?: Declarations()
-        val normal = matching.fold(CssStyle()) { acc, rule -> acc.overriddenBy(rule.declarations.normal) }
+        val (defaults, book) = matching.partition { it.isDefault }
+        val normal = defaults.fold(CssStyle()) { acc, rule -> acc.overriddenBy(rule.declarations.normal) }
+            .overriddenBy(hints)
+            .let { book.fold(it) { acc, rule -> acc.overriddenBy(rule.declarations.normal) } }
             .overriddenBy(inlineDeclarations.normal)
         return matching.fold(normal) { acc, rule -> acc.overriddenBy(rule.declarations.important) }
             .overriddenBy(inlineDeclarations.important)
@@ -350,18 +493,43 @@ private fun parseCompound(text: String): Compound? {
     return Compound(tag, classes, id, attributes, pseudos)
 }
 
-/** The pseudo-classes a page's structure decides; anything else (`:hover`, `::before`, `:last-child`) is null. */
+/** The pseudo-classes a page's structure decides; anything else (`:hover`, `::before`) is null. */
 private fun pseudo(name: String, argument: String?): ((CssElement) -> Boolean)? = when (name) {
     "first-child" -> { e -> e.previous == null }
-    "nth-child" -> if (argument?.trim() == "1") { e -> e.previous == null } else null
     "first-of-type" -> { e -> generateSequence(e.previous) { it.previous }.none { it.tag == e.tag } }
+    "last-child" -> { e -> e.facts?.let { it.index == it.count } == true }
+    "only-child" -> { e -> e.facts?.count == 1 }
+    "last-of-type" -> { e -> e.facts?.let { it.typeIndex == it.typeCount } == true }
+    "only-of-type" -> { e -> e.facts?.typeCount == 1 }
+    "empty" -> { e -> e.facts?.empty == true }
+    "nth-child" -> argument?.let(::nth)?.let { n -> { e -> e.facts?.let { n(it.index) } == true } }
+    "nth-last-child" -> argument?.let(::nth)?.let { n -> { e -> e.facts?.let { n(it.count - it.index + 1) } == true } }
+    "nth-of-type" -> argument?.let(::nth)?.let { n -> { e -> e.facts?.let { n(it.typeIndex) } == true } }
+    "nth-last-of-type" -> argument?.let(::nth)?.let { n -> { e -> e.facts?.let { n(it.typeCount - it.typeIndex + 1) } == true } }
     "not" -> argument?.let { parseCompound(it.trim()) }?.let { inner -> { e -> !inner.matches(e) } }
     "root" -> { e -> e.tag == "html" }
     "link" -> { e -> e.tag == "a" && e.attributes.containsKey("href") }
     else -> null
 }
 
-internal fun parseCss(css: String, firstOrder: Int = 0): List<CssRule> {
+/** `an+b`, `odd`, `even` or a number, as a test of a 1-based position; null when it can't be read. */
+private fun nth(argument: String): ((Int) -> Boolean)? {
+    val text = argument.replace(" ", "").lowercase()
+    val (a, b) = when (text) {
+        "odd" -> 2 to 1
+        "even" -> 2 to 0
+        else -> if ('n' in text) {
+            val a = text.substringBefore('n').let { if (it == "" || it == "+") 1 else if (it == "-") -1 else it.toIntOrNull() ?: return null }
+            val b = text.substringAfter('n').ifEmpty { "0" }.removePrefix("+").toIntOrNull() ?: return null
+            a to b
+        } else {
+            0 to (text.toIntOrNull() ?: return null)
+        }
+    }
+    return { pos -> if (a == 0) pos == b else (pos - b) % a == 0 && (pos - b) / a >= 0 }
+}
+
+internal fun parseCss(css: String, firstOrder: Int = 0, darkScheme: Boolean = false): List<CssRule> {
     val text = css.replace(Regex("/\\*.*?\\*/", RegexOption.DOT_MATCHES_ALL), " ")
     val rules = mutableListOf<CssRule>()
     var i = 0
@@ -383,12 +551,50 @@ internal fun parseCss(css: String, firstOrder: Int = 0): List<CssRule> {
                     rules.add(CssRule(parts, combinators, declarations, firstOrder + rules.size))
                 }
             }
+        } else if (prelude.startsWith("@media", ignoreCase = true) && mediaMatches(prelude.substring(6), darkScheme)) {
+            rules += parseCss(text.substring(open + 1, close), firstOrder + rules.size, darkScheme)
         }
-        // @media / @font-face / @page blocks are skipped whole
+        // @font-face / @page blocks, and @media blocks for other media, are skipped whole
         i = close + 1
     }
     return rules
 }
+
+/**
+ * Whether an `@media` query list holds for a phone's page as LibreraX's WebView
+ * sees it: screen media, [MEDIA_WIDTH] by [MEDIA_HEIGHT] CSS px, portrait, and the
+ * colour scheme of the reading theme ([darkScheme]), as LibreraX points a book's
+ * `prefers-color-scheme` at its paper. A query with a feature Baca can't answer doesn't hold.
+ */
+internal fun mediaMatches(queryList: String, darkScheme: Boolean = false): Boolean = queryList.split(',').any { query ->
+    val q = query.trim().lowercase()
+    val negated = q.startsWith("not ")
+    val body = q.removePrefix("not ").removePrefix("only ").trim()
+    val type = body.substringBefore('(').substringBefore(" and").trim()
+    val typeHolds = type.isEmpty() || type == "all" || type == "screen"
+    val features = Regex("\\(([^)]*)\\)").findAll(body).map { it.groupValues[1].trim() }.toList()
+    val holds = typeHolds && features.all { featureHolds(it, darkScheme) }
+    holds != negated
+}
+
+private fun featureHolds(feature: String, darkScheme: Boolean): Boolean {
+    val name = feature.substringBefore(':').trim()
+    val value = feature.substringAfter(':', "").trim()
+    fun px() = (cssLength(value) as? CssLength.Px)?.px ?: (cssLength(value) as? CssLength.Em)?.let { it.em * 16f }
+    return when (name) {
+        "min-width" -> px()?.let { MEDIA_WIDTH >= it } ?: false
+        "max-width" -> px()?.let { MEDIA_WIDTH <= it } ?: false
+        "min-height" -> px()?.let { MEDIA_HEIGHT >= it } ?: false
+        "max-height" -> px()?.let { MEDIA_HEIGHT <= it } ?: false
+        "orientation" -> value == "portrait"
+        "color" -> true
+        "prefers-color-scheme" -> value == if (darkScheme) "dark" else "light"
+        else -> false
+    }
+}
+
+private const val MEDIA_WIDTH = 400f
+private const val MEDIA_HEIGHT = 700f
 
 private fun matchingBrace(text: String, open: Int): Int {
     var depth = 0
@@ -423,28 +629,43 @@ private fun CssStyle.declare(name: String, value: String, written: String): CssS
     "font-variant", "font-variant-caps" -> copy(smallCaps = value.contains("small-caps"))
     "text-align" -> copy(
         align = when (value) {
-            "center" -> TextAlign.CENTER
-            "right", "end" -> TextAlign.END
+            "center", "-webkit-center" -> TextAlign.CENTER
+            "right", "end", "-webkit-right" -> TextAlign.END
             // left/justify: the reader's justification setting decides
             else -> TextAlign.START
+        },
+        alignLeft = when (value) {
+            "left", "start", "-webkit-left" -> true
+            "justify" -> false
+            else -> null
+        },
+        pushesBlocks = when (value) {
+            "-webkit-center" -> TextAlign.CENTER
+            "-webkit-right" -> TextAlign.END
+            else -> null
         },
     )
     "text-indent" -> copy(indent = cssLength(value, signed = true) ?: indent)
     "float" -> copy(floatRight = value == "right", floatLeft = value == "left")
-    "line-height" -> copy(
-        lineRatio = value.toFloatOrNull() ?: (cssLength(value) as? CssLength.Em)?.em
-            ?: (cssLength(value) as? CssLength.Percent)?.let { it.percent / 100f } ?: lineRatio,
-    )
+    "line-height" -> copy(lineRatio = lineRatioOf(value) ?: lineRatio, linePx = (cssLength(value) as? CssLength.Px)?.px)
+    "hyphens", "-webkit-hyphens" -> copy(hyphenate = value != "none" && value != "manual")
+    "visibility" -> copy(invisible = value == "hidden" || value == "collapse")
+    "word-spacing" -> copy(wordSpacing = if (value == "normal") 0f else (cssLength(value, signed = true) ?: return this).letterEm())
     "display" -> copy(hidden = value == "none", display = value)
-    "font-size" -> relativeSize(value)?.let { copy(fontScale = it, fontAbsolute = null) }
-        ?: absoluteSize(value)?.let { copy(fontAbsolute = it, fontScale = null) }
+    "font-size" -> relativeSize(value)?.let { copy(fontScale = it, fontAbsolute = null, fontKeyword = null) }
+        ?: SIZE_KEYWORDS.indexOf(value).takeIf { it >= 0 }?.let { copy(fontKeyword = it, fontScale = null, fontAbsolute = null) }
+        ?: absoluteSize(value)?.let { copy(fontAbsolute = it, fontScale = null, fontKeyword = null) }
         ?: this
     "color" -> copy(color = parseColor(value) ?: color)
-    "font-family" -> copy(face = faceOf(value))
-    "margin" -> boxSides(value)?.let { (top, right, bottom, left) ->
+    "font-family" -> copy(
+        face = faceOf(value),
+        family = value.substringBefore(',').trim().trim('"', '\'').ifEmpty { null },
+        genericMono = value == "monospace",
+    )
+    "margin" -> boxSides(value, signed = true)?.let { (top, right, bottom, left) ->
         copy(
-            marginTop = top ?: marginTop, marginRight = right ?: marginRight,
-            marginBottom = bottom ?: marginBottom, marginLeft = left ?: marginLeft,
+            marginTop = top ?: marginTop, marginRight = right?.takeUnless { it.isNegative() } ?: marginRight,
+            marginBottom = bottom ?: marginBottom, marginLeft = left?.takeUnless { it.isNegative() } ?: marginLeft,
         )
     } ?: this
     "padding" -> boxSides(value)?.let { (top, right, bottom, left) ->
@@ -457,29 +678,77 @@ private fun CssStyle.declare(name: String, value: String, written: String): CssS
     "padding-left" -> copy(paddingLeft = cssLength(value) ?: paddingLeft)
     "margin-right" -> copy(marginRight = cssLength(value) ?: marginRight)
     "padding-right" -> copy(paddingRight = cssLength(value) ?: paddingRight)
-    "border-left" -> copy(borderLeft = "none" !in value && !value.startsWith("0 ") && value != "0")
-    "margin-top" -> copy(marginTop = cssLength(value) ?: marginTop)
-    "margin-bottom" -> copy(marginBottom = cssLength(value) ?: marginBottom)
+    "border" -> borderOf(value).let { copy(borderTop = it, borderRight = it, borderBottom = it, borderLeft = it) }
+    "border-top" -> copy(borderTop = borderOf(value))
+    "border-right" -> copy(borderRight = borderOf(value))
+    "border-bottom" -> copy(borderBottom = borderOf(value))
+    "border-left" -> copy(borderLeft = borderOf(value))
+    "border-width" -> boxSidesOf(value) { BorderSide(width = borderWidth(it)) }
+    "border-style" -> boxSidesOf(value) { BorderSide(style = it) }
+    "border-color" -> boxSidesOf(value) { BorderSide(color = parseColor(it)) }
+    "border-top-width", "border-right-width", "border-bottom-width", "border-left-width" ->
+        side(name.removeSuffix("-width"), BorderSide(width = borderWidth(value)))
+    "border-top-style", "border-right-style", "border-bottom-style", "border-left-style" ->
+        side(name.removeSuffix("-style"), BorderSide(style = value))
+    "border-top-color", "border-right-color", "border-bottom-color", "border-left-color" ->
+        side(name.removeSuffix("-color"), BorderSide(color = parseColor(value)))
+    "border-radius" -> copy(radius = cssLength(value.substringBefore(' ').substringBefore('/')) ?: radius)
+    "background-color" -> copy(background = backgroundOf(value) ?: background)
+    // vertical margins may be negative, and collapse with positive ones as a browser's do
+    "margin-top" -> copy(marginTop = cssLength(value, signed = true) ?: marginTop)
+    "margin-bottom" -> copy(marginBottom = cssLength(value, signed = true) ?: marginBottom)
     "padding-top" -> copy(paddingTop = cssLength(value) ?: paddingTop)
     "padding-bottom" -> copy(paddingBottom = cssLength(value) ?: paddingBottom)
     "list-style-type" -> copy(listStyle = value)
-    "vertical-align" -> copy(baseline = baselineOf(value) ?: baseline)
+    "vertical-align" -> if (value.endsWith("%")) {
+        value.removeSuffix("%").toFloatOrNull()?.let { copy(baselineLine = it / 100f, baseline = null) } ?: this
+    } else {
+        copy(
+            baseline = baselineOf(value) ?: baseline, baselineLine = null, rowAlign = value.takeIf { it in ROW_ALIGNMENTS },
+            shiftKeyword = when (value) {
+                "super" -> 1
+                "sub" -> -1
+                else -> null
+            },
+        )
+    }
+    // as a browser's columns read them (probed): only a column break forces one, and a page's
+    // avoid doesn't hold in columns; a linked sheet's page breaks are columns' by now (linkedSheet)
+    "break-before" -> copy(breakBefore = value == "column", avoidBefore = value in AVOIDED_BREAKS)
+    "break-after" -> copy(breakAfter = value == "column", avoidAfter = value in AVOIDED_BREAKS)
+    "break-inside" -> copy(avoidInside = value in AVOIDED_BREAKS)
+    "page-break-before" -> copy(breakBefore = false, avoidBefore = value == "avoid")
+    "page-break-after" -> copy(breakAfter = false, avoidAfter = value == "avoid")
+    "page-break-inside" -> copy(avoidInside = value == "avoid")
+    "-webkit-column-break-before" -> copy(breakBefore = value == "always", avoidBefore = value == "avoid")
+    "-webkit-column-break-after" -> copy(breakAfter = value == "always", avoidAfter = value == "avoid")
+    "-webkit-column-break-inside" -> copy(avoidInside = value == "avoid")
+    "border-spacing" -> value.split(Regex("\\s+")).mapNotNull { cssLength(it) }.takeIf { it.isNotEmpty() }
+        ?.let { copy(borderSpacing = it.first() to it.getOrElse(1) { _ -> it.first() }) } ?: this
+    "border-collapse" -> copy(borderCollapse = value == "collapse")
     "text-transform" -> copy(transform = value)
     "white-space" -> copy(keepsSpaces = value.startsWith("pre"))
-    "border", "border-style", "border-top" -> copy(noBorder = value == "none" || value == "0" || value.startsWith("0 ") || value.startsWith("none"))
-    "background", "background-image" -> URL.find(written)?.let { copy(backgroundImage = it.groupValues[1].trim('\'', '"', ' ')) } ?: this
+    "background-image" -> URL.find(written)?.let { copy(backgroundImage = it.groupValues[1].trim('\'', '"', ' ')) } ?: this
+    // the shorthand: an image, a colour, or both
+    "background" -> copy(
+        backgroundImage = URL.find(written)?.groupValues?.get(1)?.trim('\'', '"', ' ') ?: backgroundImage,
+        background = value.split(' ').firstNotNullOfOrNull { backgroundOf(it) } ?: background,
+    )
     "letter-spacing" -> copy(letterSpacing = if (value == "normal") 0f else (cssLength(value, signed = true) ?: return this).letterEm())
     "list-style" -> value.split(Regex("\\s+")).firstOrNull { it in LIST_STYLES }?.let { copy(listStyle = it) } ?: this
     "width" -> copy(width = cssLength(value))
     "height" -> copy(height = cssLength(value))
     "max-width" -> copy(maxWidth = cssLength(value))
-    "text-decoration", "text-decoration-line" -> copy(underline = value.contains("underline"))
+    "min-width" -> copy(minWidth = cssLength(value))
+    "column-count", "-webkit-column-count", "-moz-column-count" -> copy(columnCount = value.toIntOrNull() ?: 1)
+    "column-gap", "-webkit-column-gap", "-moz-column-gap" -> copy(columnGap = cssLength(value))
+    "text-decoration", "text-decoration-line" -> copy(underline = value.contains("underline"), lineThrough = value.contains("line-through"))
     else -> this
 }
 
 /** Top, right, bottom and left of a `margin`/`padding` shorthand (1–4 values). */
-private fun boxSides(value: String): List<CssLength?>? {
-    val v = value.split(Regex("\\s+")).map { cssLength(it) }
+private fun boxSides(value: String, signed: Boolean = false): List<CssLength?>? {
+    val v = value.split(Regex("\\s+")).map { cssLength(it, signed) }
     return when (v.size) {
         1 -> listOf(v[0], v[0], v[0], v[0])
         2 -> listOf(v[0], v[1], v[0], v[1])
@@ -526,18 +795,129 @@ private val NAMED_COLORS = mapOf(
     "darkgray" to 0xA9A9A9L, "darkgrey" to 0xA9A9A9L, "dimgray" to 0x696969L, "dimgrey" to 0x696969L,
 )
 
+/** `line-height` as a ratio of the font size: a number, em, %, or `normal` ([NORMAL_LINE], the font's own). */
+private fun lineRatioOf(value: String): Float? = when (value) {
+    "normal" -> NORMAL_LINE
+    else -> value.toFloatOrNull() ?: when (val length = cssLength(value)) {
+        is CssLength.Em -> length.em
+        is CssLength.Percent -> length.percent / 100f
+        else -> null
+    }
+}
+
+/** `line-height: normal`, which only the layout can measure: the font's ascent and descent ([com.baca.shared.render.ReflowLayout.lineRatioOf]). */
+const val NORMAL_LINE = -1f
+
+/** One side's border as declared; null parts are unset, and a style of `none` draws nothing. */
+data class BorderSide(val width: Float? = null, val style: String? = null, val color: Long? = null) {
+    fun overriddenBy(other: BorderSide) = BorderSide(other.width ?: width, other.style ?: style, other.color ?: color)
+
+    /** Drawn width in CSS px: nothing without a style, as in CSS (`border-width` alone draws nothing). */
+    val drawnPx: Float get() = if (style == null || style == "none" || style == "hidden") 0f else width ?: MEDIUM_BORDER
+}
+
+private const val MEDIUM_BORDER = 3f
+
+/** A `border` shorthand: width, style and colour in any order. */
+private fun borderOf(value: String): BorderSide {
+    if (value == "none" || value == "0") return BorderSide(width = 0f, style = "none")
+    var side = BorderSide(width = MEDIUM_BORDER, style = "none")
+    value.replace(Regex(",\\s*"), ",").split(' ').filter { it.isNotEmpty() }.forEach { part ->
+        when {
+            part in BORDER_STYLES -> side = side.copy(style = part)
+            borderWidth(part) != null -> side = side.copy(width = borderWidth(part))
+            else -> parseColor(part)?.let { side = side.copy(color = it) }
+        }
+    }
+    return side
+}
+
+private val BORDER_STYLES = setOf("none", "hidden", "solid", "dotted", "dashed", "double", "groove", "ridge", "inset", "outset")
+
+private fun borderWidth(value: String): Float? = when (value) {
+    "thin" -> 1f
+    "medium" -> MEDIUM_BORDER
+    "thick" -> 5f
+    else -> when (val length = cssLength(value)) {
+        is CssLength.Px -> length.px
+        is CssLength.Em -> length.em * 16f
+        else -> null
+    }
+}
+
+/** A `background-color`: a colour, or [TRANSPARENT] for `transparent`/`none`; null for what isn't one (`inherit`, an image). */
+private fun backgroundOf(value: String): Long? = when (value) {
+    "transparent", "none", "initial" -> TRANSPARENT
+    "inherit", "currentcolor" -> null
+    else -> parseColor(value)?.takeIf { it != TEXT_COLOR }
+}
+
+/** No background. */
+const val TRANSPARENT = 0L
+
+/** The four sides of a `border-width`/`-style`/`-color` shorthand, each read by [read]. */
+private fun CssStyle.boxSidesOf(value: String, read: (String) -> BorderSide): CssStyle {
+    val v = value.replace(Regex(",\\s*"), ",").split(' ').filter { it.isNotEmpty() }
+    val (top, right, bottom, left) = when (v.size) {
+        1 -> listOf(v[0], v[0], v[0], v[0])
+        2 -> listOf(v[0], v[1], v[0], v[1])
+        3 -> listOf(v[0], v[1], v[2], v[1])
+        4 -> v
+        else -> return this
+    }
+    return copy(
+        borderTop = borderTop.overriddenBy(read(top)), borderRight = borderRight.overriddenBy(read(right)),
+        borderBottom = borderBottom.overriddenBy(read(bottom)), borderLeft = borderLeft.overriddenBy(read(left)),
+    )
+}
+
+private fun CssStyle.side(name: String, part: BorderSide): CssStyle = when (name) {
+    "border-top" -> copy(borderTop = borderTop.overriddenBy(part))
+    "border-right" -> copy(borderRight = borderRight.overriddenBy(part))
+    "border-bottom" -> copy(borderBottom = borderBottom.overriddenBy(part))
+    else -> copy(borderLeft = borderLeft.overriddenBy(part))
+}
+
 private val URL = Regex("url\\(([^)]*)\\)")
 
-/** How far `vertical-align` moves text, in em of its font; WebKit raises `super` by a third of an em. */
+/**
+ * How far `vertical-align` moves text, in em of its font; WebKit raises `super` by a
+ * third of an em. `top`, `middle` and `bottom` align a table cell or a picture in
+ * its row, and leave the text on its baseline.
+ */
 private fun baselineOf(value: String): Float? = when {
-    value == "super" || value == "top" || value == "text-top" -> SUPER_SHIFT
-    value == "sub" || value == "bottom" || value == "text-bottom" -> SUB_SHIFT
-    value == "baseline" || value == "middle" -> 0f
-    // a percentage or length: its direction is what a reader sees
-    value.startsWith("-") -> SUB_SHIFT
-    value.first().isDigit() -> if (value.trimStart('0', '.').isEmpty()) 0f else SUPER_SHIFT
-    else -> null
+    value == "super" -> SUPER_SHIFT
+    value == "sub" -> SUB_SHIFT
+    value in ROW_ALIGNMENTS -> 0f
+    // a length: in em of the element's own font
+    else -> when (val length = cssLength(value, signed = true)) {
+        is CssLength.Em -> length.em
+        is CssLength.Px -> length.px / 16f
+        else -> null
+    }
 }
+
+private val AVOIDED_BREAKS = setOf("avoid", "avoid-column")
+
+// Baca's own units for a linked sheet's vh and vw (linkedSheet), which foliate turns into the window's px
+private const val WINDOW_VH = "-window-vh"
+private const val WINDOW_VW = "-window-vw"
+
+/**
+ * A linked stylesheet as foliate hands it to the page: `-epub-` prefixes dropped (`-epub-hyphens`
+ * is `hyphens`), `vh` and `vw` made lengths of the whole
+ * window rather than the page, and its page breaks turned into column breaks (`page-break-*:`
+ * into `-webkit-column-break-*:`, `break-*: page` into `column`). A `<style>` element and a
+ * `style` attribute keep what they wrote.
+ */
+internal fun linkedSheet(css: String): String = css
+    .replace(Regex("""(?<=[{\s;])-epub-""", RegexOption.IGNORE_CASE), "")
+    .replace(Regex("""(\d*\.?\d+)vw""", RegexOption.IGNORE_CASE)) { it.groupValues[1] + WINDOW_VW }
+    .replace(Regex("""(\d*\.?\d+)vh""", RegexOption.IGNORE_CASE)) { it.groupValues[1] + WINDOW_VH }
+    .replace(Regex("""page-break-(after|before|inside)\s*:""", RegexOption.IGNORE_CASE)) { "-webkit-column-break-${it.groupValues[1]}:" }
+    .replace(Regex("""break-(after|before|inside)\s*:\s*(avoid-)?page""", RegexOption.IGNORE_CASE)) { "break-${it.groupValues[1]}: ${it.groupValues[2]}column" }
+
+private val ROW_ALIGNMENTS = setOf("baseline", "top", "text-top", "middle", "bottom", "text-bottom")
 
 private const val SUPER_SHIFT = 0.33f
 private const val SUB_SHIFT = -0.2f
@@ -553,6 +933,18 @@ private val LIST_STYLES = setOf(
     "none", "disc", "circle", "square", "decimal", "lower-alpha", "upper-alpha", "lower-latin", "upper-latin", "lower-roman", "upper-roman",
 )
 
+/**
+ * A `width` or `height` attribute as HTML reads it: a number is CSS px and one followed
+ * by `%` a percentage, whatever comes after (`300`, `300px`, `50%`); anything else is null.
+ */
+internal fun attrLength(value: String): CssLength? {
+    val match = Regex("""^\s*(\d+(?:\.\d+)?)\s*(%?)""").find(value) ?: return null
+    val number = match.groupValues[1].toFloat()
+    return if (match.groupValues[2] == "%") CssLength.Percent(number) else CssLength.Px(number)
+}
+
+private fun CssLength.isNegative() = (this is CssLength.Em && em < 0f) || (this is CssLength.Px && px < 0f) || (this is CssLength.Percent && percent < 0f)
+
 /** A length; `auto`, `none`, anything unknown and (unless [signed]) negatives are null, the browser's default. */
 internal fun cssLength(value: String, signed: Boolean = false): CssLength? {
     fun number(suffix: String) = value.removeSuffix(suffix).trim().toFloatOrNull()?.takeIf { signed || it >= 0f }
@@ -563,6 +955,8 @@ internal fun cssLength(value: String, signed: Boolean = false): CssLength? {
         value.endsWith("px") -> number("px")?.let { CssLength.Px(it) }
         value.endsWith("pt") -> number("pt")?.let { CssLength.Px(it * 4f / 3f) }
         value.endsWith("%") -> number("%")?.let { CssLength.Percent(it) }
+        value.endsWith(WINDOW_VH) -> number(WINDOW_VH)?.let { CssLength.WindowVh(it) }
+        value.endsWith(WINDOW_VW) -> number(WINDOW_VW)?.let { CssLength.WindowVw(it) }
         value.endsWith("vh") -> number("vh")?.let { CssLength.Vh(it) }
         value.endsWith("vw") -> number("vw")?.let { CssLength.Vw(it) }
         else -> value.toFloatOrNull()?.takeIf { it == 0f }?.let { CssLength.Px(0f) }
@@ -575,6 +969,27 @@ private fun weightIsBold(value: String): Boolean? = when (value) {
     "normal", "lighter" -> false
     else -> value.toIntOrNull()?.let { it >= 600 }
 }
+
+/** A font the book ships, from an `@font-face` rule: its [family] (lowercased), the file's zip [path], weight and style. */
+data class BookFont(val family: String, val path: String, val weight: Int, val italic: Boolean)
+
+/** The `@font-face` rules in [css], each font's `url()` resolved by [resolve] to a path in the book. */
+fun fontFacesOf(css: String, resolve: (String) -> String): List<BookFont> =
+    Regex("@font-face\\s*\\{([^}]*)\\}", RegexOption.IGNORE_CASE).findAll(css).mapNotNull { rule ->
+        val declarations = rule.groupValues[1].split(';').associate { d ->
+            d.substringBefore(':', "").trim().lowercase() to d.substringAfter(':', "").trim()
+        }
+        val family = declarations["font-family"]?.trim('"', '\'')?.lowercase()?.ifEmpty { null } ?: return@mapNotNull null
+        val url = Regex("url\\(\\s*['\"]?([^'\")]+)['\"]?\\s*\\)").find(declarations["src"] ?: "")?.groupValues?.get(1)
+            ?: return@mapNotNull null
+        val weight = when (val w = declarations["font-weight"]?.lowercase()) {
+            null, "normal" -> 400
+            "bold" -> 700
+            else -> w.toIntOrNull() ?: 400
+        }
+        val italic = declarations["font-style"]?.lowercase().let { it == "italic" || it == "oblique" }
+        BookFont(family, resolve(url), weight, italic)
+    }.toList()
 
 /** The kind of face a `font-family` list starts with; a font the reader doesn't have is read as serif. */
 private fun faceOf(value: String): BookFace {
@@ -592,20 +1007,21 @@ private val SANS_FONTS = setOf("helvetica", "helvetica neue", "arial", "verdana"
 private fun relativeSize(value: String): Float? = when {
     value.endsWith("em") && !value.endsWith("rem") -> value.removeSuffix("em").toFloatOrNull()
     value.endsWith("%") -> value.removeSuffix("%").toFloatOrNull()?.div(100f)
-    value == "smaller" -> 0.83f
+    value == "smaller" -> 1f / 1.2f
     value == "larger" -> 1.2f
     else -> null
 }
 
-/** A size that doesn't depend on the parent's, relative to the browser's 16px: `px`, `pt`, `rem`, `small`… */
+/** A size that doesn't depend on the parent's, relative to the browser's 16px: `px`, `pt`, `rem` */
 private fun absoluteSize(value: String): Float? = when {
     value.endsWith("rem") -> value.removeSuffix("rem").toFloatOrNull()
     value.endsWith("px") -> value.removeSuffix("px").toFloatOrNull()?.div(16f)
     value.endsWith("pt") -> value.removeSuffix("pt").toFloatOrNull()?.div(12f)
-    else -> ABSOLUTE_KEYWORDS[value]
+    else -> null
 }?.takeIf { it > 0f }
 
-private val ABSOLUTE_KEYWORDS = mapOf(
-    "xx-small" to 0.6f, "x-small" to 0.75f, "small" to 0.89f, "medium" to 1f,
-    "large" to 1.2f, "x-large" to 1.5f, "xx-large" to 2f,
-)
+internal val SIZE_KEYWORDS = listOf("xx-small", "x-small", "small", "medium", "large", "x-large", "xx-large", "xxx-large")
+
+// Chromium's sizes for them in CSS px (probed), and for plain monospace, whose medium is 13px
+internal val KEYWORD_PX = listOf(9f, 10f, 13f, 16f, 18f, 24f, 32f, 48f)
+internal val MONOSPACE_KEYWORD_PX = listOf(9f, 10f, 12f, 13f, 16f, 20f, 26f, 39f)

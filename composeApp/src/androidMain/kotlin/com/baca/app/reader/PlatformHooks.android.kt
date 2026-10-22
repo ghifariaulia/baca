@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.union
 
 actual val tapZonesForPageTurnEnabled: Boolean = true
 
+actual val readerColumnCapped: Boolean = false
+
 /** Application context is captured once at startup by MainActivity. */
 object AndroidContexts {
     lateinit var current: Context

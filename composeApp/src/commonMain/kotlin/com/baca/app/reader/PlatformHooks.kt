@@ -6,6 +6,12 @@ package com.baca.app.reader
 expect val tapZonesForPageTurnEnabled: Boolean
 
 /**
+ * Whether the reader holds its page to a column on a wide window (desktop). A phone or
+ * tablet reads across the whole window, as LibreraX does.
+ */
+expect val readerColumnCapped: Boolean
+
+/**
  * Status and navigation bar icons dark on a light screen, light on a dark one
  * (Android draws the app behind the system bars). No-op on desktop.
  */

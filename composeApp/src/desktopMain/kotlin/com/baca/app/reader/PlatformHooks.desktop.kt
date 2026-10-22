@@ -6,6 +6,8 @@ import java.net.URI
 
 actual val tapZonesForPageTurnEnabled: Boolean = false
 
+actual val readerColumnCapped: Boolean = true
+
 @androidx.compose.runtime.Composable
 actual fun SystemBarsAppearance(darkBackground: Boolean) {
     // the desktop title bar follows the app theme from Main.kt at launch

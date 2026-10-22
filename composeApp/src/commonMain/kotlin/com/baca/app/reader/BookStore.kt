@@ -53,9 +53,10 @@ object BookFormats {
         parseCbz(path, fileName)
     }.getOrNull()
 
-    fun parse(path: Path, format: String): ParsedEpub? = runCatching {
+    /** [darkScheme]: read for a dark reading theme, the book's `prefers-color-scheme: dark` rules holding. */
+    fun parse(path: Path, format: String, darkScheme: Boolean = false): ParsedEpub? = runCatching {
         when (format) {
-            "epub" -> parseEpub(path)
+            "epub" -> parseEpub(path, darkScheme)
             "fb2" -> parseFb2(path)
             else -> parsePlainTextOrFb2(path)
         }
