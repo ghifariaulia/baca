@@ -94,6 +94,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -2028,16 +2029,20 @@ private fun LinkText(
     )
 }
 
+private val CURSOR_WIDTH = 3.dp
+private val CURSOR_HEIGHT = 20.dp
+
 /**
- * Invisible 24dp touch strip; the visible track is 3px until hovered (desktop)
- * or grabbed. Tap or drag anywhere in the strip to jump.
+ * Invisible 24dp touch strip; the visible track is 6dp, 12dp when hovered (desktop)
+ * or grabbed, with a cursor line at the reading position. Tap or drag anywhere in
+ * the strip to jump.
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 internal fun SeekBar(fraction: Float, onSeek: (Float) -> Unit, onSeekEnd: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     var dragging by remember { mutableStateOf(false) }
-    val barHeight = if (expanded || dragging) 12.dp else 1.5.dp
+    val barHeight = if (expanded || dragging) 12.dp else 6.dp
     val accent = MaterialTheme.colorScheme.primary
     val track = MaterialTheme.colorScheme.outline
 
@@ -2064,16 +2069,22 @@ internal fun SeekBar(fraction: Float, onSeek: (Float) -> Unit, onSeekEnd: () -> 
             },
         contentAlignment = Alignment.CenterStart,
     ) {
-        // Track and fill are siblings measured at barHeight; a wrapping Box
-        // would inherit the strip's exact 24dp height constraints and the
-        // fill's fillMaxHeight would blow it up to full strip height.
-        Box(
-            Modifier.fillMaxWidth().height(barHeight)
-                .clip(RoundedCornerShape(barHeight / 2)).background(track),
-        )
-        Box(
-            Modifier.fillMaxWidth(fraction).height(barHeight)
-                .clip(RoundedCornerShape(barHeight / 2)).background(accent),
-        )
+        Canvas(Modifier.fillMaxSize()) {
+            val barPx = barHeight.toPx()
+            val top = (size.height - barPx) / 2
+            val radius = CornerRadius(barPx / 2)
+            val reached = size.width * fraction.coerceIn(0f, 1f)
+            drawRoundRect(track, Offset(0f, top), Size(size.width, barPx), radius)
+            drawRoundRect(accent, Offset(0f, top), Size(reached, barPx), radius)
+            // the reading position: a line taller than the bar, kept inside the strip's ends
+            val cursorWidth = CURSOR_WIDTH.toPx()
+            val cursorHeight = CURSOR_HEIGHT.toPx()
+            drawRoundRect(
+                accent,
+                Offset((reached - cursorWidth / 2).coerceIn(0f, size.width - cursorWidth), (size.height - cursorHeight) / 2),
+                Size(cursorWidth, cursorHeight),
+                CornerRadius(cursorWidth / 2),
+            )
+        }
     }
 }

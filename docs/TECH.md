@@ -82,8 +82,8 @@ Fallback if the Compose reflow engine stalls the project: render chapters in a W
 `DisplaySettings` (saved with the other display settings, on the Display sheet) carries options that change what is read or how pages sit:
 
 - **Direction** (`auto`, `ltr`, `rtl`): `auto` follows the book; the others force the root's direction (`ParseOptions.rtl`). Books are read again when it changes.
-- **Custom CSS** (`userCss`): added to the book's stylesheets as the last, strongest author rule (`Stylesheet.addUser`).
-- **Find and replace** (`replacements`): literal text rules applied to every text run as the book is read (`ParseOptions.replaced`; TXT applies them to the raw text). Markup is never touched.
+- **Custom CSS** (`userCss`), under *Advanced* in the Display sheet (folded by default, with find and replace, so they are not changed by accident): added to the book's stylesheets as the last, strongest author rule (`Stylesheet.addUser`).
+- **Find and replace** (`replacements`), also under *Advanced*: literal text rules, such as fixing a recurring typo, changing a name or dropping a stray character in a book's text; applied to every text run as the book is read (`ParseOptions.replaced`; TXT applies them to the raw text). Markup is never touched.
 - `ParseOptions.needsReread` says when a changed setting needs the book parsed again (direction, CSS, replacements, or the colour scheme in a book whose CSS depends on it); `ReaderScreen` then calls `onOptionsChange` and `App` re-parses under the new options.
 - **Columns** (1 or 2): two pages side by side. The layout column is half the page less each column's own margins; a turn moves two pages. Vertical books and scrolled flow ignore it.
 - **Flow** (`paged`, `scrolled`): `scrolled` stacks the chapter's pages in one scrolling list (`LazyColumn`); the page on top is the reading position (`ReaderSession.showPage`), and the edge taps and arrow keys still move a page, into the next chapter at the end. Scrolling stays within a chapter.

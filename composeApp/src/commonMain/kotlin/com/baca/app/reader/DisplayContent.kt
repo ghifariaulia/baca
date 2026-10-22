@@ -112,8 +112,6 @@ internal fun DisplayContent(display: DisplaySettings, onChange: (DisplaySettings
                 selected = display.flow,
             ) { onChange(display.copy(flow = it)) }
         }
-        SheetSection("CUSTOM CSS") { CustomCss(display, onChange) }
-        SheetSection("FIND AND REPLACE") { Replacements(display, onChange) }
         if (tapZonesForPageTurnEnabled) {
             SheetSection("PAGE TURN") {
                 SegmentedRow(
@@ -128,6 +126,7 @@ internal fun DisplayContent(display: DisplaySettings, onChange: (DisplaySettings
                 ) { onChange(display.copy(fullScreen = it == "on")) }
             }
         }
+        Advanced(display, onChange)
         Text(
             "Display settings stay on this device and are not synced.",
             style = Type.caption,
@@ -135,6 +134,31 @@ internal fun DisplayContent(display: DisplaySettings, onChange: (DisplaySettings
         )
     }
 }
+/** Settings that change the book's text and styling, folded away so they are not touched by accident. */
+@Composable
+private fun Advanced(display: DisplaySettings, onChange: (DisplaySettings) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        Row(
+            Modifier.fillMaxWidth().clickable { open = !open }.padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("ADVANCED", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (open) "Hide" else "Show", style = Type.caption, color = MaterialTheme.colorScheme.primary)
+        }
+        if (open) {
+            Text(
+                "These change how the book is read. Each change reads the book again.",
+                style = Type.caption,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SheetSection("CUSTOM CSS") { CustomCss(display, onChange) }
+            SheetSection("FIND AND REPLACE") { Replacements(display, onChange) }
+        }
+    }
+}
+
 /** The reader's own CSS, over the book's; applied when asked, as the book is read again for it. */
 @Composable
 private fun CustomCss(display: DisplaySettings, onChange: (DisplaySettings) -> Unit) {
