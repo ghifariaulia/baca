@@ -84,7 +84,7 @@ Fallback if the Compose reflow engine stalls the project: render chapters in a W
 - **Find and replace** (`replacements`), also under *Advanced*: literal text rules, such as fixing a recurring typo, changing a name or dropping a stray character in a book's text; applied to every text run as the book is read (`ParseOptions.replaced`; TXT applies them to the raw text). Markup is never touched.
 - `ParseOptions.needsReread` says when a changed setting needs the book parsed again (direction, CSS, replacements, or the colour scheme in a book whose CSS depends on it); `ReaderScreen` then calls `onOptionsChange` and `App` re-parses under the new options.
 - **Columns** (1 or 2): two pages side by side. The layout column is half the page less each column's own margins; a turn moves two pages. Vertical books and scrolled flow ignore it.
-- **Flow** (`paged`, `scrolled`): `scrolled` stacks the chapter's pages in one scrolling list (`LazyColumn`); the page on top is the reading position (`ReaderSession.showPage`), and the edge taps and arrow keys still move a page, into the next chapter at the end. Scrolling stays within a chapter.
+- **Flow** (`paged`, `scrolled`): `scrolled` stacks the chapter's pages in one scrolling list (`LazyColumn`); the page on top is the reading position (`ReaderSession.showPage`), and the arrow keys still move a page, into the next chapter at the end. The list moves only up and down: horizontal swipes do nothing, and every tap just shows or hides the bars (no edge taps). Scrolling stays within a chapter.
 
 ## 5. Persistence
 

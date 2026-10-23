@@ -637,7 +637,7 @@ fun ReaderScreen(
                         // its own gestures: only a quick, still tap the text didn't
                         // use counts. Edges turn the page (phones, unless switched
                         // off), the middle shows or hides the bars.
-                        .pointerInput(display.tapToTurn) {
+                        .pointerInput(display.tapToTurn, scrolled) {
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Final)
                                 textUsedTap[0] = false
@@ -645,8 +645,10 @@ fun ReaderScreen(
                                 val moved = (up.position - down.position).getDistance() > viewConfiguration.touchSlop
                                 val held = up.uptimeMillis - down.uptimeMillis > viewConfiguration.longPressTimeoutMillis
                                 if (moved || held || textUsedTap[0]) return@awaitEachGesture
-                                val edgeTurns = tapZonesForPageTurnEnabled && display.tapToTurn
+                                // scrolled text is moved by scrolling: its taps only show or hide the bars
+                                val edgeTurns = tapZonesForPageTurnEnabled && display.tapToTurn && !scrolled
                                 when {
+                                    scrolled -> barsVisible = !barsVisible
                                     down.position.x < size.width / 3f -> if (edgeTurns) pageTurn(if (book.pageRtl) 1 else -1)
                                     down.position.x > size.width * 2f / 3f -> if (edgeTurns) pageTurn(if (book.pageRtl) -1 else 1)
                                     else -> barsVisible = !barsVisible
@@ -654,7 +656,8 @@ fun ReaderScreen(
                             }
                         }
                         .then(
-                            if (tapZonesForPageTurnEnabled) {
+                            // a page swipe: scrolled text only moves up and down
+                            if (tapZonesForPageTurnEnabled && !scrolled) {
                                 Modifier.pointerInput(Unit) {
                                     val velocity = VelocityTracker()
                                     detectHorizontalDragGestures(
