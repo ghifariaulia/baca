@@ -95,10 +95,10 @@ internal fun DisplayContent(display: DisplaySettings, scrollable: Boolean = true
             Stepper("${display.paddingPercent}%") { onChange(display.stepPadding(it)) }
         }
         SheetSection("TOP MARGIN") {
-            Stepper("${display.topMarginPercent}%") { onChange(display.stepTop(it)) }
+            Stepper("${display.topPercent}%") { onChange(display.stepTop(it)) }
         }
         SheetSection("BOTTOM MARGIN") {
-            Stepper("${display.bottomMarginPercent}%") { onChange(display.stepBottom(it)) }
+            Stepper("${display.bottomPercent}%") { onChange(display.stepBottom(it)) }
         }
         SheetSection("DIRECTION") {
             SegmentedRow(

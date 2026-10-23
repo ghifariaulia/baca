@@ -535,8 +535,8 @@ fun ReaderScreen(
         val margin = pageWidth * (display.paddingPercent / 100f)
         // and above and below the text, 4 CSS px a percent each (of the side margins unless chosen); below, at least the footer's strip,
         // the system's bar under it counting towards the band as LibreraX's page counts it
-        val topBand = PADDING_BAND * display.topMarginPercent
-        val bottomBand = PADDING_BAND * display.bottomMarginPercent
+        val topBand = PADDING_BAND * display.topPercent
+        val bottomBand = PADDING_BAND * display.bottomPercent
         val barBelow = with(density) { stableReaderInsets(display.fullScreen).getBottom(density).toDp() }
         var panelOpen by remember { mutableStateOf(false) }
         // Back closes what's open on top of the page first, then leaves the book

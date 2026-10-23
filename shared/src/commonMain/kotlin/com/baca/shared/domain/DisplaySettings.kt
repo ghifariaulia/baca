@@ -27,10 +27,10 @@ data class DisplaySettings(
     val lineSpacingTenths: Int = 17,
     /** the page's side margins, in percent of its width */
     val paddingPercent: Int = 6,
-    /** the band above the text, 4dp a percent; null follows the side margins, or is none in full screen */
-    val topPercent: Int? = null,
-    /** the band below the text (over the footer's strip), 4dp a percent; null follows the side margins */
-    val bottomPercent: Int? = null,
+    /** the band above the text, in percent of 4dp */
+    val topPercent: Int = 7,
+    /** the band below the text (over the footer's strip), in percent of 4dp */
+    val bottomPercent: Int = 7,
     /** phones: tapping the page's left/right edge turns the page (swipes always do) */
     val tapToTurn: Boolean = true,
     /** phones: the status and navigation bars hide with the reader's bars (focus mode) */
@@ -52,8 +52,8 @@ data class DisplaySettings(
         require(fontSizePercent in FONT_SIZE_PERCENTS) { "font size out of range: $fontSizePercent" }
         require(lineSpacingTenths in LINE_SPACING_TENTHS) { "line spacing out of range: $lineSpacingTenths" }
         require(paddingPercent in PADDING_PERCENTS) { "padding out of range: $paddingPercent" }
-        require(topPercent == null || topPercent in PADDING_PERCENTS) { "top margin out of range: $topPercent" }
-        require(bottomPercent == null || bottomPercent in PADDING_PERCENTS) { "bottom margin out of range: $bottomPercent" }
+        require(topPercent in PADDING_PERCENTS) { "top margin out of range: $topPercent" }
+        require(bottomPercent in PADDING_PERCENTS) { "bottom margin out of range: $bottomPercent" }
         require(direction in DIRECTIONS) { "unknown direction: $direction" }
         require(columns in 1..2) { "columns out of range: $columns" }
         require(flow in FLOWS) { "unknown flow: $flow" }
@@ -75,15 +75,9 @@ data class DisplaySettings(
     fun stepFontSize(by: Int) = copy(fontSizePercent = (fontSizePercent + by * FONT_SIZE_STEP).coerceIn(FONT_SIZE_PERCENTS))
     fun stepLineSpacing(by: Int) = copy(lineSpacingTenths = (lineSpacingTenths + by).coerceIn(LINE_SPACING_TENTHS))
     fun stepPadding(by: Int) = copy(paddingPercent = (paddingPercent + by).coerceIn(PADDING_PERCENTS))
-    fun stepTop(by: Int) = copy(topPercent = (topMarginPercent + by).coerceIn(PADDING_PERCENTS))
-    fun stepBottom(by: Int) = copy(bottomPercent = (bottomMarginPercent + by).coerceIn(PADDING_PERCENTS))
+    fun stepTop(by: Int) = copy(topPercent = (topPercent + by).coerceIn(PADDING_PERCENTS))
+    fun stepBottom(by: Int) = copy(bottomPercent = (bottomPercent + by).coerceIn(PADDING_PERCENTS))
 
-    /**
-     * The top and bottom margins in force: the one chosen, else the side margins'; the top one, else none
-     * when the status bar is hidden (full screen), where the page starts at the edge, as LibreraX's does.
-     */
-    val topMarginPercent: Int get() = topPercent ?: if (fullScreen) 0 else paddingPercent
-    val bottomMarginPercent: Int get() = bottomPercent ?: paddingPercent
 
     companion object {
         val FONTS = setOf("serif", "sans", "mono", "libron")
