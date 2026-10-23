@@ -38,7 +38,7 @@ class DisplaySettingsTest {
 
     @Test
     fun `top and bottom margins follow the side margins until chosen, each on its own`() {
-        val d = DisplaySettings(paddingPercent = 9)
+        val d = DisplaySettings(paddingPercent = 9, fullScreen = false)
         assertEquals(9 to 9, d.topMarginPercent to d.bottomMarginPercent)
         // the first step starts from what was in force
         val lowerTop = d.stepTop(-1)
@@ -53,8 +53,18 @@ class DisplaySettingsTest {
     }
 
     @Test
+    fun `with the status bar hidden the top margin is none until chosen`() {
+        val d = DisplaySettings(paddingPercent = 9, fullScreen = true)
+        assertEquals(0 to 9, d.topMarginPercent to d.bottomMarginPercent)
+        assertEquals(1, d.stepTop(1).topMarginPercent)
+        assertEquals(5, d.copy(topPercent = 5).topMarginPercent)
+        // keeping the status bar, the page stays below it with the side margins' gap
+        assertEquals(9, d.copy(fullScreen = false).topMarginPercent)
+    }
+
+    @Test
     fun `settings saved before separate margins existed load following the side margins`() {
-        val old = decodeDisplay("""{"fontSizePercent":130,"paddingPercent":9}""")
+        val old = decodeDisplay("""{"fontSizePercent":130,"paddingPercent":9,"fullScreen":false}""")
         assertEquals(9 to 9, old.topMarginPercent to old.bottomMarginPercent)
     }
 

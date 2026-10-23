@@ -42,7 +42,7 @@ expect fun FullScreen(enabled: Boolean)
 /**
  * The reader's safe area, measured as if the system bars were showing, so toggling them doesn't move the page.
  * With [fullScreen] on the bars come up over the page when they are shown, as in LibreraX, so the page keeps
- * clear only of a camera cutout and the top and bottom margins set the whole gap; the reader's own bars make
+ * clear only of a camera cutout (none from Android 15) and the top and bottom margins set the whole gap; the reader's own bars make
  * room for the system's. With it off the page stays clear of the bars.
  */
 @androidx.compose.runtime.Composable

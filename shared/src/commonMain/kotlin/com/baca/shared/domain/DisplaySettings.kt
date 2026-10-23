@@ -27,7 +27,7 @@ data class DisplaySettings(
     val lineSpacingTenths: Int = 17,
     /** the page's side margins, in percent of its width */
     val paddingPercent: Int = 6,
-    /** the band above the text, 4dp a percent; null follows the side margins, as LibreraX does */
+    /** the band above the text, 4dp a percent; null follows the side margins, or is none in full screen */
     val topPercent: Int? = null,
     /** the band below the text (over the footer's strip), 4dp a percent; null follows the side margins */
     val bottomPercent: Int? = null,
@@ -78,8 +78,11 @@ data class DisplaySettings(
     fun stepTop(by: Int) = copy(topPercent = (topMarginPercent + by).coerceIn(PADDING_PERCENTS))
     fun stepBottom(by: Int) = copy(bottomPercent = (bottomMarginPercent + by).coerceIn(PADDING_PERCENTS))
 
-    /** The top and bottom margins in force: the one chosen, else the side margins'. */
-    val topMarginPercent: Int get() = topPercent ?: paddingPercent
+    /**
+     * The top and bottom margins in force: the one chosen, else the side margins'; the top one, else none
+     * when the status bar is hidden (full screen), where the page starts at the edge, as LibreraX's does.
+     */
+    val topMarginPercent: Int get() = topPercent ?: if (fullScreen) 0 else paddingPercent
     val bottomMarginPercent: Int get() = bottomPercent ?: paddingPercent
 
     companion object {

@@ -713,7 +713,8 @@ fun ReaderScreen(
                                     alpha = pageAlpha.value
                                 }.wrapContentSize(Alignment.Center).requiredSize(pageWidth).rotatedPage().padding(top = margin)
                             } else {
-                                Modifier.fillMaxSize().padding(top = with(density) { (bandPx + evenPx).toDp() }).graphicsLayer {
+                                // scrolled text runs on up to the top edge, so it leaves smoothly rather than vanishing at a margin
+                                Modifier.fillMaxSize().padding(top = if (scrolled) 0.dp else with(density) { (bandPx + evenPx).toDp() }).graphicsLayer {
                                     translationX = pageShift.value
                                     alpha = pageAlpha.value
                                 }
@@ -915,7 +916,9 @@ fun ReaderScreen(
                     ink = colors.ink,
                     horizontalMargin = margin,
                     // as wide as the page
-                    modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = pageWidth),
+                    // scrolled text passes under the footer: it gets the page's colour to be read on
+                    modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = pageWidth)
+                        .then(if (scrolled) Modifier.background(colors.background) else Modifier),
                 )
 
                 AnimatedVisibility(
