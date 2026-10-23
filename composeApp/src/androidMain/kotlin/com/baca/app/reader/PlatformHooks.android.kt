@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.app.Activity
 import android.net.Uri
+import java.io.File
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
@@ -36,6 +37,19 @@ actual fun SystemBarsAppearance(darkBackground: Boolean) {
 @Composable
 actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {
     androidx.activity.compose.BackHandler(enabled = enabled, onBack = onBack)
+}
+
+actual fun discardPickedCopy(path: String) {
+    // the picker gives each copy a folder of its own in the cache (copyToCache)
+    File(path).parentFile?.takeIf { it.parentFile == AndroidContexts.current.cacheDir && it.name.startsWith(STAGED_PREFIX) }?.deleteRecursively()
+}
+
+/**
+ * Books copied into the cache to be imported or read, which nothing deleted when an app was closed
+ * mid-way or by an older version: gone at start-up, when none is in use.
+ */
+fun clearStagedBooks(context: Context) {
+    context.cacheDir.listFiles { file -> file.name.startsWith(STAGED_PREFIX) }?.forEach { it.deleteRecursively() }
 }
 
 actual fun openExternalLink(url: String) {

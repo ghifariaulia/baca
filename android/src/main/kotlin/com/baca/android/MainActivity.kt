@@ -15,6 +15,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         com.baca.app.reader.AndroidContexts.current = applicationContext
+        // nothing is open yet: copies a closed app left in the cache are dead weight
+        Thread { com.baca.app.reader.clearStagedBooks(applicationContext) }.start()
         val driver = AndroidSqliteDriver(Baca.Schema, applicationContext, "baca.db")
         // debug/automation entry: --es book <path> --ez contents true
         val bookPath = intent.getStringExtra("book")

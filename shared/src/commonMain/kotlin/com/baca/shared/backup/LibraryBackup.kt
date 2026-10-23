@@ -26,9 +26,10 @@ class LibraryBackup(
     private val fs: FileSystem = FileSystem.SYSTEM,
 ) {
 
-    fun create(out: Sink) {
+    /** [withBooks] false writes the library's records only: the safety copy, whose books stay where they are. */
+    fun create(out: Sink, withBooks: Boolean = true) {
         val data = snapshot()
-        val files = db.booksQueries.selectBooksAll().executeAsList()
+        val files = if (!withBooks) emptyList() else db.booksQueries.selectBooksAll().executeAsList()
             .flatMap { listOfNotNull(it.path.takeIf(String::isNotEmpty), it.cover_path) }
             .distinct()
             .map { it.toPath() }
@@ -41,7 +42,7 @@ class LibraryBackup(
 
     /**
      * Replaces the library with [archive]. The current library is first saved
-     * as [SAFETY_COPY] next to [storeDir], and book files are copied before the
+     * as [SAFETY_COPY] next to [storeDir] (its records, not its books, which stay), and book files are copied before the
      * database changes, so a bad archive leaves the current library untouched.
      */
     fun restore(archive: Path, storeDir: String) {
@@ -53,7 +54,8 @@ class LibraryBackup(
 
         val dir = storeDir.toPath()
         fs.createDirectories(dir)
-        (dir.parent ?: dir).let { parent -> fs.sink(parent / SAFETY_COPY).use { create(it) } }
+        // records only: restoring adds book files and never removes any, so the books it would hold are still here
+        (dir.parent ?: dir).let { parent -> fs.sink(parent / SAFETY_COPY).use { create(it, withBooks = false) } }
         zip.list("/$FILES_PREFIX".toPath()).forEach { entry ->
             zip.source(entry).use { input ->
                 fs.sink(dir / entry.name).buffer().use { it.writeAll(input) }

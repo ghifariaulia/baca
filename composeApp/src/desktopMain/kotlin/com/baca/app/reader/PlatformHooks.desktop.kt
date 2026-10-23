@@ -18,6 +18,8 @@ actual fun PlatformBackHandler(enabled: Boolean, onBack: () -> Unit) {
     // no system Back on desktop
 }
 
+actual fun discardPickedCopy(path: String) {}
+
 actual fun openExternalLink(url: String) {
     runCatching {
         Desktop.getDesktop().browse(URI(url))

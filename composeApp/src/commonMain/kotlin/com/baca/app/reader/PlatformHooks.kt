@@ -26,6 +26,12 @@ expect fun SystemBarsAppearance(darkBackground: Boolean)
 @androidx.compose.runtime.Composable
 expect fun PlatformBackHandler(enabled: Boolean = true, onBack: () -> Unit)
 
+/**
+ * Deletes the cache copy a phone's file picker made of a book once it is imported. No-op on desktop,
+ * whose picker hands out the user's own files.
+ */
+expect fun discardPickedCopy(path: String)
+
 /** Opens http(s) links outside the app (browser). */
 expect fun openExternalLink(url: String)
 

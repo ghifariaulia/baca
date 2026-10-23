@@ -15,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +42,7 @@ import com.baca.app.reader.rememberFolderChooser
 import com.baca.app.reader.LibraryFolder
 import com.baca.app.reader.folderLabel
 import com.baca.app.reader.rememberLibraryFolder
+import com.baca.app.reader.discardPickedCopy
 import com.baca.app.reader.rememberBackupOpener
 import com.baca.app.reader.SystemBarsAppearance
 import com.baca.app.reader.PlatformBackHandler
@@ -207,6 +209,8 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                         }
                     }
                     importItems[i] = importItems[i].copy(status = status)
+                    // a phone's picker copies each file into the cache; it is in the library now
+                    withContext(Dispatchers.IO) { discardPickedCopy(usable[i]) }
                 }
                 importing = false
                 libraryTick++
@@ -362,6 +366,11 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
         ) {
             when (val current = screenState) {
                 is Screen.Reader -> {
+                    // a library-folder book is read from a copy staged in the cache: gone when the book closes
+                    DisposableEffect(current.book.path, libraryFolder) {
+                        val staged = current.book.path
+                        onDispose { libraryFolder?.unstage(staged) }
+                    }
                     when (val book = current.book) {
                         is OpenBook.Reflow -> {
                             val annotations = remember(annotTick, book.bookHash) {

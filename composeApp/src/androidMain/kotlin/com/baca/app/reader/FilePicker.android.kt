@@ -60,12 +60,15 @@ actual fun rememberFolderPicker(onPicked: (List<String>) -> Unit): () -> Unit {
     return remember(launcher) { { launcher.launch(null) } }
 }
 
+/** Each cache copy of a book sits in a folder of its own, named from this. */
+internal const val STAGED_PREFIX = "open-"
+
 internal fun copyToCache(context: Context, uri: Uri): String? = runCatching {
     context.contentResolver.openInputStream(uri)?.use { input ->
         // keep the real name: the format comes from it (".fb2.zip" isn't ".zip")
         val name = displayName(context, uri)?.replace('/', '_') ?: "book.${guessExt(context, uri)}"
         // own folder per copy, so the file keeps its exact name
-        val file = File(File(context.cacheDir, "open-${System.nanoTime()}").apply { mkdirs() }, name)
+        val file = File(File(context.cacheDir, "$STAGED_PREFIX${System.nanoTime()}").apply { mkdirs() }, name)
         file.outputStream().use { output -> input.copyTo(output) }
         file.absolutePath
     }

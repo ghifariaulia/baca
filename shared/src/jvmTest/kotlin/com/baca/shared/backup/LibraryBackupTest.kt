@@ -5,6 +5,7 @@ import com.baca.shared.db.inMemoryDb
 import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toPath
+import okio.openZip
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -58,7 +59,10 @@ class LibraryBackupTest {
         assertEquals("dev-B", b.settings_localQueries.getLocal("device_id").executeAsOne().value_)
         assertEquals("/b/sync", b.settings_localQueries.getLocal("sync_folder").executeAsOne().value_)
         // the replaced library is kept as a safety copy next to the books folder
-        assertTrue(fs.exists(storeB.parent!! / LibraryBackup.SAFETY_COPY))
+        val safety = storeB.parent!! / LibraryBackup.SAFETY_COPY
+        assertTrue(fs.exists(safety))
+        // records only: the books it would hold stay in the store, so the copy doesn't double the library's size
+        assertTrue(fs.openZip(safety).listRecursively("/".toPath()).none { it.toString().startsWith("/books") }, "the safety copy should hold no book files")
         // the next local write must out-rank restored records
         val clock = b.sync_stateQueries.selectSyncStateAll().executeAsList().single { it.device_id == "dev-B" }
         assertTrue(clock.own_lamport >= 9)
