@@ -4,6 +4,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.baca.app.App
 import com.baca.shared.domain.Locator
@@ -47,7 +48,7 @@ class SettingsScreenTest {
         rule.setContent { App(newDb()) }
         rule.waitUntil(10_000) { rule.onAllNodesWithText("Settings", substring = true).fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithText("Settings").performClick()
-        rule.waitUntil(10_000) { rule.onAllNodesWithText("FONT SIZE", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        rule.waitUntil(10_000) { rule.onAllNodesWithText("Reading display").fetchSemanticsNodes().isNotEmpty() }
     }
 
     @Test
@@ -56,6 +57,8 @@ class SettingsScreenTest {
         rule.setContent { App(db) }
         rule.waitUntil(10_000) { rule.onAllNodesWithText("Settings", substring = true).fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithText("Settings").performClick()
+        rule.waitUntil(10_000) { rule.onAllNodesWithText("Reading display").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("App").performClick()
         rule.waitUntil(10_000) { rule.onAllNodesWithText("APP THEME").fetchSemanticsNodes().isNotEmpty() }
 
         // the test host is in light mode; Dark must win over it
@@ -90,6 +93,7 @@ class SettingsScreenTest {
                 )
             }
         }
+        rule.onNodeWithText("App").performClick()
         rule.onNodeWithText("Choose folder").performClick()
         assertTrue(rule.onAllNodesWithText("Rescan").fetchSemanticsNodes().isEmpty(), "nothing to rescan without a folder")
 
@@ -111,16 +115,66 @@ class SettingsScreenTest {
                 SettingsScreen(store = store, onBack = { back = true })
             }
         }
+        rule.onNodeWithText("Reading display").performClick()
         rule.waitUntil(10_000) { rule.onAllNodesWithText("FONT SIZE", substring = true).fetchSemanticsNodes().isNotEmpty() }
         assertTrue(rule.onAllNodesWithText("THEME", substring = true).fetchSemanticsNodes().isNotEmpty())
 
-        rule.onNodeWithText("Black").performClick()
+        rule.onNodeWithText("Black").performScrollTo().performClick()
         rule.waitUntil(5_000) {
             store.local["reader_display"].orEmpty().contains("\"theme\":\"black\"")
         }
         assertEquals(true, store.local["reader_display"].orEmpty().contains("\"theme\":\"black\""))
 
+        rule.onNodeWithText("‹ Settings").performClick()
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Backup and restore").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithText("‹ Library").performClick()
         rule.waitUntil(5_000) { back }
+    }
+
+    @Test
+    fun `settings is a menu whose rows open their pages`() {
+        rule.setContent {
+            AppTheme {
+                SettingsScreen(store = store(), onBack = {})
+            }
+        }
+        listOf("App", "Reading display", "Backup and restore", "About Baca").forEach {
+            rule.onNodeWithText(it).assertExists()
+        }
+        // the pages' own settings are not on the menu
+        assertTrue(rule.onAllNodesWithText("FONT SIZE").fetchSemanticsNodes().isEmpty())
+
+        rule.onNodeWithText("About Baca").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("VERSION").assertExists()
+        rule.onNodeWithText("Baca $APP_VERSION").assertExists()
+        rule.onNodeWithText("‹ Settings").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("Reading display").assertExists()
+    }
+
+    @Test
+    fun `settings offers backup and restore`() {
+        var created = 0
+        var restored = 0
+        var message by mutableStateOf<String?>(null)
+        rule.setContent {
+            AppTheme {
+                SettingsScreen(
+                    store = store(), onBack = {}, backupMessage = message,
+                    onCreateBackup = { created++ }, onRestoreBackup = { restored++ },
+                )
+            }
+        }
+        rule.onNodeWithText("Backup and restore").performClick()
+        rule.onNodeWithText("Create backup").performScrollTo().performClick()
+        rule.onNodeWithText("Restore…").performScrollTo().performClick()
+        rule.waitForIdle()
+        assertEquals(1, created)
+        assertEquals(1, restored)
+
+        message = "Backup saved."
+        rule.waitForIdle()
+        rule.onNodeWithText("Backup saved.").performScrollTo().assertExists()
     }
 }

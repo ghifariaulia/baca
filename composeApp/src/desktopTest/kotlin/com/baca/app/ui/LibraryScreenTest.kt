@@ -1,6 +1,7 @@
 package com.baca.app.ui
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -28,6 +29,20 @@ class LibraryScreenTest {
         lamport = 1L,
         deleted = false,
     )
+
+    @Test
+    fun `a finished book's cover carries a check, an unfinished one does not`() {
+        val books = listOf(
+            LibraryBook(row("h1", "Moby-Dick", "H. Melville"), 0.4f),
+            LibraryBook(row("h2", "Dracula", "B. Stoker"), 0.99f),
+            LibraryBook(row("h3", "Emma", "J. Austen"), 0.1f, finished = true),
+        )
+        rule.setContent {
+            AppTheme { LibraryScreen(books = books, onAdd = {}, onOpen = {}, onResume = {}, onDelete = {}) }
+        }
+        // read through (99%) and marked finished each get one; the 40% book none
+        assertEquals(2, rule.onAllNodesWithContentDescription("Finished").fetchSemanticsNodes().size)
+    }
 
     @Test
     fun rendersContinueCardGridAndFilters() {

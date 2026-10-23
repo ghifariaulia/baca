@@ -36,5 +36,5 @@ actual fun FullScreen(enabled: Boolean) {
 }
 
 @androidx.compose.runtime.Composable
-actual fun stableReaderInsets(): androidx.compose.foundation.layout.WindowInsets =
+actual fun stableReaderInsets(fullScreen: Boolean): androidx.compose.foundation.layout.WindowInsets =
     androidx.compose.foundation.layout.WindowInsets.safeDrawing

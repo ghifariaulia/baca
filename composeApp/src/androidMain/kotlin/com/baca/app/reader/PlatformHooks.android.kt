@@ -69,8 +69,11 @@ actual fun FullScreen(enabled: Boolean) {
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-actual fun stableReaderInsets(): androidx.compose.foundation.layout.WindowInsets {
+actual fun stableReaderInsets(fullScreen: Boolean): androidx.compose.foundation.layout.WindowInsets {
     val insets = androidx.compose.foundation.layout.WindowInsets
     // not the keyboard: the note sheet moves above it, the page behind stays as it is
+    // As LibreraX does: in full screen the bars come up over the page instead of making room, so the page
+    // keeps clear only of the camera's cut-out and the top and bottom margins are the whole gap.
+    if (fullScreen) return insets.displayCutout
     return insets.systemBarsIgnoringVisibility.union(insets.displayCutout)
 }

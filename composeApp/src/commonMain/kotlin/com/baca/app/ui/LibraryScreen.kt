@@ -3,6 +3,7 @@ package com.baca.app.ui
 import com.baca.shared.domain.isFinished
 import androidx.compose.foundation.Canvas
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -218,6 +219,22 @@ private fun AddButton(onAdd: () -> Unit, label: String? = null) {
     }
 }
 
+/** A check on a cover: the book is finished. */
+@Composable
+private fun FinishedBadge(modifier: Modifier = Modifier) {
+    Box(
+        modifier.size(24.dp).clip(androidx.compose.foundation.shape.CircleShape).background(MaterialTheme.colorScheme.primary),
+        contentAlignment = Alignment.Center,
+    ) {
+        androidx.compose.material3.Icon(
+            imageVector = Icons.Filled.Check,
+            contentDescription = "Finished",
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
 @Composable
 private fun BookCell(
     lib: LibraryBook,
@@ -231,7 +248,10 @@ private fun BookCell(
             onLongClick = { menuOpenFor(lib.row) },
         ),
     ) {
-        Box { BookCover(lib.row, width = 104.dp) }
+        Box {
+            BookCover(lib.row, width = 104.dp)
+            if (isFinished(lib.finished, lib.progress)) FinishedBadge(Modifier.align(Alignment.TopEnd).padding(6.dp))
+        }
         Spacer(Modifier.height(6.dp))
         Text(lib.row.title, fontSize = 12.sp, maxLines = 1, textAlign = TextAlign.Left)
         Spacer(Modifier.height(4.dp))
@@ -265,8 +285,8 @@ private fun PhoneLibrary(
             Text("Your library is empty", style = Type.cardTitle, fontSize = 20.sp)
             Spacer(Modifier.height(8.dp))
             Text(
-                "Add books from this device. Once sync is set up, your books, " +
-                    "reading position and notes follow you across devices.",
+                "Add books from this device. To move your library, positions and notes " +
+                    "to another device, create a backup in Settings.",
                 style = Type.body,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -292,7 +312,7 @@ private fun PhoneLibrary(
             }
             Spacer(Modifier.height(16.dp))
             Text(
-                "Supports EPUB, FB2, TXT",
+                "Supports EPUB, FB2, HTML, Markdown, DOCX, RTF, TXT and CBZ",
                 style = Type.caption,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

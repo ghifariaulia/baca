@@ -66,6 +66,23 @@ internal fun fb2Epub(fileName: String, xml: String, options: ParseOptions = Pars
         binaries = binaries,
         options = options,
         pageRtl = options.rtl == true,
+        meta = fb2Meta(root.find("description")),
+    )
+}
+
+/** The description block's title-info and publish-info as [BookMeta]. */
+private fun fb2Meta(description: XNode?): BookMeta {
+    val title = description?.find("title-info")
+    val published = description?.find("publish-info")
+    fun text(node: XNode?, name: String) = node?.find(name)?.text()?.normalized().orEmpty()
+    return BookMeta(
+        publisher = text(published, "publisher"),
+        published = text(title, "date").ifEmpty { text(published, "year") },
+        description = title?.find("annotation")?.let { annotation ->
+            annotation.children().map { it.text().normalized() }.filter { it.isNotEmpty() }.joinToString("\n\n")
+        }.orEmpty(),
+        subjects = title?.children()?.filter { it.name == "genre" }?.map { it.text().normalized() }?.filter { it.isNotEmpty() }.orEmpty(),
+        series = title?.children()?.firstOrNull { it.name == "sequence" }?.attrs?.get("name").orEmpty(),
     )
 }
 

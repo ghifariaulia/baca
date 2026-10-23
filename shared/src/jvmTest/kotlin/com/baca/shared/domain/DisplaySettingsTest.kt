@@ -37,6 +37,28 @@ class DisplaySettingsTest {
     }
 
     @Test
+    fun `top and bottom margins follow the side margins until chosen, each on its own`() {
+        val d = DisplaySettings(paddingPercent = 9)
+        assertEquals(9 to 9, d.topMarginPercent to d.bottomMarginPercent)
+        // the first step starts from what was in force
+        val lowerTop = d.stepTop(-1)
+        assertEquals(8 to 9, lowerTop.topMarginPercent to lowerTop.bottomMarginPercent)
+        val raisedBottom = lowerTop.stepBottom(2)
+        assertEquals(8 to 11, raisedBottom.topMarginPercent to raisedBottom.bottomMarginPercent)
+        assertEquals(9, raisedBottom.paddingPercent)
+        // once chosen they stay put when the side margins change
+        assertEquals(8 to 11, raisedBottom.stepPadding(1).let { it.topMarginPercent to it.bottomMarginPercent })
+        assertEquals(0, DisplaySettings(topPercent = 0).stepTop(-1).topMarginPercent)
+        assertEquals(25, DisplaySettings(bottomPercent = 25).stepBottom(1).bottomMarginPercent)
+    }
+
+    @Test
+    fun `settings saved before separate margins existed load following the side margins`() {
+        val old = decodeDisplay("""{"fontSizePercent":130,"paddingPercent":9}""")
+        assertEquals(9 to 9, old.topMarginPercent to old.bottomMarginPercent)
+    }
+
+    @Test
     fun `turning full screen off is kept`() {
         assertFalse(decodeDisplay(DisplaySettings(fullScreen = false).encode()).fullScreen)
     }

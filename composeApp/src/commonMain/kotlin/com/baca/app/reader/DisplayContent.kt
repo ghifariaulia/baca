@@ -43,8 +43,8 @@ import com.baca.shared.parser.TextReplacement
  * phone sheet and the desktop popover.
  */
 @Composable
-internal fun DisplayContent(display: DisplaySettings, onChange: (DisplaySettings) -> Unit) {
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+internal fun DisplayContent(display: DisplaySettings, scrollable: Boolean = true, onChange: (DisplaySettings) -> Unit) {
+    Column(if (scrollable) Modifier.fillMaxWidth().verticalScroll(rememberScrollState()) else Modifier.fillMaxWidth()) {
         SheetSection("FONT SIZE") {
             Stepper("${display.fontSizePercent}%") { onChange(display.stepFontSize(it)) }
         }
@@ -60,10 +60,10 @@ internal fun DisplayContent(display: DisplaySettings, onChange: (DisplaySettings
             }
         }
         SheetSection("READING THEME") {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                // in LibreraX's order
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                // in LibreraX's order, with Ink (Paper's page, black text) beside Paper
                 listOf(
-                    "white" to "White", "paper" to "Paper", "grey" to "Grey",
+                    "white" to "White", "paper" to "Paper", "ink" to "Ink", "grey" to "Grey",
                     "dim" to "Dim", "dusk" to "Dusk", "black" to "Black",
                 ).forEach { (key, label) ->
                     val swatch = ReaderThemes.forTheme(key).background
@@ -91,8 +91,14 @@ internal fun DisplayContent(display: DisplaySettings, onChange: (DisplaySettings
         SheetSection("LINE SPACING") {
             Stepper("${display.lineSpacingTenths / 10}.${display.lineSpacingTenths % 10}") { onChange(display.stepLineSpacing(it)) }
         }
-        SheetSection("MARGINS") {
+        SheetSection("SIDE MARGINS") {
             Stepper("${display.paddingPercent}%") { onChange(display.stepPadding(it)) }
+        }
+        SheetSection("TOP MARGIN") {
+            Stepper("${display.topMarginPercent}%") { onChange(display.stepTop(it)) }
+        }
+        SheetSection("BOTTOM MARGIN") {
+            Stepper("${display.bottomMarginPercent}%") { onChange(display.stepBottom(it)) }
         }
         SheetSection("DIRECTION") {
             SegmentedRow(
@@ -128,7 +134,7 @@ internal fun DisplayContent(display: DisplaySettings, onChange: (DisplaySettings
         }
         Advanced(display, onChange)
         Text(
-            "Display settings stay on this device and are not synced.",
+            "Display settings stay on this device; a backup carries them to another.",
             style = Type.caption,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

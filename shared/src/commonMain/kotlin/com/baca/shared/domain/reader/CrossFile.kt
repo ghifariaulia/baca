@@ -1,9 +1,9 @@
 package com.baca.shared.domain.reader
 
 import com.baca.shared.parser.Chapter
-import com.baca.shared.sync.AnnotationEntry
-import com.baca.shared.sync.PointDto
-import com.baca.shared.sync.ReflowAnchorDto
+import com.baca.shared.domain.AnnotationEntry
+import com.baca.shared.domain.PointDto
+import com.baca.shared.domain.ReflowAnchorDto
 
 /**
  * Positions and annotations made in another file of the same edition (linked

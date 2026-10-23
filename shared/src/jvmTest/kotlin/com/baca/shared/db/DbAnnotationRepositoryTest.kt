@@ -1,7 +1,7 @@
 package com.baca.shared.db
 
-import com.baca.shared.sync.AnnotationEntry
-import com.baca.shared.sync.FixedAnchorDto
+import com.baca.shared.domain.AnnotationEntry
+import com.baca.shared.domain.FixedAnchorDto
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

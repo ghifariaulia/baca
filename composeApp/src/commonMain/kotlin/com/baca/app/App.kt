@@ -37,31 +37,30 @@ import com.baca.app.reader.rememberBookImages
 import com.baca.app.reader.rememberBookPicker
 import com.baca.app.reader.rememberBookStoreDir
 import com.baca.app.reader.rememberFolderPicker
-import com.baca.app.reader.rememberSyncFolderPicker
+import com.baca.app.reader.rememberFolderChooser
 import com.baca.app.reader.LibraryFolder
 import com.baca.app.reader.folderLabel
 import com.baca.app.reader.rememberLibraryFolder
-import com.baca.app.reader.rememberSyncTransport
 import com.baca.app.reader.rememberBackupOpener
 import com.baca.app.reader.SystemBarsAppearance
 import com.baca.app.reader.PlatformBackHandler
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.windowInsetsPadding
 import com.baca.app.reader.rememberBackupSaver
 import com.baca.shared.backup.LibraryBackup
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import com.baca.app.reader.AnchorJump
-import com.baca.app.sync.SyncCoordinator
-import com.baca.app.sync.SyncTriggerStore
 import com.baca.app.ui.AppTheme
 import com.baca.app.ui.ReaderThemes
 import com.baca.app.ui.isDarkScheme
 import com.baca.shared.domain.isFinished
 import com.baca.app.ui.SettingsScreen
 import com.baca.app.ui.BookDetailScreen
-import com.baca.app.ui.DeviceRow
+import com.baca.app.ui.BookDetails
 import com.baca.app.ui.ImportItem
 import com.baca.app.ui.ImportProgressSheet
 import com.baca.app.ui.ImportStatus
@@ -74,9 +73,6 @@ import com.baca.app.ui.BookmarksScreen
 import com.baca.app.ui.NavShell
 import com.baca.app.ui.AppThemeChoice
 import com.baca.app.ui.NavItem
-import com.baca.app.ui.MergeBanner
-import com.baca.app.ui.SyncScreen
-import com.baca.app.ui.SyncScreenData
 import com.baca.shared.db.BookRow
 import com.baca.shared.db.DbAnnotationRepository
 import com.baca.shared.db.DbBookRepository
@@ -87,11 +83,10 @@ import com.baca.shared.domain.reader.relinkEntry
 import androidx.compose.foundation.isSystemInDarkTheme
 import com.baca.shared.domain.FixedLocator
 import com.baca.shared.domain.Locator
+import com.baca.shared.parser.BookInfo
 import com.baca.shared.parser.CbzBook
 import com.baca.shared.parser.ParseOptions
 import com.baca.shared.parser.ParsedEpub
-import com.baca.shared.sync.SyncBoundary
-import com.baca.shared.sync.SyncJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.delay
@@ -114,7 +109,6 @@ private sealed class Screen {
     data object Library : Screen()
     data object Notes : Screen()
     data object Bookmarks : Screen()
-    data object Sync : Screen()
     data object Settings : Screen()
     data class Detail(val row: BookRow) : Screen()
     data class Reader(val book: OpenBook, val jump: AnchorJump? = null, val page: Int? = null) : Screen()
@@ -148,83 +142,6 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
         // big books parse off the UI thread; show what's opening meanwhile
         var openingTitle by remember { mutableStateOf<String?>(null) }
 
-        // --- sync state (TECH 11) ---
-        var syncFolderPath by remember { mutableStateOf(store.getLocal(KEY_SYNC_FOLDER)) }
-        val transport = rememberSyncTransport(syncFolderPath)
-        val coordinator = remember(transport, db) {
-            SyncCoordinator(db, store.deviceId, transport, defaultNow())
-        }
-        var syncBusy by remember { mutableStateOf(false) }
-        var syncError by remember { mutableStateOf<String?>(null) }
-        var lastSyncAt by remember { mutableStateOf(store.getLocal(KEY_LAST_SYNC)?.toLongOrNull()) }
-        var pendingUndo by remember { mutableStateOf<SyncBoundary.PositionOverwrite?>(null) }
-        var deviceRows by remember { mutableStateOf<List<DeviceRow>>(emptyList()) }
-        var dirtySinceSync by remember { mutableStateOf(false) }
-
-        val readerStore = remember(store) {
-            SyncTriggerStore(store) { dirtySinceSync = true }
-        }
-
-        fun refreshDevices() {
-            val t = transport ?: return
-            scope.launch(Dispatchers.IO) {
-                val rows = mutableListOf<DeviceRow>()
-                t.list()
-                    .filter { it.startsWith("devices/") && it.endsWith("/meta.json") }
-                    .forEach { path ->
-                        val bytes = t.pull(path) ?: return@forEach
-                        val text = bytes.decodeToString()
-                        val meta = runCatching { SyncJson.decode<com.baca.shared.sync.DeviceMeta>(text) }.getOrNull()
-                            ?: return@forEach
-                        rows.add(
-                            DeviceRow(
-                                id = meta.deviceId,
-                                isThisDevice = meta.deviceId == store.deviceId,
-                                lastSeenAt = meta.updatedAt,
-                            ),
-                        )
-                    }
-                deviceRows = rows
-            }
-        }
-
-        fun runSync() {
-            if (syncFolderPath == null || syncBusy) return
-            scope.launch {
-                syncBusy = true
-                try {
-                    val report = withContext(Dispatchers.IO) { coordinator.sync() }
-                    if (report != null) {
-                        report.positionOverwrites.firstOrNull()?.let { pendingUndo = it }
-                        val now = defaultNow()()
-                        store.putLocal(KEY_LAST_SYNC, now.toString())
-                        lastSyncAt = now
-                        refreshDevices()
-                        libraryTick++
-                    }
-                    syncError = null
-                } catch (e: Exception) {
-                    syncError = e.message ?: "sync failed"
-                } finally {
-                    syncBusy = false
-                }
-            }
-        }
-
-        // start sync when a folder exists; debounce local writes (TECH 6.5)
-        LaunchedEffect(syncFolderPath) {
-            if (syncFolderPath != null) runSync()
-        }
-        LaunchedEffect(dirtySinceSync, syncFolderPath) {
-            if (dirtySinceSync && syncFolderPath != null) {
-                delay(2000)
-                if (dirtySinceSync) {
-                    dirtySinceSync = false
-                    runSync()
-                }
-            }
-        }
-
         // --- library folder (TECH 5.4): books read in place ---
         var libraryFolderPath by remember { mutableStateOf(store.getLocal(KEY_LIBRARY_FOLDER)) }
         val libraryFolder = rememberLibraryFolder(libraryFolderPath)
@@ -241,7 +158,6 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                     folderBooks = withContext(Dispatchers.IO) { importer.scanFolder(folder) }
                     scanError = null
                     libraryTick++
-                    dirtySinceSync = true
                 } catch (e: Exception) {
                     // folder unplugged or access revoked: keep showing what we know
                     scanError = e.message ?: "Can't read the library folder"
@@ -294,13 +210,12 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                 }
                 importing = false
                 libraryTick++
-                if (syncFolderPath != null) runSync()
             }
         }
 
         val pick = rememberBookPicker { paths -> runImport(paths) }
         val pickFolder = rememberFolderPicker { paths -> if (paths.isNotEmpty()) runImport(paths) }
-        // --- backup / restore (Sync screen) ---
+        // --- backup / restore (Settings) ---
         val backups = remember(db) { LibraryBackup(db) }
         var backupBusy by remember { mutableStateOf(false) }
         var backupMessage by remember { mutableStateOf<String?>(null) }
@@ -326,21 +241,13 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
         }
         val openBackup = rememberBackupOpener { path -> pendingRestore = path }
 
-        val pickLibraryFolder = rememberSyncFolderPicker(title = "Choose library folder") { path ->
+        val pickLibraryFolder = rememberFolderChooser(title = "Choose library folder") { path ->
             if (path != null) {
                 libraryFolderPath = path
                 store.putLocal(KEY_LIBRARY_FOLDER, path)
                 // the new folder is scanned through the LaunchedEffect above
             }
         }
-        val pickSyncFolder = rememberSyncFolderPicker { path ->
-            if (path != null) {
-                syncFolderPath = path
-                store.putLocal(KEY_SYNC_FOLDER, path)
-                // picker change re-syncs through the LaunchedEffect above
-            }
-        }
-
         // Open the book passed on the command line; import first so library
         // state and saved positions line up with later sessions.
         LaunchedEffect(initialBookPath) {
@@ -366,29 +273,6 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
             if (healed) libraryTick++
         }
 
-        val banner = pendingUndo?.let { overwrite ->
-            booksRepo.byHash(overwrite.bookHash)?.let { row ->
-                MergeBanner(
-                    bookTitle = row.title,
-                    fromDevice = overwrite.winningDevice,
-                    percent = ((booksRepo.progressFor(overwrite.bookHash) ?: 0f) * 100).toInt(),
-                )
-            }
-        }
-
-        fun undoPositionChange() {
-            val overwrite = pendingUndo ?: return
-            pendingUndo = null
-            scope.launch(Dispatchers.IO) {
-                val prevText = overwrite.previousLocator
-                val isReflow = prevText.contains("\"href\"")
-                val locRef: Locator? = if (isReflow) runCatching { SyncJson.decode<Locator>(prevText) }.getOrNull() else null
-                val locFixed: FixedLocator? = if (!isReflow) runCatching { SyncJson.decode<FixedLocator>(prevText) }.getOrNull() else null
-                if (locRef != null) readerStore.savePosition(overwrite.bookHash, locRef)
-                if (locFixed != null) readerStore.saveFixedPosition(overwrite.bookHash, locFixed)
-            }
-        }
-
         fun openAsync(row: BookRow) {
             openingTitle = row.title
             scope.launch(Dispatchers.IO) {
@@ -405,7 +289,6 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                 NavItem.LIBRARY -> Screen.Library
                 NavItem.NOTES -> Screen.Notes
                 NavItem.BOOKMARKS -> Screen.Bookmarks
-                NavItem.SYNC -> Screen.Sync
                 NavItem.SETTINGS -> Screen.Settings
             }
         }
@@ -430,7 +313,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
          */
         fun annotationsForReader(
             book: OpenBook.Reflow,
-            only: List<com.baca.shared.sync.AnnotationEntry>? = null,
+            only: List<com.baca.shared.domain.AnnotationEntry>? = null,
         ): List<DbAnnotationRepository.AnnotWithDevice> {
             val ids = only?.map { it.id }?.toSet()
             return booksRepo.linkedHashes(book.bookHash).flatMap { hash ->
@@ -440,7 +323,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
             }
         }
 
-        fun openAnnotation(row: BookRow, picked: com.baca.shared.sync.AnnotationEntry) {
+        fun openAnnotation(row: BookRow, picked: com.baca.shared.domain.AnnotationEntry) {
             val page = picked.fixedAnchor?.pageIndex
             if (picked.reflowAnchor == null && page == null) return
             openBookOf(row, libraryFolder, readingOptions())?.let { book ->
@@ -468,10 +351,13 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
             screenState = Screen.Library
         }
         PlatformBackHandler(enabled = addSheetOpen && screenState == Screen.Library) { addSheetOpen = false }
+        // the screens with the bottom nav let it fill the navigation bar's area, so it doesn't float above it
+        val navBelow = screenState is Screen.Library || screenState is Screen.Notes || screenState is Screen.Bookmarks || screenState is Screen.Settings
+        val safeArea = if (navBelow) WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top) else WindowInsets.safeDrawing
         Surface(
             Modifier.fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .then(if (readingReflow) Modifier else Modifier.windowInsetsPadding(WindowInsets.safeDrawing)),
+                .then(if (readingReflow) Modifier else Modifier.windowInsetsPadding(safeArea)),
             color = MaterialTheme.colorScheme.background,
         ) {
             when (val current = screenState) {
@@ -486,7 +372,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                                     book = book.parsed,
                                     bookPath = book.path,
                                     bookHash = book.bookHash,
-                                    store = readerStore,
+                                    store = store,
                                     onBack = {
                                         screenState = booksRepo.byHash(book.bookHash)
                                             ?.let { Screen.Detail(it) } ?: Screen.Library
@@ -499,14 +385,12 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                                         scope.launch(Dispatchers.IO) {
                                             annotRepo.upsert(entry, book.bookHash)
                                             annotTick++
-                                            dirtySinceSync = true
                                         }
                                     },
                                     onAnnotationDelete = { id ->
                                         scope.launch(Dispatchers.IO) {
                                             annotRepo.tombstone(id)
                                             annotTick++
-                                            dirtySinceSync = true
                                         }
                                     },
                                     jumpToAnchor = current.jump,
@@ -529,7 +413,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                                 book = book.cbz,
                                 bookPath = book.path,
                                 bookHash = book.bookHash,
-                                store = readerStore,
+                                store = store,
                                 onBack = {
                                     screenState = booksRepo.byHash(book.bookHash)
                                         ?.let { Screen.Detail(it) } ?: Screen.Library
@@ -540,14 +424,12 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                                     scope.launch(Dispatchers.IO) {
                                         annotRepo.upsert(entry, book.bookHash)
                                         annotTick++
-                                        dirtySinceSync = true
                                     }
                                 },
                                 onAnnotationDelete = { id ->
                                     scope.launch(Dispatchers.IO) {
                                         annotRepo.tombstone(id)
                                         annotTick++
-                                        dirtySinceSync = true
                                     }
                                 },
                                 startPage = current.page,
@@ -569,6 +451,35 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                             else fs.metadataOrNull(path.toPath())?.size ?: 0L
                         }
                     }
+                    // what the book says about itself: read once, for books imported before it was kept
+                    val info by produceState<BookInfo?>(booksRepo.info(current.row.bookHash), current.row.bookHash, libraryFolder) {
+                        if (value != null) return@produceState
+                        val path = current.row.path
+                        value = withContext(Dispatchers.IO) {
+                            val staged = path.startsWith("content://")
+                            val readable = if (staged) libraryFolder?.stage(path) else path
+                            readable?.let {
+                                try { importer.ensureInfo(current.row, it) } finally { if (staged) libraryFolder?.unstage(it) }
+                            }
+                        }
+                    }
+                    val details = remember(current.row, libraryTick, annotTick, libraryFolder, info) {
+                        val marked = annotRepo.forBookDetailed(current.row.bookHash).map { it.entry }.filter { !it.deleted }
+                        val path = current.row.path
+                        val inLibraryFolder = libraryFolderPath != null && (path.startsWith("content://") || !path.startsWith(storeDir))
+                        BookDetails(
+                            // inside Baca a book is stored under its hash, which says nothing to the reader
+                            fileName = if (!inLibraryFolder) "" else path.substringAfterLast('/').let { name ->
+                                // a document URI's last part is percent-encoded
+                                if (path.startsWith("content://")) java.net.URLDecoder.decode(name, "UTF-8").substringAfterLast('/') else name
+                            },
+                            storedIn = if (inLibraryFolder) "Library folder" else "Baca storage",
+                            highlights = marked.count { it.kind == "highlight" || it.kind == "underline" },
+                            notes = marked.count { it.kind == "note" },
+                            bookmarks = marked.count { it.kind == "bookmark" },
+                            info = info,
+                        )
+                    }
                     BookDetailScreen(
                         row = current.row,
                         progress = progress,
@@ -579,16 +490,15 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                         onContinue = { openAsync(current.row) },
                         onRemove = {
                             booksRepo.tombstone(current.row.bookHash)
-                            dirtySinceSync = true
                             screenState = Screen.Library
                             libraryTick++
                         },
+                        details = details,
                         finished = finished,
                         onToggleFinished = {
                             booksRepo.setFinished(current.row.bookHash, !finished)
                             // unread means from the start; a read-through book would count as finished again
                             if (finished) store.resetToStart(current.row.bookHash, fixedLayout = current.row.format == "cbz")
-                            dirtySinceSync = true
                             libraryTick++
                         },
                     )
@@ -598,26 +508,6 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                 }
                 Screen.Bookmarks -> NavShell(NavItem.BOOKMARKS, navTo) {
                     BookmarksScreen(groups = annotationGroups(), onOpenAnnotation = ::openAnnotation)
-                }
-                Screen.Sync -> NavShell(NavItem.SYNC, navTo) {
-                    SyncScreen(
-                        data = SyncScreenData(
-                            folderPath = syncFolderPath,
-                            busy = syncBusy,
-                            error = syncError,
-                            lastSyncAt = lastSyncAt,
-                            banner = banner,
-                            devices = deviceRows,
-                            backupBusy = backupBusy,
-                            backupMessage = backupMessage,
-                        ),
-                        onBack = { screenState = Screen.Library },
-                        onChooseFolder = pickSyncFolder,
-                        onSyncNow = { dirtySinceSync = false; runSync() },
-                        onUndo = { undoPositionChange() },
-                        onCreateBackup = saveBackup,
-                        onRestoreBackup = openBackup,
-                    )
                 }
                 Screen.Settings -> NavShell(NavItem.SETTINGS, navTo) {
                     SettingsScreen(
@@ -632,6 +522,10 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                         scanError = scanError,
                         onChooseLibraryFolder = pickLibraryFolder,
                         onRescan = { scanLibraryFolder() },
+                        backupBusy = backupBusy,
+                        backupMessage = backupMessage,
+                        onCreateBackup = saveBackup,
+                        onRestoreBackup = openBackup,
                         onBack = { screenState = Screen.Library },
                     )
                 }
@@ -664,7 +558,6 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                             onNav = navTo,
                             onDelete = { row ->
                                 booksRepo.tombstone(row.bookHash)
-                                dirtySinceSync = true
                                 libraryTick++
                             },
                         )
@@ -717,7 +610,6 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                                     libraryTick++
                                     annotTick++
                                     appTheme = AppThemeChoice.of(store.getLocal(AppThemeChoice.STORE_KEY))
-                                    dirtySinceSync = true
                                 },
                             )
                         }) { Text("Replace") }
@@ -758,9 +650,7 @@ private fun openBookOf(row: BookRow, folder: LibraryFolder?, options: ParseOptio
     }
 }
 
-private const val KEY_SYNC_FOLDER = "sync_folder"
 private const val KEY_LIBRARY_FOLDER = "library_folder"
-private const val KEY_LAST_SYNC = "last_sync_at"
 
 /** Wall clock, display/debug use only (docs/TECH.md 6.1). */
 expect fun defaultNow(): () -> Long

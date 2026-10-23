@@ -30,7 +30,7 @@ import com.baca.app.reader.AnnotationCards
 import com.baca.app.reader.KIND_BOOKMARK
 import com.baca.shared.db.BookRow
 import com.baca.shared.db.DbAnnotationRepository
-import com.baca.shared.sync.AnnotationEntry
+import com.baca.shared.domain.AnnotationEntry
 
 /** One book's annotations for the Notes screen (design file 'Notes'). */
 data class NotesGroup(val row: BookRow, val entries: List<DbAnnotationRepository.AnnotWithDevice>)

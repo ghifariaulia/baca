@@ -3,7 +3,7 @@ package com.baca.shared.db
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.uuid.Uuid
-import com.baca.shared.sync.AnnotationEntry
+import com.baca.shared.domain.AnnotationEntry
 
 /** device_id of annotations written on this device (shown as their label). */
 internal const val LOCAL_ANNOTATION_DEVICE = "local"

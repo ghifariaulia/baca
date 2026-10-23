@@ -68,6 +68,9 @@ import androidx.compose.animation.core.FastOutLinearInEasing
 
 import androidx.compose.animation.core.Animatable
 
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 
 
@@ -218,8 +221,8 @@ import com.baca.shared.parser.BlockKind
 import com.baca.shared.parser.Chapter
 import com.baca.shared.parser.ParseOptions
 import com.baca.shared.parser.ParsedEpub
-import com.baca.shared.sync.PointDto
-import com.baca.shared.sync.ReflowAnchorDto
+import com.baca.shared.domain.PointDto
+import com.baca.shared.domain.ReflowAnchorDto
 import com.baca.shared.render.PageBox
 import com.baca.shared.render.PageLine
 import com.baca.shared.render.ReflowLayout
@@ -242,11 +245,11 @@ fun ReaderScreen(
     store: PositionStore,
     onBack: () -> Unit,
     openContents: Boolean = false,
-    /** This book's annotations (highlights + notes), synced via M4. */
-    annotations: List<com.baca.shared.sync.AnnotationEntry> = emptyList(),
+    /** This book's annotations (highlights + notes). */
+    annotations: List<com.baca.shared.domain.AnnotationEntry> = emptyList(),
     /** annotation id → originating device label (notes meta line). */
     deviceLabels: Map<String, String> = emptyMap(),
-    onAnnotationUpsert: (com.baca.shared.sync.AnnotationEntry) -> Unit = {},
+    onAnnotationUpsert: (com.baca.shared.domain.AnnotationEntry) -> Unit = {},
     onAnnotationDelete: (id: String) -> Unit = {},
     /** Open the reader straight on an annotation anchor (Notes list). */
     jumpToAnchor: AnchorJump? = null,
@@ -522,7 +525,7 @@ fun ReaderScreen(
         // The page keeps the room they take when shown, so hiding them never re-paginates.
         FullScreen(enabled = display.fullScreen && !barsVisible)
         BoxWithConstraints(
-            Modifier.fillMaxSize().windowInsetsPadding(stableReaderInsets()),
+            Modifier.fillMaxSize().windowInsetsPadding(stableReaderInsets(display.fullScreen)),
         ) {
         val isDesktop = maxWidth >= 900.dp
         // LibreraX's side padding: a share of the page's width (on a wide window, the column's)
@@ -530,10 +533,11 @@ fun ReaderScreen(
         // margins and column are shares of that, a hair wider than the screen
         val pageWidth = pageWidthOf(maxWidth, readerColumnCapped)
         val margin = pageWidth * (display.paddingPercent / 100f)
-        // and above and below the text, 4 CSS px a percent; below, at least the footer's strip,
+        // and above and below the text, 4 CSS px a percent each (of the side margins unless chosen); below, at least the footer's strip,
         // the system's bar under it counting towards the band as LibreraX's page counts it
-        val band = PADDING_BAND * display.paddingPercent
-        val barBelow = with(density) { stableReaderInsets().getBottom(density).toDp() }
+        val topBand = PADDING_BAND * display.topMarginPercent
+        val bottomBand = PADDING_BAND * display.bottomMarginPercent
+        val barBelow = with(density) { stableReaderInsets(display.fullScreen).getBottom(density).toDp() }
         var panelOpen by remember { mutableStateOf(false) }
         // Back closes what's open on top of the page first, then leaves the book
         PlatformBackHandler {
@@ -558,6 +562,8 @@ fun ReaderScreen(
                 ) {
                 Row(
                     Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+                        // the status bar shows with this bar; in full screen the page's padding left it out
+                        .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.statusBars.only(androidx.compose.foundation.layout.WindowInsetsSides.Top))
                         .padding(horizontal = 4.dp).height(56.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
@@ -666,7 +672,7 @@ fun ReaderScreen(
                             },
                         )
                         // the footer's strip, in the page colour; text stops above it
-                        .padding(bottom = maxOf(READER_FOOTER_HEIGHT, band - barBelow)),
+                        .padding(bottom = maxOf(READER_FOOTER_HEIGHT, bottomBand - barBelow)),
                 ) {
                     val physicalColumnPx = with(density) {
                         (pageWidth.toPx() - margin.toPx() * 2).roundToInt().coerceAtLeast(0)
@@ -682,7 +688,7 @@ fun ReaderScreen(
                     // LibreraX's page: a band above the text, then whole lines, with what is
                     // left under the last one split above and below
                     // to the fraction of a px, as the WebView's page is laid out in css px
-                    val bandPx = with(density) { band.toPx() }
+                    val bandPx = with(density) { topBand.toPx() }
                     val textHeightPx = (constraints.maxHeight - bandPx).coerceAtLeast(0f)
                     val runningEvenPx = reflowSettingsOf(display, density).evenLinesPx(textHeightPx)
                     // the chapter shown: its own lines, from its first paragraph
@@ -691,10 +697,11 @@ fun ReaderScreen(
                         columnWidthPx = columnWidthPx,
                         pageHeightPx = if (vertical) physicalColumnPx else (textHeightPx - runningEvenPx * 2).toInt(),
                         textHeightPx = textHeightPx,
-                        marginPx = bandPx,
+                        // pictures are held short of the band twice: the two bands' mean
+                        marginPx = (bandPx + with(density) { bottomBand.toPx() }) / 2f,
                         windowWidthPx = constraints.maxWidth,
                         // the footer's strip below the page is the window's too
-                        windowHeightPx = constraints.maxHeight + with(density) { maxOf(READER_FOOTER_HEIGHT, band - barBelow).roundToPx() },
+                        windowHeightPx = constraints.maxHeight + with(density) { maxOf(READER_FOOTER_HEIGHT, bottomBand - barBelow).roundToPx() },
                     )
                     LaunchedEffect(inner) { viewport = inner }
 
@@ -919,6 +926,8 @@ fun ReaderScreen(
                 ) {
                 Column(
                     Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+                        // in full screen the page runs under the system's bars: this bar clears the navigation bar itself
+                        .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.navigationBars)
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
                     SeekBar(
@@ -1169,7 +1178,7 @@ data class AnchorJump(val href: String, val blockIndex: Int, val charOffset: Int
 
 /** State for the note editor sheet; [existing] null = creating one for [anchor]. */
 private data class EditorState(
-    val existing: com.baca.shared.sync.AnnotationEntry? = null,
+    val existing: com.baca.shared.domain.AnnotationEntry? = null,
     val anchor: ReflowAnchorDto? = existing?.reflowAnchor,
     val quote: String = existing?.text.orEmpty(),
     val color: String = existing?.color ?: "yellow",
@@ -1181,7 +1190,7 @@ private data class EditorState(
 expect fun rememberCopyToClipboard(): (String) -> Unit
 
 private fun newHighlightEntry(anchor: ReflowAnchorDto, text: String, colorName: String) =
-    com.baca.shared.sync.AnnotationEntry(
+    com.baca.shared.domain.AnnotationEntry(
         id = kotlin.uuid.Uuid.random().toString(),
         kind = "highlight",
         reflowAnchor = anchor,
@@ -1191,13 +1200,13 @@ private fun newHighlightEntry(anchor: ReflowAnchorDto, text: String, colorName: 
         lamport = 0L,
     )
 
-private data class HighlightRange(val start: Int, val end: Int, val colorName: String, val entry: com.baca.shared.sync.AnnotationEntry)
+private data class HighlightRange(val start: Int, val end: Int, val colorName: String, val entry: com.baca.shared.domain.AnnotationEntry)
 
 internal const val KIND_BOOKMARK = "bookmark"
 
 /** Bookmark at a page's first position; start == end so it never paints a highlight. */
 private fun newBookmarkEntry(chapterHref: String, at: ReflowLayout.BlockPosition) =
-    com.baca.shared.sync.AnnotationEntry(
+    com.baca.shared.domain.AnnotationEntry(
         id = kotlin.uuid.Uuid.random().toString(),
         kind = KIND_BOOKMARK,
         reflowAnchor = ReflowAnchorDto(
@@ -1212,7 +1221,7 @@ private fun newBookmarkEntry(chapterHref: String, at: ReflowLayout.BlockPosition
     )
 
 private fun highlightRangesOf(
-    annotations: List<com.baca.shared.sync.AnnotationEntry>,
+    annotations: List<com.baca.shared.domain.AnnotationEntry>,
     chapterHref: String,
     blockIndex: Int,
     lineStart: Int,
@@ -1260,7 +1269,7 @@ private fun TappableText(
     inlineContent: Map<String, InlineTextContent>,
     ranges: List<HighlightRange>,
     lineStart: Int,
-    onTapAnnotation: (com.baca.shared.sync.AnnotationEntry) -> Unit,
+    onTapAnnotation: (com.baca.shared.domain.AnnotationEntry) -> Unit,
     /** this drawn line's layout and its top-left in the root (selection hit-testing) */
     onPlaced: (TextLayoutResult, Offset) -> Unit,
     /** a long press at this char offset into the line */
@@ -1427,7 +1436,7 @@ private fun NoteEditorSheet(
             }
         }
         Text(
-            "Notes sync to your other devices.",
+            "Notes stay on this device; a backup carries them to another.",
             style = Type.caption,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1449,12 +1458,12 @@ private fun NoteEditorSheet(
 /** Annotation cards for the contents-panel Notes tab and the Notes screen. */
 @Composable
 internal fun AnnotationCards(
-    entries: List<com.baca.shared.sync.AnnotationEntry>,
+    entries: List<com.baca.shared.domain.AnnotationEntry>,
     book: ParsedEpub?,
     ink: Color,
     deviceLabels: Map<String, String> = emptyMap(),
-    onTap: (com.baca.shared.sync.AnnotationEntry) -> Unit = {},
-    onEdit: (com.baca.shared.sync.AnnotationEntry) -> Unit = {},
+    onTap: (com.baca.shared.domain.AnnotationEntry) -> Unit = {},
+    onEdit: (com.baca.shared.domain.AnnotationEntry) -> Unit = {},
 ) {
     Column(Modifier.fillMaxWidth()) {
         entries.forEach { entry ->
@@ -1531,7 +1540,7 @@ internal fun AnnotationCards(
 @Composable
 private fun ContentsTabs(
     current: ContentsTab,
-    annotations: List<com.baca.shared.sync.AnnotationEntry>,
+    annotations: List<com.baca.shared.domain.AnnotationEntry>,
     onSelect: (ContentsTab) -> Unit,
 ) {
     val live = annotations.filter { !it.deleted }

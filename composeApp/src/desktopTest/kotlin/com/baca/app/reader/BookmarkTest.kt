@@ -19,7 +19,7 @@ import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.unit.dp
 import com.baca.shared.parser.ParsedEpub
 import com.baca.shared.parser.parseEpub
-import com.baca.shared.sync.AnnotationEntry
+import com.baca.shared.domain.AnnotationEntry
 import okio.FileSystem
 import androidx.compose.ui.semantics.getOrNull
 import org.junit.Rule
@@ -108,10 +108,10 @@ class BookmarkTest {
         annotations.add(
             AnnotationEntry(
                 id = "b1", kind = "bookmark",
-                reflowAnchor = com.baca.shared.sync.ReflowAnchorDto(
+                reflowAnchor = com.baca.shared.domain.ReflowAnchorDto(
                     book.chapters[0].href,
-                    com.baca.shared.sync.PointDto(0, 0),
-                    com.baca.shared.sync.PointDto(0, 0),
+                    com.baca.shared.domain.PointDto(0, 0),
+                    com.baca.shared.domain.PointDto(0, 0),
                     "",
                 ),
                 createdAt = 0, lamport = 1,

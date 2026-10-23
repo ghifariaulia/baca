@@ -34,6 +34,19 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.baca.shared.db.BookRow
+import com.baca.shared.parser.BookInfo
+
+/** What the detail screen lists beyond the book's row: where the file is and what the reader has marked in it. */
+data class BookDetails(
+    val fileName: String = "",
+    /** "Library folder" or "Baca storage" */
+    val storedIn: String = "",
+    val highlights: Int = 0,
+    val notes: Int = 0,
+    val bookmarks: Int = 0,
+    /** what the book says about itself and its length; null while unread */
+    val info: BookInfo? = null,
+)
 
 /**
  * Book detail (design file 'Book detail'): centered cover, title/author,
@@ -52,6 +65,7 @@ fun BookDetailScreen(
     onRemove: () -> Unit,
     finished: Boolean = false,
     onToggleFinished: () -> Unit = {},
+    details: BookDetails = BookDetails(),
 ) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -147,12 +161,53 @@ fun BookDetailScreen(
 
             // metadata list
             val line = MaterialTheme.colorScheme.outline
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surface)) {
-                metaRow("Format", row.format.uppercase(), line)
-                metaRow("Size", humanSize(sizeBytes), line)
-                metaRow("Added", relativeTime(addedAt), line)
-                if (lastReadAt != null) metaRow("Last read", relativeTime(lastReadAt), line)
+            MetaList(
+                buildList {
+                    val info = details.info
+                    val meta = info?.meta
+                    if (row.author.isNotBlank()) add("Author" to row.author)
+                    if (meta != null && meta.series.isNotEmpty()) add("Series" to meta.series)
+                    if (meta != null && meta.publisher.isNotEmpty()) add("Publisher" to meta.publisher)
+                    if (meta != null && meta.published.isNotEmpty()) add("Published" to meta.published)
+                    if (info != null && info.language.isNotEmpty()) add("Language" to info.language)
+                    if (meta != null && meta.subjects.isNotEmpty()) add("Subjects" to meta.subjects.joinToString(", "))
+                    if (info != null && info.identifier.isNotEmpty()) add("Identifier" to info.identifier)
+                    if (meta != null && meta.rights.isNotEmpty()) add("Rights" to meta.rights)
+                    add("Format" to row.format.uppercase())
+                    add("Size" to humanSize(sizeBytes))
+                    if (info != null && info.pages > 0) add((if (row.format == "cbz") "Pages" else "Length") to lengthOf(info, row.format))
+                    if (info != null && info.chapters > 0) add("Chapters" to info.chapters.toString())
+                    if (details.fileName.isNotEmpty()) add("File" to details.fileName)
+                    if (details.storedIn.isNotEmpty()) add("Stored in" to details.storedIn)
+                    add("Added" to relativeTime(addedAt))
+                    if (lastReadAt != null) add("Last read" to relativeTime(lastReadAt))
+                },
+                line,
+            )
+
+            details.info?.meta?.description?.takeIf { it.isNotEmpty() }?.let { about ->
+                Spacer(Modifier.height(16.dp))
+                Text("ABOUT THIS BOOK", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    about,
+                    style = Type.body,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surface).padding(16.dp),
+                )
             }
+
+            Spacer(Modifier.height(16.dp))
+            Text("MARKED IN THIS BOOK", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(8.dp))
+            MetaList(
+                listOf(
+                    "Highlights" to details.highlights.toString(),
+                    "Notes" to details.notes.toString(),
+                    "Bookmarks" to details.bookmarks.toString(),
+                ),
+                line,
+            )
 
             Spacer(Modifier.height(24.dp))
             Text(
@@ -173,17 +228,21 @@ fun BookDetailScreen(
     }
 }
 
+/** Label and value rows in a card, divided from each other but not closed by a line at the end. */
 @Composable
-private fun metaRow(label: String, value: String, line: Color) {
-    Column {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
-        ) {
-            Text(label, style = Type.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = Type.body, fontWeight = FontWeight.Medium)
+private fun MetaList(rows: List<Pair<String, String>>, line: Color) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surface)) {
+        rows.forEachIndexed { index, (label, value) ->
+            if (index > 0) HorizontalDivider(color = line)
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+            ) {
+                Text(label, style = Type.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(16.dp))
+                Text(value, style = Type.body, fontWeight = FontWeight.Medium, textAlign = TextAlign.End, modifier = Modifier.weight(1f, fill = false))
+            }
         }
-        HorizontalDivider(color = line)
     }
 }
 
@@ -197,6 +256,16 @@ internal fun relativeTime(at: Long, now: () -> Long = { System.currentTimeMillis
         else -> "${diffMinutes / 60 / 24} days ago"
     }
 }
+
+/** "440 pages · 61,200 words": the length the reader numbers, and the words counted. */
+internal fun lengthOf(info: BookInfo, format: String): String {
+    if (format == "cbz") return info.pages.toString()
+    val words = if (info.words > 0) " · ${groupThousands(info.words)} words" else ""
+    return "${groupThousands(info.pages)} pages$words"
+}
+
+/** 61200 as "61,200", locale-free like [humanSize]. */
+private fun groupThousands(n: Int): String = n.toString().reversed().chunked(3).joinToString(",").reversed()
 
 internal fun humanSize(bytes: Long): String = when {
     // locale-free decimal, some JVM locales render "1,1"

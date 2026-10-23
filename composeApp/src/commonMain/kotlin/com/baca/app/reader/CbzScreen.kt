@@ -57,8 +57,8 @@ import com.baca.app.ui.Type
 import com.baca.shared.domain.reader.CbzSession
 import com.baca.shared.domain.reader.PositionStore
 import com.baca.shared.parser.CbzBook
-import com.baca.shared.sync.AnnotationEntry
-import com.baca.shared.sync.FixedAnchorDto
+import com.baca.shared.domain.AnnotationEntry
+import com.baca.shared.domain.FixedAnchorDto
 import kotlinx.coroutines.launch
 
 /**

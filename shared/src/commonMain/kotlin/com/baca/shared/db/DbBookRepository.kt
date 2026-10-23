@@ -1,5 +1,8 @@
 package com.baca.shared.db
 
+import com.baca.shared.parser.BookInfo
+import com.baca.shared.parser.decodeBookInfo
+import com.baca.shared.parser.encode
 import com.baca.shared.domain.Book
 import com.baca.shared.domain.Locator
 import kotlinx.serialization.encodeToString
@@ -12,6 +15,9 @@ import kotlin.uuid.Uuid
  * so linking needs no schema migration; it travels in library.json.
  */
 internal const val WORK_KEY_PREFIX = "work:"
+
+/** settings_local key prefix for a book's [BookInfo]. */
+private const val INFO_KEY_PREFIX = "info:"
 
 /** settings_local key prefix for "the reader marked this book finished"; it travels in library.json. */
 internal const val FINISHED_PREFIX = "finished:"
@@ -141,6 +147,14 @@ class DbBookRepository(
     fun workKey(bookHash: String): String? =
         db.settings_localQueries.getLocal(WORK_KEY_PREFIX + bookHash).executeAsOneOrNull()?.value_
             ?.takeIf { it.isNotEmpty() }
+
+    /** What the details page lists about the book; null until import or the first look at the details reads it. */
+    fun info(bookHash: String): BookInfo? =
+        db.settings_localQueries.getLocal(INFO_KEY_PREFIX + bookHash).executeAsOneOrNull()?.value_?.let(::decodeBookInfo)
+
+    fun setInfo(bookHash: String, info: BookInfo) {
+        db.settings_localQueries.setLocal(INFO_KEY_PREFIX + bookHash, info.encode())
+    }
 
     /** False until import/backfill has looked for an identifier. */
     fun hasWorkKeyEntry(bookHash: String): Boolean =

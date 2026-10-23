@@ -32,6 +32,8 @@ data class ReaderColors(val background: Color, val ink: Color)
 // LibreraX's themes (its Book, Day, Grey, Dark, Dusk and Black), read from its app
 object ReaderThemes {
     val PAPER = ReaderColors(Color(0xFFF4ECD8), Color(0xFF5B4636))
+    /** Paper's page with black text, for more contrast than Paper's brown */
+    val INK = ReaderColors(Color(0xFFF4ECD8), Color(0xFF111111))
     val WHITE = ReaderColors(Color(0xFFFFFFFF), Color(0xFF111111))
     val GREY = ReaderColors(Color(0xFFE9E9E9), Color(0xFF262626))
     val DIM = ReaderColors(Color(0xFF303030), Color(0xFFDDDDDD))
@@ -40,6 +42,7 @@ object ReaderThemes {
 
     fun forTheme(name: String): ReaderColors = when (name) {
         "white" -> WHITE
+        "ink" -> INK
         "grey" -> GREY
         "dim" -> DIM
         "dusk" -> DUSK

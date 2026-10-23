@@ -1,8 +1,8 @@
 package com.baca.shared.domain.reader
 
 import com.baca.shared.parser.Block
-import com.baca.shared.sync.PointDto
-import com.baca.shared.sync.ReflowAnchorDto
+import com.baca.shared.domain.PointDto
+import com.baca.shared.domain.ReflowAnchorDto
 
 /** A place in a chapter's text: a block and a char offset into its text (TECH 5.2). */
 data class SelectionPoint(val blockIndex: Int, val charOffset: Int) : Comparable<SelectionPoint> {

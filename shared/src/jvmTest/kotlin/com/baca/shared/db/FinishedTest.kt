@@ -1,8 +1,5 @@
 package com.baca.shared.db
 
-import com.baca.shared.sync.MemoryTransport
-import com.baca.shared.sync.SyncBoundary
-import kotlinx.coroutines.runBlocking
 import com.baca.shared.domain.Locator
 import com.baca.shared.domain.isFinished
 import kotlin.test.Test
@@ -50,25 +47,5 @@ class FinishedTest {
 
         assertFalse(isFinished(books.isFinished("h1"), books.progressFor("h1")))
         assertEquals(Locator("", 0, 0, 0.0), store.loadPosition("h1"))
-    }
-
-    @Test
-    fun `finished travels to another device and the newer change wins`() = runBlocking {
-        val transport = MemoryTransport()
-        val (dbA, booksA) = device("dev-A")
-        val (dbB, booksB) = device("dev-B")
-        val a = SyncBoundary(dbA, "dev-A", now = { 1L })
-        val b = SyncBoundary(dbB, "dev-B", now = { 1L })
-
-        booksA.setFinished("h1", true)
-        a.exportAll(transport)
-        b.pullAndMerge(transport)
-        assertTrue(booksB.isFinished("h1"))
-
-        // B changes its mind later: the higher clock wins back on A
-        booksB.setFinished("h1", false)
-        b.exportAll(transport)
-        a.pullAndMerge(transport)
-        assertFalse(booksA.isFinished("h1"))
     }
 }

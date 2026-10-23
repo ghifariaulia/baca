@@ -6,7 +6,6 @@ import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -22,6 +21,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -68,6 +70,8 @@ fun BottomNav(current: NavItem, onNav: (NavItem) -> Unit) {
         Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
+            // the bar's colour runs under the system navigation bar
+            .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
@@ -98,7 +102,6 @@ enum class NavItem(val label: String) {
     LIBRARY("Library"),
     NOTES("Notes"),
     BOOKMARKS("Bookmarks"),
-    SYNC("Sync"),
     SETTINGS("Settings"),
 }
 
@@ -109,7 +112,6 @@ fun NavIcon(item: NavItem, tint: Color, iconSize: Dp = 22.dp) {
         NavItem.LIBRARY -> Icons.Outlined.AutoStories
         NavItem.NOTES -> Icons.Outlined.EditNote
         NavItem.BOOKMARKS -> Icons.Outlined.BookmarkBorder
-        NavItem.SYNC -> Icons.Outlined.Sync
         NavItem.SETTINGS -> Icons.Outlined.Settings
     }
     androidx.compose.material3.Icon(

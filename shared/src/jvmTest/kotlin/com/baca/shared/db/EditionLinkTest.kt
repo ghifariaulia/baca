@@ -1,14 +1,10 @@
 package com.baca.shared.db
 
 import com.baca.shared.domain.Locator
-import com.baca.shared.sync.MemoryTransport
-import com.baca.shared.sync.SyncBoundary
-import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 
-/** Two devices hold different files of one edition; sync links them by work key. */
+/** Files of one edition are grouped by work key; books without one stay separate. */
 class EditionLinkTest {
 
     private val key = "gutenbergorg84|frankenstein"
@@ -21,27 +17,6 @@ class EditionLinkTest {
         books.upsert(hash, "Frankenstein", "M. Shelley", "/books/$hash.epub", "epub")
         books.setWorkKey(hash, key)
         return Triple(db, books, DbPositionStore(db, now = { 1L }))
-    }
-
-    @Test
-    fun `peer file of the same edition links after sync`() = runBlocking {
-        val transport = MemoryTransport()
-        val (dbA, _, posA) = device("dev-A", "fileA")
-        val (dbB, booksB, posB) = device("dev-B", "fileB")
-        posB.savePosition("fileB", locator("older place on B"))
-        repeat(5) { posA.savePosition("fileA", locator("newer place on A")) } // higher lamport
-
-        SyncBoundary(dbA, "dev-A", now = { 1L }).exportAll(transport)
-        SyncBoundary(dbB, "dev-B", now = { 1L }).pullAndMerge(transport)
-
-        assertEquals(listOf("fileB", "fileA"), booksB.linkedHashes("fileB"))
-        // the peer's file shows as this book, not as a second library entry
-        assertEquals(listOf("fileB"), booksB.visible().map { it.bookHash })
-        assertEquals("newer place on A", posB.loadLinkedPosition("fileB")?.quote)
-
-        // reading on B afterwards makes B's own position the newest again
-        repeat(10) { posB.savePosition("fileB", locator("latest on B")) }
-        assertNull(posB.loadLinkedPosition("fileB"))
     }
 
     @Test

@@ -9,11 +9,11 @@ import kotlin.test.assertTrue
 
 class ReaderThemesTest {
     @Test
-    fun `the reading themes are LibreraX's, page and text`() {
-        val themes = listOf("white", "paper", "grey", "dim", "dusk", "black").map { ReaderThemes.forTheme(it) }
+    fun `the reading themes are LibreraX's, page and text, and Ink's black on Paper's page`() {
+        val themes = listOf("white", "paper", "ink", "grey", "dim", "dusk", "black").map { ReaderThemes.forTheme(it) }
         assertEquals(
             listOf(
-                0xFFFFFFFF to 0xFF111111, 0xFFF4ECD8 to 0xFF5B4636, 0xFFE9E9E9 to 0xFF262626,
+                0xFFFFFFFF to 0xFF111111, 0xFFF4ECD8 to 0xFF5B4636, 0xFFF4ECD8 to 0xFF111111, 0xFFE9E9E9 to 0xFF262626,
                 0xFF303030 to 0xFFDDDDDD, 0xFF1C1A17 to 0xFFCFC5B3, 0xFF000000 to 0xFFDDDDDD,
             ).map { (page, text) -> Color(page) to Color(text) },
             themes.map { it.background to it.ink },
@@ -26,8 +26,8 @@ class ReaderThemesTest {
     @Test
     fun `the dark themes are those LibreraX reads a book's dark scheme for`() {
         assertEquals(
-            listOf(false, false, false, true, true, true),
-            listOf("white", "paper", "grey", "dim", "dusk", "black").map { com.baca.app.ui.isDarkScheme(ReaderThemes.forTheme(it).background) },
+            listOf(false, false, false, false, true, true, true),
+            listOf("white", "paper", "ink", "grey", "dim", "dusk", "black").map { com.baca.app.ui.isDarkScheme(ReaderThemes.forTheme(it).background) },
         )
     }
 

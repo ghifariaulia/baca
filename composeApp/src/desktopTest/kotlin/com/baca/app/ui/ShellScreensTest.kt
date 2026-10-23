@@ -7,9 +7,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.baca.shared.db.DbAnnotationRepository.AnnotWithDevice
 import com.baca.shared.db.BookRow
-import com.baca.shared.sync.AnnotationEntry
-import com.baca.shared.sync.ReflowAnchorDto
-import com.baca.shared.sync.PointDto
+import com.baca.shared.domain.AnnotationEntry
+import com.baca.shared.domain.ReflowAnchorDto
+import com.baca.shared.domain.PointDto
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -17,7 +17,7 @@ import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertTrue
 
-/** Notes + Sync screens render and their controls work. */
+/** Notes and Bookmarks screens render and their controls work. */
 class ShellScreensTest {
 
     @get:Rule
@@ -72,54 +72,5 @@ class ShellScreensTest {
         rule.waitForIdle()
         assertTrue(rule.onAllNodesWithText("quote text").fetchSemanticsNodes().isNotEmpty())
         assertTrue(rule.onAllNodesWithText("bookmarked page").fetchSemanticsNodes().isEmpty())
-    }
-
-    @Test
-    fun `sync screen renders status and devices`() {
-        val data = SyncScreenData(
-            folderPath = "/tmp/sync",
-            busy = false,
-            error = null,
-            lastSyncAt = 123L,
-            banner = MergeBanner("Frankenstein", "other-device", 42),
-            devices = listOf(DeviceRow("this-device", true, 100L), DeviceRow("other-device", false, 90L)),
-        )
-        rule.setContent {
-            AppTheme {
-                SyncScreen(data, onBack = {}, onChooseFolder = {}, onSyncNow = {}, onUndo = {})
-            }
-        }
-        rule.waitUntil(10_000) {
-            rule.onAllNodesWithText("Sync", substring = true).fetchSemanticsNodes().isNotEmpty()
-        }
-        assertTrue(rule.onAllNodesWithText("Position updated", substring = true).fetchSemanticsNodes().isNotEmpty())
-        assertTrue(rule.onAllNodesWithText("Undo", substring = true).fetchSemanticsNodes().isNotEmpty())
-        rule.onNodeWithText("Sync now").performClick()
-        rule.waitForIdle()
-    }
-
-    @Test
-    fun `sync screen offers backup and restore`() {
-        var created = 0
-        var restored = 0
-        var data by mutableStateOf(
-            SyncScreenData(folderPath = null, busy = false, error = null, lastSyncAt = null, banner = null, devices = emptyList()),
-        )
-        rule.setContent {
-            AppTheme {
-                SyncScreen(
-                    data, onBack = {}, onChooseFolder = {}, onSyncNow = {}, onUndo = {},
-                    onCreateBackup = { created++ }, onRestoreBackup = { restored++ },
-                )
-            }
-        }
-        rule.onNodeWithText("Create backup").performScrollTo().performClick()
-        rule.onNodeWithText("Restore…").performScrollTo().performClick()
-        rule.waitForIdle()
-        assertTrue(created == 1 && restored == 1)
-
-        data = data.copy(backupMessage = "Backup saved.")
-        rule.waitForIdle()
-        rule.onNodeWithText("Backup saved.").assertExists()
     }
 }

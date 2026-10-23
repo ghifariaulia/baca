@@ -5,6 +5,8 @@ import com.baca.shared.db.BookRow
 import com.baca.shared.db.DbBookRepository
 import com.baca.shared.domain.computeBookHash
 import com.baca.shared.domain.workKeyOf
+import com.baca.shared.parser.info
+import com.baca.shared.parser.BookInfo
 import com.baca.shared.parser.CbzBook
 import com.baca.shared.parser.parseCbz
 import com.baca.shared.parser.EpubImages
@@ -176,6 +178,7 @@ class BookImporter(
                 format = format,
                 coverPath = coverPath,
             )
+            repo.setInfo(bookHash, BookInfo(pages = cbz.pages.size))
             return repo.byHash(bookHash)?.let { Imported(it, isNew = true) }
         }
 
@@ -206,6 +209,7 @@ class BookImporter(
             coverPath = coverPath,
         )
         repo.setWorkKey(bookHash, if (format == "epub") workKeyOf(parsed.identifier, parsed.title) else null)
+        repo.setInfo(bookHash, parsed.info())
         repo.byHash(bookHash)?.let { Imported(it, isNew = true) }
     }.getOrNull()
 
@@ -215,6 +219,20 @@ class BookImporter(
      * linking have no work key. Re-read the stored copy and fill in what is
      * missing; no-op when nothing is.
      */
+    /**
+     * The details page's facts for a book imported before they were stored: read its copy
+     * and keep what it says. [readable] is a local file with the book's content.
+     */
+    fun ensureInfo(existing: BookRow, readable: String): BookInfo? {
+        repo.info(existing.bookHash)?.let { return it }
+        val info = runCatching {
+            if (existing.format == "cbz") BookInfo(pages = BookFormats.parseCbzFile(readable.toPath(), existing.title)?.pages?.size ?: 0)
+            else BookFormats.parse(readable.toPath(), existing.format)?.info()
+        }.getOrNull() ?: return null
+        repo.setInfo(existing.bookHash, info)
+        return info
+    }
+
     fun backfill(existing: BookRow) {
         if (existing.format != "epub") return
         if (existing.coverPath != null && repo.hasWorkKeyEntry(existing.bookHash)) return

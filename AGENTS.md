@@ -4,13 +4,13 @@ Guidelines for AI coding agents working in this repository. Follow these before 
 
 ## Project
 
-**Baca** is a cross-device e-reader for Android and desktop (JVM); iOS comes later. Shared logic and UI are written in Kotlin Multiplatform with Compose Multiplatform. Reading state syncs between devices as JSON files in a user-chosen folder.
+**Baca** is a cross-device e-reader for Android and desktop (JVM); iOS comes later. Shared logic and UI are written in Kotlin Multiplatform with Compose Multiplatform. Reading data moves between devices with backup and restore; there is no sync.
 
-`docs/TECH.md` is the design source of truth: formats, locators, sync rules, UI tokens. Read the relevant section before changing behavior, and update it when behavior changes.
+`docs/TECH.md` is the design source of truth: formats, locators, backup and restore, UI tokens. Read the relevant section before changing behavior, and update it when behavior changes.
 
 | Module | Holds |
 |---|---|
-| `shared/` | Pure Kotlin: `domain/` (models, reader session, use-case logic), `parser/` (EPUB, FB2, TXT, CBZ), `render/` (pagination), `sync/` (DTOs, pure merge, sync boundary), `db/` (SQLDelight repositories) |
+| `shared/` | Pure Kotlin: `domain/` (models, reader session, use-case logic), `parser/` (EPUB, FB2, TXT, CBZ), `render/` (pagination), `db/` (SQLDelight repositories) |
 | `composeApp/` | Compose UI shared by Android and desktop: `ui/` screens, `reader/` reader screens and platform glue (`expect`/`actual`) |
 | `android/` | Android app entry (`MainActivity`) |
 | `desktop/` | Desktop app entry (`Main.kt`) |
@@ -30,11 +30,11 @@ If another skill is relevant to the task, use it too.
 
 ## Layer Responsibilities
 
-- **UI (`composeApp`)**: rendering and UI state only. Call into `shared` for any decision about books, positions, annotations or sync.
+- **UI (`composeApp`)**: rendering and UI state only. Call into `shared` for any decision about books, positions, annotations or backup.
 - **Domain (`shared/domain`)**: ALL business logic. Pure: no IO, no Compose, no wall clock reads.
 - **Repositories (`shared/db`, `Db*Repository`, `DbPositionStore`)**: database operations only, through SQLDelight queries in `shared/src/commonMain/sqldelight`.
 - **Parsers (`shared/parser`)**: turn a book file into blocks and metadata. No database, no UI.
-- **Sync (`shared/sync`)**: merge functions in `Merge.kt` are pure. `SyncBoundary` is the only place that does sync IO. Transports (`SyncTransport` actuals) only move bytes.
+- **Backup (`shared/backup`)**: `LibraryBackup` is the only place that writes or reads a backup archive. Restore changes nothing if the archive is not a Baca backup.
 - **Platform glue (`androidMain` / `desktopMain`)**: platform APIs only (file pickers, SAF, clipboard, folders).
 
 ### ✅ Correct Flow
@@ -75,7 +75,7 @@ These come from bugs already fixed here; keep them true.
 - **Books are keyed by `book_hash`** (SHA-256 of size plus first and last 64 KiB, TECH 5.1). Files of the same EPUB edition are linked by a work key (`workKeyOf`). A position or annotation made in a *different* file must be re-found by its quote (`findQuote`, `relinkEntry`), never by href, block index or offset.
 - **Measuring and drawing must agree.** `ReflowLayout` paginates with `ComposeTextMetrics`, and `ReaderScreen` draws each line with `lineStyle`. Font, size, line height, indent and `LineHeightStyle` must match on both sides, or pages overflow or leave blank space. Change them together.
 - **HTML whitespace collapses** in the EPUB parser; only `<br>` is a hard line break.
-- **Sync writes only to the device's own folder** (`devices/<id>/`). Merges order by `(lamport, device_id)`. New fields in sync DTOs must be optional with defaults, so older app versions can still read the files.
+- **Records carry a Lamport stamp** (this device's counter plus one at each local write). A restore advances the clock past the restored records.
 - **No schema changes to existing tables.** Desktop has no migration path yet (`Schema.create` ignores "already exists"). Add new queries freely; for new per-book data, a `settings_local` key (like `progress:<hash>`, `work:<hash>`) avoids a migration. Adding real migrations is its own task.
 - **Reader chrome follows the app theme; only the page area takes the reading theme.** Bars, sheets and panels use the Material color scheme; page text and background use `ReaderThemes` colors explicitly, since those aren't in the color scheme.
 - **Bundled fonts need their OFL license** in `docs/licenses/`.

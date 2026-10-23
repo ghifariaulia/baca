@@ -412,6 +412,8 @@ data class ParsedEpub(
     val options: ParseOptions = ParseOptions(),
     /** the book's CSS asks for the colour scheme, so a theme of the other kind must read it again */
     val schemeAware: Boolean = false,
+    /** what the book says about itself: publisher, date, description, subjects */
+    val meta: BookMeta = BookMeta(),
 )
 
 /**
@@ -505,6 +507,7 @@ fun parseEpub(path: Path, options: ParseOptions = ParseOptions()): ParsedEpub {
         pageRtl = opf.pageRtl || rtlLanguage(opf.language) || chapters.any { it.vertical } || chapters.firstNotNullOfOrNull { c -> c.blocks.firstOrNull { it is Block.Text && it.text.isNotBlank() } as? Block.Text }?.rtl == true,
         options = options,
         schemeAware = schemeAware || cssFiles.values.any { it?.contains(COLOR_SCHEME, ignoreCase = true) == true },
+        meta = opf.meta,
     )
 }
 
@@ -681,6 +684,7 @@ private data class Opf(
     val fixedLayout: Boolean = false,
     /** the spine's `page-progression-direction` is right to left */
     val pageRtl: Boolean = false,
+    val meta: BookMeta = BookMeta(),
 )
 
 private fun parseOpf(opfXml: String): Opf {
@@ -700,6 +704,12 @@ private fun parseOpf(opfXml: String): Opf {
     var pageRtl = false
     var inMetadata = false
     var capture: ((String) -> Unit)? = null
+    var publisher = ""
+    var published = ""
+    var description = ""
+    var rights = ""
+    var series = ""
+    val subjects = mutableListOf<String>()
     // package@unique-identifier names the dc:identifier that identifies the book
     var uniqueId: String? = null
     val identifiers = mutableListOf<Pair<String?, String>>()
@@ -738,8 +748,19 @@ private fun parseOpf(opfXml: String): Opf {
                 "title" -> if (inMetadata) capture = { title = it }
                 "creator" -> if (inMetadata) capture = { author = it }
                 "language" -> if (inMetadata && language == null) capture = { language = it.trim().ifEmpty { null } }
+                "publisher" -> if (inMetadata) capture = { publisher += it }
+                "date" -> if (inMetadata && published.isEmpty()) capture = { published += it }
+                "description" -> if (inMetadata) capture = { description += it }
+                "rights" -> if (inMetadata) capture = { rights += it }
+                "subject" -> if (inMetadata) {
+                    val at = subjects.size
+                    subjects.add("")
+                    capture = { subjects[at] = subjects[at] + it }
+                }
                 "meta" -> {
                     if (reader.attrOrEmpty("name") == "cover") coverId = reader.attr("content")
+                    if (reader.attrOrEmpty("name") == "calibre:series") series = reader.attrOrEmpty("content")
+                    if (reader.attrOrEmpty("property") == "belongs-to-collection" && series.isEmpty()) capture = { series += it }
                     if (reader.attrOrEmpty("name") == "fixed-layout" && reader.attrOrEmpty("content").equals("true", true)) fixedLayout = true
                     if (reader.attrOrEmpty("property") == "rendition:layout") capture = { if (it.trim() == "pre-paginated") fixedLayout = true }
                 }
@@ -751,6 +772,7 @@ private fun parseOpf(opfXml: String): Opf {
                 "meta" -> capture = null
                 "creator" -> capture = null
                 "language" -> capture = null
+                "publisher", "date", "description", "rights", "subject" -> capture = null
                 "identifier" -> capture = null
                 "metadata" -> inMetadata = false
             }
@@ -760,7 +782,11 @@ private fun parseOpf(opfXml: String): Opf {
     val coverByMeta = coverId?.let { manifest[it] }
     val identifier = (identifiers.firstOrNull { it.first != null && it.first == uniqueId } ?: identifiers.firstOrNull())
         ?.second?.trim()?.takeIf { it.isNotEmpty() }
-    return Opf(title.trim(), author.trim(), coverHref ?: coverByMeta, navHref ?: ncxHref, manifest, spine, identifier, language, nonLinear, navHref, guideText, fixedLayout, pageRtl)
+    val meta = BookMeta(
+        publisher = publisher.trim(), published = published.trim(), description = description.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim(),
+        subjects = subjects.map { it.trim() }.filter { it.isNotEmpty() }, rights = rights.trim(), series = series.trim(),
+    )
+    return Opf(title.trim(), author.trim(), coverHref ?: coverByMeta, navHref ?: ncxHref, manifest, spine, identifier, language, nonLinear, navHref, guideText, fixedLayout, pageRtl, meta)
 }
 
 // <br> placeholder while collecting text: source newlines are plain whitespace

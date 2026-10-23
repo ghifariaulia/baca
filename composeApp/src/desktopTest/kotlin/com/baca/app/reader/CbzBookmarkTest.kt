@@ -18,8 +18,8 @@ import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.unit.dp
 import com.baca.shared.parser.CbzBook
 import com.baca.shared.parser.parseCbz
-import com.baca.shared.sync.AnnotationEntry
-import com.baca.shared.sync.FixedAnchorDto
+import com.baca.shared.domain.AnnotationEntry
+import com.baca.shared.domain.FixedAnchorDto
 import okio.Path.Companion.toPath
 import org.junit.Rule
 import org.junit.Test

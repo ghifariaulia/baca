@@ -3,7 +3,7 @@ package com.baca.shared.domain.reader
 import com.baca.shared.parser.Block
 import com.baca.shared.parser.BlockKind
 import com.baca.shared.parser.FormattedSpan
-import com.baca.shared.sync.PointDto
+import com.baca.shared.domain.PointDto
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull

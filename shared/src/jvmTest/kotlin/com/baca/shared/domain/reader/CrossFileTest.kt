@@ -4,9 +4,9 @@ import com.baca.shared.parser.Block
 import com.baca.shared.parser.BlockKind
 import com.baca.shared.parser.Chapter
 import com.baca.shared.parser.FormattedSpan
-import com.baca.shared.sync.AnnotationEntry
-import com.baca.shared.sync.PointDto
-import com.baca.shared.sync.ReflowAnchorDto
+import com.baca.shared.domain.AnnotationEntry
+import com.baca.shared.domain.PointDto
+import com.baca.shared.domain.ReflowAnchorDto
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
