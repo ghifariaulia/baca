@@ -148,6 +148,7 @@ With a **library folder** (Settings, stored as the device-only local setting `li
 - **Add books** copies the picked file into the folder's top level, never overwriting (`Book (2).epub`), then reads it in place.
 - **Remove from library** hides the book (tombstone); the file stays in the folder.
 - Only covers are stored in app storage.
+- **Open with Baca** (Android): the app takes `ACTION_VIEW` for the supported types by MIME type and by file name (for files typed only as binary). The book is copied to the cache, imported into app storage (a book already in the library is found by `book_hash` and reopened, a removed one comes back) and opened; the cache copy is deleted once imported. `MainActivity` is `singleTop`, so a book opened while Baca runs reaches `onNewIntent`. On desktop the installers register EPUB, FB2 and CBZ (`fileAssociation` in `desktop/build.gradle.kts`, so only those, not TXT or DOCX that other apps own). macOS hands an opened file to `Desktop.setOpenFileHandler`, Windows and Linux pass its path as the first argument (`--book=<path>` also works); the book is imported from where it is.
 - On Android a book is read from a copy staged in the cache, since parsers need a real file. The copy is deleted when the book closes, and a start-up sweep removes any a closed app left behind. Books picked to import are copied to the cache the same way and deleted once imported (`discardPickedCopy`).
 
 ## 6. Moving data between devices

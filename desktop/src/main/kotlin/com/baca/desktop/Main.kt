@@ -1,5 +1,6 @@
 package com.baca.desktop
 
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
@@ -12,6 +13,7 @@ import com.baca.app.App
 import com.baca.app.ui.AppThemeChoice
 import com.baca.shared.db.Baca
 import com.baca.shared.AppInfo
+import java.awt.Desktop
 import java.io.File
 
 fun main(args: Array<String>) {
@@ -30,7 +32,15 @@ fun main(args: Array<String>) {
             AppThemeChoice.DARK -> "NSAppearanceNameDarkAqua"
         },
     )
-    val initialBook = args.firstOrNull { it.startsWith("--book=") }?.removePrefix("--book=")
+    // the book to open: named on the command line (--book=, or a bare path, as Windows and Linux pass
+    // a double-clicked file), or handed over by macOS when a file is opened with Baca
+    val initialBook = mutableStateOf(
+        args.firstOrNull { it.startsWith("--book=") }?.removePrefix("--book=")
+            ?: args.firstOrNull { !it.startsWith("-") && File(it).isFile },
+    )
+    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.APP_OPEN_FILE)) {
+        Desktop.getDesktop().setOpenFileHandler { event -> event.files.firstOrNull()?.let { initialBook.value = it.path } }
+    }
     application {
         Window(
             title = AppInfo.name,
@@ -39,7 +49,7 @@ fun main(args: Array<String>) {
             state = rememberWindowState(width = 900.dp, height = 640.dp),
             onCloseRequest = ::exitApplication,
         ) {
-            App(db, initialBookPath = initialBook)
+            App(db, initialBookPath = initialBook.value)
         }
     }
 }

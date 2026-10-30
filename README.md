@@ -72,9 +72,10 @@ Installers are built per platform: a `.dmg` is built on a Mac, an `.msi` on Wind
 ## First steps
 
 1. **Add books.** Tap **+** in the Library and pick files or, on desktop, a folder. Baca copies each book into its own storage.
-2. **Or use a library folder.** In Settings, under App, pick a folder of books. Baca reads them where they are, never copies them, and rescans on launch.
-3. **Back up.** In Settings, open Backup and restore and tap **Create backup**. It writes one `.zip` with your library, positions, notes, bookmarks, settings and book files.
-4. **Move to another device.** Copy the backup file there and choose **Restore…** in its Settings, under Backup and restore. Restoring replaces that device's library, after saving what it had as `before-restore.zip`.
+2. **Or open a file from another app.** On Android, in a file manager, browser or e-mail, open an EPUB, FB2, TXT, HTML, Markdown, RTF, DOCX or CBZ file and choose Baca. On desktop, an installed Baca is offered for EPUB, FB2 and CBZ files (double-click, or Open With). Either way the book is added to the library and opens at once.
+3. **Or use a library folder.** In Settings, under App, pick a folder of books. Baca reads them where they are, never copies them, and rescans on launch.
+4. **Back up.** In Settings, open Backup and restore and tap **Create backup**. It writes one `.zip` with your library, positions, notes, bookmarks, settings and book files.
+5. **Move to another device.** Copy the backup file there and choose **Restore…** in its Settings, under Backup and restore. Restoring replaces that device's library, after saving what it had as `before-restore.zip`.
 
 ## Build from source
 

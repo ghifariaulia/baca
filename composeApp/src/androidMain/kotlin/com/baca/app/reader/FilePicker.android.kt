@@ -63,6 +63,16 @@ actual fun rememberFolderPicker(onPicked: (List<String>) -> Unit): () -> Unit {
 /** Each cache copy of a book sits in a folder of its own, named from this. */
 internal const val STAGED_PREFIX = "open-"
 
+/**
+ * The book another app asked Baca to open ("Open with Baca"), copied into the cache as a file
+ * the importer can read; null when the intent carries none, or the file can't be read.
+ */
+fun copyOpenedBook(context: Context, intent: android.content.Intent?): String? {
+    if (intent?.action != android.content.Intent.ACTION_VIEW) return null
+    val uri = intent.data ?: return null
+    return copyToCache(context, uri)
+}
+
 internal fun copyToCache(context: Context, uri: Uri): String? = runCatching {
     context.contentResolver.openInputStream(uri)?.use { input ->
         // keep the real name: the format comes from it (".fb2.zip" isn't ".zip")

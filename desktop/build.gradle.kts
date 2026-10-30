@@ -21,6 +21,10 @@ compose.desktop.application {
         packageName = "Baca"
         // the bundled runtime only has the JDK modules listed here (suggestRuntimeModules)
         modules("java.instrument", "java.sql", "jdk.unsupported")
+        // the book formats nothing else is likely to want: "Open with Baca" and double-click for these
+        fileAssociation("application/epub+zip", "epub", "EPUB book")
+        fileAssociation("application/x-fictionbook+xml", "fb2", "FictionBook")
+        fileAssociation("application/vnd.comicbook+zip", "cbz", "Comic book archive")
         packageVersion = "0.1.0"
         macOS {
             // macOS rejects app versions whose first number is 0

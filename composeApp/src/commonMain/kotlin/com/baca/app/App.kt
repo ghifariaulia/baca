@@ -252,15 +252,15 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                 // the new folder is scanned through the LaunchedEffect above
             }
         }
-        // Open the book passed on the command line; import first so library
-        // state and saved positions line up with later sessions.
+        // Open the book another app handed Baca (or the command line named); import first so
+        // library state and saved positions line up with later sessions.
         LaunchedEffect(initialBookPath) {
             if (initialBookPath != null) {
+                // reading the book takes a few seconds: off the main thread, with the import
                 withContext(Dispatchers.IO) {
-                    importer.import(initialBookPath)
-                }?.let { imported ->
-                    openBookOf(imported.row, libraryFolder, readingOptions())?.let { screenState = Screen.Reader(it) }
-                }
+                    importer.import(initialBookPath).also { discardPickedCopy(initialBookPath) }
+                        ?.let { openBookOf(it.row, libraryFolder, readingOptions()) }
+                }?.let { screenState = Screen.Reader(it) }
                 libraryTick++
             }
         }
