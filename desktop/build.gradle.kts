@@ -25,10 +25,10 @@ compose.desktop.application {
         fileAssociation("application/epub+zip", "epub", "EPUB book")
         fileAssociation("application/x-fictionbook+xml", "fb2", "FictionBook")
         fileAssociation("application/vnd.comicbook+zip", "cbz", "Comic book archive")
-        packageVersion = "0.1.0"
+        packageVersion = "0.1.1"
         macOS {
             // macOS rejects app versions whose first number is 0
-            packageVersion = "1.0.0"
+            packageVersion = "1.0.1"
             iconFile.set(project.file("icons/baca.icns"))
         }
         windows {
