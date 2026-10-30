@@ -130,13 +130,14 @@ Resolution order when restoring: `href` + `block_index` + `char_offset`, then th
 { "href": "OEBPS/ch12.xhtml", "start": {"block_index": 41, "char_offset": 128},
   "end": {"block_index": 41, "char_offset": 190},
   "quote": "exact highlighted text",
-  "prefix": "~32 chars before", "suffix": "~32 chars after" }
+  "prefix": "~32 chars before", "suffix": "~32 chars after",
+  "page": 13 }   // optional: the footer's page number there when it was made
 
 // fixed layout
 { "page_index": 211, "rects": [[x, y, w, h]] }
 ```
 
-Offsets are the primary anchor. If the parse changes (parser update, different edition, offset no longer matches `quote`), re-anchor by searching for `prefix + quote + suffix` in the document. If that fails, keep the annotation, show it in the annotation list, and flag it as detached rather than dropping it.
+The notes lists say "Page N" from `page` (a CBZ's from `page_index`). A new annotation records it when it is made (`ReaderSession.pageNumberOf`); one made before it was kept learns it the first time its book is opened (`DbAnnotationRepository.setPage`), and until then the list says its chapter. Offsets are the primary anchor. If the parse changes (parser update, different edition, offset no longer matches `quote`), re-anchor by searching for `prefix + quote + suffix` in the document. If that fails, keep the annotation, show it in the annotation list, and flag it as detached rather than dropping it.
 
 ### 5.4 Book files and the library folder
 

@@ -153,7 +153,6 @@ private fun AnnotationGroupsScreen(
                     entries = listOf(annot.entry),
                     book = null,
                     ink = MaterialTheme.colorScheme.onBackground,
-                    deviceLabels = mapOf(annot.entry.id to annot.deviceId),
                     onTap = { onOpenAnnotation(group.row, it) },
                 )
                 Spacer(Modifier.height(4.dp))

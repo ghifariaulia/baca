@@ -377,4 +377,20 @@ class ReaderSessionTest {
         assertEquals(8, s.locationTotal())
         assertEquals(setOf(0, 1), laidOut)
     }
+
+    @Test
+    fun `an annotation's page number is the footer's number at its place`() = runTest {
+        val chapters = listOf("OEBPS/c0.xhtml", "OEBPS/c1.xhtml", "OEBPS/c2.xhtml").map { chapter(it, PARA).copy(size = 6000) }
+        val s = ReaderSession(
+            bookHash = "h", chapters = chapters, repo = FakeStore(),
+            layoutFactory = { i, vp, st -> ReflowLayout(chapters[i].blocks, GridMetrics(), st, vp.columnWidthPx, vp.pageHeightPx) },
+            onChange = {},
+        )
+        s.ensureView(VIEWPORT, SETTINGS)
+        listOf(Triple("OEBPS/c1.xhtml", 1, 0), Triple("OEBPS/c2.xhtml", 1, 700), Triple("OEBPS/c0.xhtml", 0, 0)).forEach { (href, block, offset) ->
+            s.jumpToAnchor(href, block, offset)
+            assertEquals(s.locationNumber(), s.pageNumberOf(href, block, offset, ""), "at $href block $block offset $offset")
+        }
+        assertEquals(null, s.pageNumberOf("missing.xhtml", 0, 0, ""))
+    }
 }

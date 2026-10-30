@@ -54,6 +54,17 @@ class DbAnnotationRepository(
         return bumped
     }
 
+    /** Records the page of a reflowed annotation made before pages were kept; its book and the rest stay as they are. */
+    fun setPage(id: String, page: Int) {
+        val row = db.annotationsQueries.selectAnnotationsAll().executeAsList().firstOrNull { it.id == id } ?: return
+        val entry = decode(row)?.takeIf { it.reflowAnchor != null } ?: return
+        val withPage = entry.copy(reflowAnchor = entry.reflowAnchor!!.copy(page = page))
+        db.annotationsQueries.upsertAnnotation(
+            row.id, row.book_hash, row.kind, json.encodeToString(withPage), row.text, row.note, row.created_at,
+            row.device_id, row.lamport, row.deleted,
+        )
+    }
+
     /** All annotations for one book (including tombstones for sync state). */
     fun forBook(bookHash: String): List<AnnotationEntry> =
         db.annotationsQueries.selectAnnotationsByBook(bookHash).executeAsList()

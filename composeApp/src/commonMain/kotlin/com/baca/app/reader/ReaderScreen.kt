@@ -248,9 +248,9 @@ fun ReaderScreen(
     openContents: Boolean = false,
     /** This book's annotations (highlights + notes). */
     annotations: List<com.baca.shared.domain.AnnotationEntry> = emptyList(),
-    /** annotation id → originating device label (notes meta line). */
-    deviceLabels: Map<String, String> = emptyMap(),
     onAnnotationUpsert: (com.baca.shared.domain.AnnotationEntry) -> Unit = {},
+    /** pages worked out for annotations made before pages were kept (id to page) */
+    onAnnotationPages: (Map<String, Int>) -> Unit = {},
     onAnnotationDelete: (id: String) -> Unit = {},
     /** Open the reader straight on an annotation anchor (Notes list). */
     jumpToAnchor: AnchorJump? = null,
@@ -475,9 +475,30 @@ fun ReaderScreen(
         }
     }
 
+    // a new annotation records the page the footer shows at its place, so the lists can say where it is
+    val upsertWithPage: (com.baca.shared.domain.AnnotationEntry) -> Unit = { entry ->
+        val anchor = entry.reflowAnchor
+        val page = if (anchor != null && anchor.page == null) {
+            session.pageNumberOf(anchor.href, anchor.start.blockIndex, anchor.start.charOffset, anchor.quote)
+        } else {
+            null
+        }
+        onAnnotationUpsert(if (page != null) entry.copy(reflowAnchor = anchor!!.copy(page = page)) else entry)
+    }
+
+    // annotations made before pages were kept learn theirs once the book is laid out
+    LaunchedEffect(viewport, annotations) {
+        if (viewport == null) return@LaunchedEffect
+        val pages = annotations.mapNotNull { entry ->
+            val anchor = entry.reflowAnchor?.takeIf { it.page == null && !entry.deleted } ?: return@mapNotNull null
+            session.pageNumberOf(anchor.href, anchor.start.blockIndex, anchor.start.charOffset, anchor.quote)?.let { entry.id to it }
+        }.toMap()
+        if (pages.isNotEmpty()) onAnnotationPages(pages)
+    }
+
     val toggleBookmark = {
         if (pageBookmarks.isEmpty()) {
-            onAnnotationUpsert(newBookmarkEntry(chapter.href, layout.positionForPage(pageNo)))
+            upsertWithPage(newBookmarkEntry(chapter.href, layout.positionForPage(pageNo)))
         } else {
             pageBookmarks.forEach { onAnnotationDelete(it.id) }
         }
@@ -1115,7 +1136,7 @@ fun ReaderScreen(
                     toolbar = { modifier ->
                         SelectionToolbar(
                             onColor = { colorName ->
-                                onAnnotationUpsert(
+                                upsertWithPage(
                                     newHighlightEntry(current.anchor(chapter.href, blocks), current.text(blocks), colorName),
                                 )
                                 selection = null
@@ -1148,7 +1169,7 @@ fun ReaderScreen(
                     onCancel = { editing = null },
                     onSave = {
                         val entry = existing ?: editor.anchor?.let { newHighlightEntry(it, editor.quote, editor.color) }
-                        if (entry != null) onAnnotationUpsert(entry.copy(color = editor.color, note = editor.note))
+                        if (entry != null) upsertWithPage(entry.copy(color = editor.color, note = editor.note))
                         editing = null
                     },
                     onDelete = if (existing != null) {
@@ -1469,7 +1490,6 @@ internal fun AnnotationCards(
     entries: List<com.baca.shared.domain.AnnotationEntry>,
     book: ParsedEpub?,
     ink: Color,
-    deviceLabels: Map<String, String> = emptyMap(),
     onTap: (com.baca.shared.domain.AnnotationEntry) -> Unit = {},
     onEdit: (com.baca.shared.domain.AnnotationEntry) -> Unit = {},
 ) {
@@ -1520,10 +1540,10 @@ internal fun AnnotationCards(
                 }
                 Text(
                     buildString {
+                        // the page the footer shows there; a place made before pages were kept falls back to its chapter
                         if (fixedPage != null) append("Page ${fixedPage + 1}")
+                        else if (anchor?.page != null) append("Page ${anchor.page}")
                         else if (chapterIdx >= 0) append("Chapter ${chapterIdx + 1}")
-                        val device = deviceLabels[entry.id]
-                        if (device != null) append(if (isNotEmpty()) " · $device" else device)
                     },
                     style = Type.caption,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

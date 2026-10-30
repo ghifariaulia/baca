@@ -399,10 +399,15 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                                     },
                                     openContents = openContents,
                                     annotations = annotations.map { it.entry },
-                                    deviceLabels = annotations.associate { it.entry.id to it.deviceId },
                                     onAnnotationUpsert = { entry ->
                                         scope.launch(Dispatchers.IO) {
                                             annotRepo.upsert(entry, book.bookHash)
+                                            annotTick++
+                                        }
+                                    },
+                                    onAnnotationPages = { pages ->
+                                        scope.launch(Dispatchers.IO) {
+                                            pages.forEach { (id, page) -> annotRepo.setPage(id, page) }
                                             annotTick++
                                         }
                                     },

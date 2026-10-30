@@ -13,6 +13,8 @@ data class ReflowAnchorDto(
     val quote: String,
     val prefix: String = "",
     val suffix: String = "",
+    /** the page the reader numbers its place by (the footer's "page / total") when this was made; null until known */
+    val page: Int? = null,
 )
 
 @Serializable

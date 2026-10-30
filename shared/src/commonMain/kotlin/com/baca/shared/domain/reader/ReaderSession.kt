@@ -190,6 +190,17 @@ class ReaderSession(
     fun locationNumber(): Int =
         if (locations.total > 0) locations.number(chapterIndex, pageIndex, layoutFor(chapterIndex).pageCount()) else bookPageNumber()
 
+    /**
+     * The page number the footer shows at a place in the book (an annotation's anchor), counted the same way
+     * as [locationNumber]; null when its chapter isn't in the book or the place can't be found.
+     */
+    fun pageNumberOf(href: String, blockIndex: Int, charOffset: Int, quote: String): Int? {
+        val chapter = indexOfChapter(href, chapters).takeIf { it >= 0 } ?: return null
+        val layout = layoutFor(chapter)
+        val page = layout.pageForPosition(blockIndex, charOffset, quote)?.pageIndex ?: return null
+        return if (locations.total > 0) locations.number(chapter, page, layout.pageCount()) else null
+    }
+
     /** The footer's page total: the book's locations, else its pages. */
     fun locationTotal(): Int = if (locations.total > 0) locations.total else bookTotalPages()
 

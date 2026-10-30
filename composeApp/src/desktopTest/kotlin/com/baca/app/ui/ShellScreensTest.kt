@@ -52,6 +52,16 @@ class ShellScreensTest {
     }
 
     @Test
+    fun `a note says the page it is on, not which device made it`() {
+        val onPage = entry().copy(reflowAnchor = entry().reflowAnchor!!.copy(page = 13))
+        val groups = listOf(NotesGroup(row(), listOf(AnnotWithDevice(onPage, "local"))))
+        rule.setContent { AppTheme { NotesScreen(groups = groups, onOpenAnnotation = { _, _ -> }) } }
+        rule.waitUntil(10_000) { rule.onAllNodesWithText("quote text", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(rule.onAllNodesWithText("Page 13").fetchSemanticsNodes().isNotEmpty())
+        assertTrue(rule.onAllNodesWithText("local", substring = true).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
     fun `bookmarks and notes screens each show only their own kind`() {
         val bookmark = entry().copy(id = "b1", kind = "bookmark", text = "bookmarked page")
         val groups = listOf(
