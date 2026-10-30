@@ -277,6 +277,16 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
             if (healed) libraryTick++
         }
 
+        // Titles read under the old rule (the last dc:title won) are read again, once
+        LaunchedEffect(booksRepo, importer, libraryFolder) {
+            if (store.getLocal(KEY_TITLES_READ) == TITLES_READ) return@LaunchedEffect
+            // a library folder that can't be reached yet leaves its books for the next start
+            if (libraryFolderPath != null && libraryFolder == null) return@LaunchedEffect
+            val changed = withContext(Dispatchers.IO) { importer.refreshTitles(libraryFolder) }
+            store.putLocal(KEY_TITLES_READ, TITLES_READ)
+            if (changed) libraryTick++
+        }
+
         fun openAsync(row: BookRow) {
             openingTitle = row.title
             scope.launch(Dispatchers.IO) {
@@ -660,6 +670,10 @@ private fun openBookOf(row: BookRow, folder: LibraryFolder?, options: ParseOptio
 }
 
 private const val KEY_LIBRARY_FOLDER = "library_folder"
+
+/** Set once every EPUB title has been read by the current rule (bump the value to read them again). */
+private const val KEY_TITLES_READ = "titles_read"
+private const val TITLES_READ = "2"
 
 /** Wall clock, display/debug use only (docs/TECH.md 6.1). */
 expect fun defaultNow(): () -> Long

@@ -37,6 +37,37 @@ private val NAMED_ENTITIES = mapOf(
     "Eacute" to "É", "Ouml" to "Ö", "Uuml" to "Ü", "Ntilde" to "Ñ", "Ccedil" to "Ç",
 )
 
+/**
+ * Markup as the plain text a person reads: line breaks and the end of a block become line breaks,
+ * tags go, character references become their characters. A book's description is written this way
+ * (an OPF's `dc:description` holds escaped HTML), and may be plain text with none of it.
+ */
+internal fun htmlToPlainText(html: String): String {
+    val broken = html
+        .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+        .replace(Regex("</(p|div|li|h[1-6]|blockquote)\\s*>", RegexOption.IGNORE_CASE), "\n\n")
+    val text = broken.replace(Regex("<[^>]*>"), "")
+        .replace(Regex("&(#x[0-9a-fA-F]+|#[0-9]+|[A-Za-z][A-Za-z0-9]*);")) { match ->
+            val name = match.groupValues[1]
+            when {
+                name.startsWith("#x") -> name.drop(2).toIntOrNull(16)?.let(::charOf)
+                name.startsWith("#") -> name.drop(1).toIntOrNull()?.let(::charOf)
+                else -> NAMED_ENTITIES[name]
+            } ?: match.value
+        }
+    return text.replace('\u00A0', ' ').lines()
+        .map { it.replace(Regex("[ \\t]+"), " ").trim() }
+        .joinToString("\n")
+        .replace(Regex("\n{3,}"), "\n\n")
+        .trim()
+}
+
+private fun charOf(code: Int): String? = when (code) {
+    in 1..0xFFFF -> code.toChar().toString()
+    in 0x10000..0x10FFFF -> (code - 0x10000).let { (0xD800 + (it shr 10)).toChar().toString() + (0xDC00 + (it and 0x3FF)).toChar() }
+    else -> null
+}
+
 private class HtmlNormalizer(private val src: String) {
     private var i = 0
     private val head = StringBuilder()

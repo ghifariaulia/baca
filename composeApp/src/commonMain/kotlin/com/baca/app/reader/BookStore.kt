@@ -214,11 +214,28 @@ class BookImporter(
     }.getOrNull()
 
     /**
-     * One-time heal: rows imported before the toc/cover parser fix carry a
-     * null cover path (or lost toc entries), and rows imported before edition
-     * linking have no work key. Re-read the stored copy and fill in what is
-     * missing; no-op when nothing is.
+     * Corrects the title and author of books read under the old rule (the last dc:title won, so a
+     * subtitle like "A Novel" named the book): each EPUB is read again. Returns whether any changed.
      */
+    fun refreshTitles(folder: LibraryFolder?): Boolean {
+        var changed = false
+        repo.all().filter { it.format == "epub" && !it.deleted }.forEach { row ->
+            val staged = row.path.startsWith("content://")
+            val readable = if (staged) runCatching { folder?.stage(row.path) }.getOrNull() else row.path
+            if (readable == null) return@forEach
+            try {
+                val parsed = runCatching { BookFormats.parse(readable.toPath(), "epub") }.getOrNull() ?: return@forEach
+                if (parsed.title.isNotBlank() && (parsed.title != row.title || parsed.author != row.author)) {
+                    repo.upsert(row.bookHash, parsed.title, parsed.author, row.path, row.format, row.coverPath)
+                    changed = true
+                }
+            } finally {
+                if (staged) folder?.unstage(readable)
+            }
+        }
+        return changed
+    }
+
     /**
      * The details page's facts for a book imported before they were stored: read its copy
      * and keep what it says. [readable] is a local file with the book's content.
@@ -233,6 +250,12 @@ class BookImporter(
         return info
     }
 
+    /**
+     * One-time heal: a book imported before the toc/cover parser fix carries a
+     * null cover path (or lost toc entries), and one imported before edition
+     * linking has no work key. Re-read the stored copy and fill in what is
+     * missing; no-op when nothing is.
+     */
     fun backfill(existing: BookRow) {
         if (existing.format != "epub") return
         if (existing.coverPath != null && repo.hasWorkKeyEntry(existing.bookHash)) return

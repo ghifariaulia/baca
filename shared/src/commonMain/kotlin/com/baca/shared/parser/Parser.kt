@@ -692,7 +692,9 @@ private fun parseOpf(opfXml: String): Opf {
     val manifest = mutableMapOf<String, String>()
     val spine = mutableListOf<String>()
     val nonLinear = mutableSetOf<String>()
-    var title = ""
+    // every dc:title in order, with its id; EPUB 3 marks the main one with a title-type refinement
+    val titles = mutableListOf<Pair<String?, StringBuilder>>()
+    val mainTitleIds = mutableSetOf<String>()
     var author = ""
     var language: String? = null
     var coverHref: String? = null
@@ -745,7 +747,11 @@ private fun parseOpf(opfXml: String): Opf {
                     spine.add(idref)
                     if (reader.attr("linear") == "no") nonLinear.add(idref)
                 }
-                "title" -> if (inMetadata) capture = { title = it }
+                "title" -> if (inMetadata) {
+                    val text = StringBuilder()
+                    titles.add(reader.attr("id") to text)
+                    capture = { text.append(it) }
+                }
                 "creator" -> if (inMetadata) capture = { author = it }
                 "language" -> if (inMetadata && language == null) capture = { language = it.trim().ifEmpty { null } }
                 "publisher" -> if (inMetadata) capture = { publisher += it }
@@ -763,10 +769,14 @@ private fun parseOpf(opfXml: String): Opf {
                     if (reader.attrOrEmpty("property") == "belongs-to-collection" && series.isEmpty()) capture = { series += it }
                     if (reader.attrOrEmpty("name") == "fixed-layout" && reader.attrOrEmpty("content").equals("true", true)) fixedLayout = true
                     if (reader.attrOrEmpty("property") == "rendition:layout") capture = { if (it.trim() == "pre-paginated") fixedLayout = true }
+                    if (reader.attrOrEmpty("property") == "title-type") {
+                        val target = reader.attrOrEmpty("refines").removePrefix("#")
+                        capture = { if (it.trim() == "main") mainTitleIds.add(target) }
+                    }
                 }
                 "reference" -> if (guideText == null && isTextStart(reader.attrOrEmpty("type"))) guideText = reader.attr("href")
             }
-            EventType.TEXT, EventType.CDSECT -> capture?.invoke(reader.text)
+            EventType.TEXT, EventType.CDSECT, EventType.ENTITY_REF -> capture?.invoke(reader.text)
             EventType.END_ELEMENT -> when (reader.localName) {
                 "title" -> capture = null
                 "meta" -> capture = null
@@ -783,9 +793,11 @@ private fun parseOpf(opfXml: String): Opf {
     val identifier = (identifiers.firstOrNull { it.first != null && it.first == uniqueId } ?: identifiers.firstOrNull())
         ?.second?.trim()?.takeIf { it.isNotEmpty() }
     val meta = BookMeta(
-        publisher = publisher.trim(), published = published.trim(), description = description.replace(Regex("<[^>]*>"), " ").replace(Regex("\\s+"), " ").trim(),
+        publisher = publisher.trim(), published = published.trim(), description = htmlToPlainText(description),
         subjects = subjects.map { it.trim() }.filter { it.isNotEmpty() }, rights = rights.trim(), series = series.trim(),
     )
+    // the one marked main, else the first: a subtitle ("A Novel") listed after it is not the book's name
+    val title = (titles.firstOrNull { it.first != null && it.first in mainTitleIds } ?: titles.firstOrNull())?.second?.toString().orEmpty()
     return Opf(title.trim(), author.trim(), coverHref ?: coverByMeta, navHref ?: ncxHref, manifest, spine, identifier, language, nonLinear, navHref, guideText, fixedLayout, pageRtl, meta)
 }
 
