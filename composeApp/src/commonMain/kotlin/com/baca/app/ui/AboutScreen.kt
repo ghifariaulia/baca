@@ -7,7 +7,7 @@ import androidx.compose.runtime.Composable
 import com.baca.app.reader.SheetSection
 
 /** Keep in step with the Android versionName and the desktop packageVersion. */
-internal const val APP_VERSION = "0.1.1"
+internal const val APP_VERSION = "0.1.2"
 
 private const val SOURCE_URL = "github.com/ghifariaulia/baca"
 
