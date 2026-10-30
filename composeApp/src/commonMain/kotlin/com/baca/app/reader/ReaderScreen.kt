@@ -184,6 +184,7 @@ import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -560,18 +561,16 @@ fun ReaderScreen(
                     enter = fadeIn() + slideInVertically { -it },
                     exit = fadeOut() + slideOutVertically { -it },
                 ) {
-                Row(
+                Box(
                     Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
                         // the status bar shows with this bar; in full screen the page's padding left it out
                         .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.statusBars.only(androidx.compose.foundation.layout.WindowInsetsSides.Top))
                         .padding(horizontal = 4.dp).height(56.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(0.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.widthIn(max = 132.dp).weight(1f),
+                        modifier = Modifier.align(Alignment.CenterStart),
                     ) {
                         IconButton(onClick = onBack) {
                             androidx.compose.material3.Icon(
@@ -595,12 +594,15 @@ fun ReaderScreen(
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f),
+                        // centred on the bar, clear of the widest group of buttons either side (three of 48dp)
+                        modifier = Modifier.align(Alignment.Center).padding(horizontal = TITLE_SIDE_ROOM),
                     )
                     Row(
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.align(Alignment.CenterEnd),
                     ) {
                         IconButton(onClick = {
                             sheet = if (sheet == SheetKind.SEARCH) SheetKind.NONE else SheetKind.SEARCH
@@ -1923,6 +1925,9 @@ private fun reflowSettingsOf(display: DisplaySettings, density: Density): Reflow
 /** Side margin as a share of the page width; medium is LibreraX's default 6%. */
 // LibreraX's top and bottom padding: 4 CSS px for each percent of side padding
 private val PADDING_BAND = 4.dp
+
+/** Each side of the top bar's title: the room the right-hand buttons (search, contents, Aa) take, and a little more. */
+private val TITLE_SIDE_ROOM = 152.dp
 
 // the text column on a wide window
 private val DESKTOP_COLUMN = 680.dp
