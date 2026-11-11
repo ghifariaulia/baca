@@ -178,4 +178,40 @@ class SettingsScreenTest {
         rule.waitForIdle()
         rule.onNodeWithText("Backup saved.").performScrollTo().assertExists()
     }
+
+    @Test
+    fun `about checks for an update only when asked and offers the download`() {
+        var checks = 0
+        rule.setContent {
+            AppTheme {
+                SettingsScreen(
+                    store = store(), onBack = {},
+                    checkForUpdate = { checks++; com.baca.shared.domain.UpdateStatus.Available("9.9.9", "https://example.test/r") },
+                )
+            }
+        }
+        rule.onNodeWithText("About Baca").performClick()
+        rule.waitForIdle()
+        assertEquals(0, checks, "opening About must not touch the network")
+
+        rule.onNodeWithText("Check for updates").performScrollTo().performClick()
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Version 9.9.9 is available.").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("Download 9.9.9").assertExists()
+        assertEquals(1, checks)
+    }
+
+    @Test
+    fun `about reports a failed update check`() {
+        rule.setContent {
+            AppTheme {
+                SettingsScreen(
+                    store = store(), onBack = {},
+                    checkForUpdate = { com.baca.shared.domain.UpdateStatus.Failed("no network") },
+                )
+            }
+        }
+        rule.onNodeWithText("About Baca").performClick()
+        rule.onNodeWithText("Check for updates").performScrollTo().performClick()
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Couldn't check: no network").fetchSemanticsNodes().isNotEmpty() }
+    }
 }

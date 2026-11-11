@@ -42,16 +42,21 @@ import com.baca.app.reader.DisplayContent
 import com.baca.app.reader.PlatformBackHandler
 import com.baca.app.reader.SegmentedRow
 import com.baca.app.reader.ChoiceChip
+import com.baca.app.reader.fetchLatestReleaseJson
+import com.baca.shared.domain.UpdateStatus
+import com.baca.shared.domain.checkForUpdate
 import com.baca.shared.domain.loadDisplay
 import com.baca.shared.domain.reader.PositionStore
 import com.baca.shared.domain.saveDisplay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** The pages behind the settings menu. */
 private enum class SettingsPage(val title: String, val caption: String, val icon: ImageVector) {
     APP("App", "Theme, library folder", Icons.Outlined.ColorLens),
     DISPLAY("Reading display", "Font, theme, spacing", Icons.Outlined.TextFields),
     BACKUP("Backup and restore", "Move to another device", Icons.Outlined.Backup),
-    ABOUT("About Baca", "Version $APP_VERSION", Icons.Outlined.Info),
+    ABOUT("About Baca", "Version $APP_VERSION, updates", Icons.Outlined.Info),
 }
 
 /**
@@ -76,6 +81,9 @@ internal fun SettingsScreen(
     backupMessage: String? = null,
     onCreateBackup: () -> Unit = {},
     onRestoreBackup: () -> Unit = {},
+    checkForUpdate: suspend () -> UpdateStatus = {
+        withContext(Dispatchers.IO) { checkForUpdate(APP_VERSION) { fetchLatestReleaseJson() } }
+    },
 ) {
     var display by remember { mutableStateOf(store.loadDisplay()) }
     var page by remember { mutableStateOf<SettingsPage?>(null) }
@@ -132,7 +140,7 @@ internal fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            SettingsPage.ABOUT -> AboutContent()
+            SettingsPage.ABOUT -> AboutContent(checkForUpdate)
         }
     }
 }
