@@ -3,19 +3,30 @@ package com.baca.app.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.ColorLens
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Backup
+import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,24 +36,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.baca.app.reader.DisplayContent
 import com.baca.app.reader.PlatformBackHandler
 import com.baca.app.reader.SegmentedRow
-import com.baca.app.reader.SheetSection
 import com.baca.app.reader.ChoiceChip
 import com.baca.shared.domain.loadDisplay
 import com.baca.shared.domain.reader.PositionStore
 import com.baca.shared.domain.saveDisplay
 
 /** The pages behind the settings menu. */
-private enum class SettingsPage(val title: String, val caption: String) {
-    APP("App", "Theme and library folder"),
-    DISPLAY("Reading display", "Font, theme, spacing, margins and more"),
-    BACKUP("Backup and restore", "Move your library to another device"),
-    ABOUT("About Baca", "Version $APP_VERSION, source and acknowledgements"),
+private enum class SettingsPage(val title: String, val caption: String, val icon: ImageVector) {
+    APP("App", "Theme, library folder", Icons.Outlined.ColorLens),
+    DISPLAY("Reading display", "Font, theme, spacing", Icons.Outlined.TextFields),
+    BACKUP("Backup and restore", "Move to another device", Icons.Outlined.Backup),
+    ABOUT("About Baca", "Version $APP_VERSION", Icons.Outlined.Info),
 }
 
 /**
@@ -76,25 +85,23 @@ internal fun SettingsScreen(
     val open = page
     SettingsFrame(
         title = open?.title ?: "Settings",
-        backLabel = if (open == null) "‹ Library" else "‹ Settings",
         onBack = if (open == null) onBack else ({ page = null }),
     ) {
         when (open) {
-            null -> SettingsPage.entries.forEach { entry -> MenuRow(entry.title, entry.caption) { page = entry } }
+            null -> SettingsPage.entries.forEach { entry -> MenuRow(entry) { page = entry } }
             SettingsPage.APP -> {
-                SheetSection("APP THEME") {
+                SettingsSection("APP THEME") {
                     SegmentedRow(
                         options = AppThemeChoice.entries.map { it.key to it.label },
                         selected = appTheme.key,
                     ) { key -> onAppThemeChange(AppThemeChoice.of(key)) }
                 }
-                SheetSection("LIBRARY FOLDER") {
+                SettingsSection("LIBRARY FOLDER") {
                     Text(
                         when {
-                            scanning -> "Scanning ${libraryFolderLabel.orEmpty()}…"
+                            scanning -> "Scanning…"
                             scanError != null -> "Can't read $libraryFolderLabel: $scanError"
-                            libraryFolderLabel != null -> "Books in $libraryFolderLabel and its subfolders, read where they are. Added books are copied there."
-                            else -> "Not set: added books are kept inside Baca. Choose a folder to read books where they are."
+                            else -> libraryFolderLabel ?: "Not set"
                         },
                         style = Type.body,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -107,89 +114,78 @@ internal fun SettingsScreen(
                 }
             }
             SettingsPage.DISPLAY -> {
-                Text(
-                    "Defaults for every book. The reader's Aa sheet has the same options.",
-                    style = Type.caption,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 DisplayContent(display, scrollable = false) { display = it }
             }
             SettingsPage.BACKUP -> {
-                Text(
-                    "One file with your library, positions, notes, bookmarks, settings and book files.",
-                    style = Type.body,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ChoiceChip("Create backup", !backupBusy, onCreateBackup)
                     ChoiceChip("Restore…", false, onRestoreBackup)
                 }
                 (if (backupBusy) "Working…" else backupMessage)?.let { message ->
-                    Spacer(Modifier.height(8.dp))
-                    Text(message, style = Type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(12.dp))
+                    Text(message, style = Type.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                SheetSection("MOVING TO ANOTHER DEVICE") {
-                    Text(
-                        "Create a backup here, copy the file to the other device and restore it there. " +
-                            "Restoring replaces that device's library, positions and notes, after saving what it had as before-restore.zip.",
-                        style = Type.body,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    "Restoring replaces this device's data, after saving the old as before-restore.zip.",
+                    style = Type.caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             SettingsPage.ABOUT -> AboutContent()
         }
     }
 }
 
-/** Back row, title and a scrolling body: the frame of the menu and of every page. */
+/** Back arrow beside the page title, then a scrolling body, centred and capped in width so desktop windows stay readable. */
 @Composable
-private fun SettingsFrame(title: String, backLabel: String, onBack: () -> Unit, content: @Composable () -> Unit) {
-    Column(
-        Modifier.fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp),
+private fun SettingsFrame(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {
+    Box(
+        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState()),
+        contentAlignment = Alignment.TopCenter,
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(top = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                backLabel,
-                style = Type.body,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onBack)
-                    .padding(horizontal = 8.dp, vertical = 8.dp)
-                    .semantics { contentDescription = "Back" },
-            )
+        Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().padding(horizontal = 24.dp)) {
+            Row(
+                Modifier.padding(top = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    modifier = Modifier.clip(CircleShape).clickable(onClick = onBack).padding(8.dp).size(24.dp),
+                )
+                Text(title, style = Type.screenTitle)
+            }
+            Spacer(Modifier.height(20.dp))
+            content()
+            Spacer(Modifier.height(32.dp))
         }
-        Text(title, style = Type.screenTitle)
-        Spacer(Modifier.height(16.dp))
-        content()
-        Spacer(Modifier.height(24.dp))
     }
 }
 
-/** One line of the menu: what the page is and what it holds. */
+/** A labelled group of controls: small muted label, then the controls, no box. */
 @Composable
-private fun MenuRow(title: String, caption: String, onClick: () -> Unit) {
-    Column {
-        Row(
-            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(title, style = Type.cardTitle)
-                Text(caption, style = Type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text("›", style = Type.cardTitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun SettingsSection(label: String, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+        Text(label, style = Type.sectionLabel, color = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(8.dp))
+        content()
+    }
+}
+
+/** One line of the menu: tinted icon, the page and what it holds. */
+@Composable
+private fun MenuRow(page: SettingsPage, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(page.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+        Column(Modifier.weight(1f)) {
+            Text(page.title, style = Type.cardTitle)
+            Text(page.caption, style = Type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
     }
 }

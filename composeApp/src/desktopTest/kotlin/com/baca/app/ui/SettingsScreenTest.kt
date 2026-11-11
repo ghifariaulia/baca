@@ -2,6 +2,7 @@ package com.baca.app.ui
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -125,9 +126,9 @@ class SettingsScreenTest {
         }
         assertEquals(true, store.local["reader_display"].orEmpty().contains("\"theme\":\"black\""))
 
-        rule.onNodeWithText("‹ Settings").performClick()
+        rule.onNodeWithContentDescription("Back").performClick()
         rule.waitUntil(5_000) { rule.onAllNodesWithText("Backup and restore").fetchSemanticsNodes().isNotEmpty() }
-        rule.onNodeWithText("‹ Library").performClick()
+        rule.onNodeWithContentDescription("Back").performClick()
         rule.waitUntil(5_000) { back }
     }
 
@@ -148,7 +149,7 @@ class SettingsScreenTest {
         rule.waitForIdle()
         rule.onNodeWithText("VERSION").assertExists()
         rule.onNodeWithText("Baca $APP_VERSION").assertExists()
-        rule.onNodeWithText("‹ Settings").performClick()
+        rule.onNodeWithContentDescription("Back").performClick()
         rule.waitForIdle()
         rule.onNodeWithText("Reading display").assertExists()
     }

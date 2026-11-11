@@ -5,10 +5,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import java.io.File
 
 
-actual fun folderLabel(path: String): String = path.substringAfterLast(File.separatorChar)
+actual fun folderLabel(path: String): String = path
 
 /** Desktop folder pick: JFileChooser directories-only, returns the path. */
 @Composable

@@ -2,7 +2,7 @@ package com.baca.app.reader
 
 import androidx.compose.runtime.Composable
 
-/** Short label for a chosen folder (the last part of its path). */
+/** Readable full path of a chosen folder, for display. */
 expect fun folderLabel(path: String): String
 
 /** Folder picker; persists access on Android. */
