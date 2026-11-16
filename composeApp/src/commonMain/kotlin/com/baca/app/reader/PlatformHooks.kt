@@ -35,6 +35,9 @@ expect fun discardPickedCopy(path: String)
 /** Opens http(s) links outside the app (browser). */
 expect fun openExternalLink(url: String)
 
+/** Shows [term]'s meaning in the system's dictionary apps, or in the browser where there are none. */
+expect fun lookUpWord(term: String)
+
 /** The time now, in the device's 12/24-hour style (reader footer). */
 expect fun clockText(): String
 

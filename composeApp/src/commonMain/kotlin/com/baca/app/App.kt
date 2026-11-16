@@ -60,6 +60,7 @@ import com.baca.app.ui.AppTheme
 import com.baca.app.ui.ReaderThemes
 import com.baca.app.ui.isDarkScheme
 import com.baca.shared.domain.isFinished
+import com.baca.shared.domain.LibrarySort
 import com.baca.app.ui.SettingsScreen
 import com.baca.app.ui.BookDetailScreen
 import com.baca.app.ui.BookDetails
@@ -125,6 +126,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
     // what the reader's settings change in how a book is read: the theme's colour scheme, direction, CSS, replacements
     fun readingOptions() = store.loadDisplay().let { it.parseOptions(isDarkScheme(ReaderThemes.forTheme(it.theme).background)) }
     var appTheme by remember { mutableStateOf(AppThemeChoice.of(store.getLocal(AppThemeChoice.STORE_KEY))) }
+    var librarySort by remember { mutableStateOf(LibrarySort.of(store.getLocal(LibrarySort.STORE_KEY))) }
     val dark = when (appTheme) {
         AppThemeChoice.SYSTEM -> isSystemInDarkTheme()
         AppThemeChoice.LIGHT -> false
@@ -583,6 +585,11 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                             onDelete = { row ->
                                 booksRepo.tombstone(row.bookHash)
                                 libraryTick++
+                            },
+                            sort = librarySort,
+                            onSortChange = { choice ->
+                                librarySort = choice
+                                store.putLocal(LibrarySort.STORE_KEY, choice.key)
                             },
                         )
                         if (addSheetOpen) {

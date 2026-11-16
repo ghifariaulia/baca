@@ -3,6 +3,7 @@ package com.baca.app.reader
 import androidx.compose.foundation.layout.safeDrawing
 import java.awt.Desktop
 import java.net.URI
+import com.baca.shared.domain.reader.webDictionaryUrl
 
 actual val tapZonesForPageTurnEnabled: Boolean = false
 
@@ -23,6 +24,15 @@ actual fun discardPickedCopy(path: String) {}
 actual fun openExternalLink(url: String) {
     runCatching {
         Desktop.getDesktop().browse(URI(url))
+    }
+}
+
+// macOS has Dictionary.app behind the dict: scheme; elsewhere there is no system dictionary to ask
+actual fun lookUpWord(term: String) {
+    if (System.getProperty("os.name").startsWith("Mac")) {
+        runCatching { Desktop.getDesktop().browse(URI("dict", "//$term", null)) }
+    } else {
+        openExternalLink(webDictionaryUrl(term))
     }
 }
 

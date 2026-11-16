@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.app.Activity
 import android.net.Uri
+import com.baca.shared.domain.reader.webDictionaryUrl
 import java.io.File
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -57,6 +58,21 @@ actual fun openExternalLink(url: String) {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         AndroidContexts.current.startActivity(intent)
     }
+}
+
+// dictionary and translation apps take selected text through ACTION_PROCESS_TEXT (the manifest's <queries> lets us see them)
+actual fun lookUpWord(term: String) {
+    val context = AndroidContexts.current
+    val intent = Intent(Intent.ACTION_PROCESS_TEXT)
+        .setType("text/plain")
+        .putExtra(Intent.EXTRA_PROCESS_TEXT, term)
+        .putExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true)
+    if (context.packageManager.queryIntentActivities(intent, 0).isEmpty()) {
+        openExternalLink(webDictionaryUrl(term))
+        return
+    }
+    val chooser = Intent.createChooser(intent, "Look up").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    context.startActivity(chooser)
 }
 
 actual fun clockText(): String =

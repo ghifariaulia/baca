@@ -3,6 +3,14 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Define in the selection toolbar: see which apps look up selected text -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
+        </intent>
+    </queries>
+
     <application
         android:label="Baca"
         android:icon="@mipmap/ic_launcher"

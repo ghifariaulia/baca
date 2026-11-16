@@ -1,6 +1,11 @@
 package com.baca.app.ui
 
 import com.baca.shared.domain.isFinished
+import com.baca.shared.domain.LibrarySort
+import com.baca.shared.domain.SortFacts
+import com.baca.shared.domain.sortLibrary
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.Canvas
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -82,15 +87,17 @@ fun LibraryScreen(
     onDelete: (BookRow) -> Unit,
     /** sidebar / bottom nav item tapped */
     onNav: (NavItem) -> Unit = {},
+    sort: LibrarySort = LibrarySort.ADDED,
+    onSortChange: (LibrarySort) -> Unit = {},
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 900.dp
         if (wide) {
-            DesktopLibrary(books, onAdd, onOpen, onResume, onDelete, onNav)
+            DesktopLibrary(books, onAdd, onOpen, onResume, onDelete, onNav, sort, onSortChange)
         } else {
             Column(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxWidth().weight(1f)) {
-                    PhoneLibrary(books, onAdd, onOpen, onResume, onDelete)
+                    PhoneLibrary(books, onAdd, onOpen, onResume, onDelete, sort, onSortChange)
                 }
                 BottomNav(NavItem.LIBRARY, onNav)
             }
@@ -108,6 +115,47 @@ private fun filterPredicate(query: String, filter: LibraryFilter): (LibraryBook)
             LibraryFilter.READING -> lib.progress != null && !isFinished(lib.finished, lib.progress)
             LibraryFilter.FINISHED -> isFinished(lib.finished, lib.progress)
         }
+}
+
+private fun sortFacts(lib: LibraryBook) =
+    SortFacts(lib.row.title, lib.row.author, lib.row.addedAt, lib.lastReadAt, lib.progress)
+
+/** "ALL BOOKS" with the grid's order on the right; tapping the order lists the others. */
+@Composable
+private fun AllBooksHeader(sort: LibrarySort, onSelect: (LibrarySort) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("ALL BOOKS", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box {
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(18.dp))
+                    .clickable { open = true }
+                    .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(sort.label, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = "Sort books")
+            }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                LibrarySort.entries.forEach { option ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(option.label, fontWeight = if (option == sort) FontWeight.Bold else FontWeight.Normal)
+                        },
+                        onClick = {
+                            open = false
+                            onSelect(option)
+                        },
+                    )
+                }
+            }
+        }
+    }
 }
 
 /** Most-recently-read unfinished book, or null. */
@@ -269,6 +317,8 @@ private fun PhoneLibrary(
     onOpen: (BookRow) -> Unit,
     onResume: (BookRow) -> Unit,
     onDelete: (BookRow) -> Unit,
+    sort: LibrarySort,
+    onSortChange: (LibrarySort) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(LibraryFilter.ALL) }
@@ -320,7 +370,7 @@ private fun PhoneLibrary(
         return
     }
 
-    val visible = books.filter(filterPredicate(query, filter))
+    val visible = sortLibrary(books.filter(filterPredicate(query, filter)), sort, ::sortFacts)
     var menuOpenFor by remember { mutableStateOf<BookRow?>(null) }
     LazyColumn(Modifier.fillMaxSize().padding(20.dp)) {
         item {
@@ -349,7 +399,7 @@ private fun PhoneLibrary(
                 )
                 Spacer(Modifier.height(20.dp))
             }
-            Text("ALL BOOKS", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            AllBooksHeader(sort, onSortChange)
             Spacer(Modifier.height(8.dp))
         }
         items(visible.chunked(3)) { row ->
@@ -446,11 +496,13 @@ private fun DesktopLibrary(
     onResume: (BookRow) -> Unit,
     onDelete: (BookRow) -> Unit,
     onNav: (NavItem) -> Unit,
+    sort: LibrarySort,
+    onSortChange: (LibrarySort) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(LibraryFilter.ALL) }
     var menuOpenFor by remember { mutableStateOf<BookRow?>(null) }
-    val visible = books.filter(filterPredicate(query, filter))
+    val visible = sortLibrary(books.filter(filterPredicate(query, filter)), sort, ::sortFacts)
 
     Row(Modifier.fillMaxSize()) {
         Sidebar(active = NavItem.LIBRARY, onNav = onNav)
@@ -526,7 +578,7 @@ private fun DesktopLibrary(
                 Spacer(Modifier.height(24.dp))
             }
 
-            Text("ALL BOOKS", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            AllBooksHeader(sort, onSortChange)
             Spacer(Modifier.height(12.dp))
 
             LazyColumn(Modifier.fillMaxWidth()) {

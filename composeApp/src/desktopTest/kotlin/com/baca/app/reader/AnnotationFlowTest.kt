@@ -118,6 +118,7 @@ class AnnotationFlowTest {
         rule.waitForIdle()
         val handles = rule.onAllNodesWithTag(SELECTION_HANDLE_TAG)
         assertEquals(2, handles.fetchSemanticsNodes().size)
+        rule.onNodeWithText("Define").assertExists()
 
         // "Title" is selected; drag the end handle along the line
         handles[1].performTouchInput { swipe(center, center + androidx.compose.ui.geometry.Offset(120f, 0f), 400) }

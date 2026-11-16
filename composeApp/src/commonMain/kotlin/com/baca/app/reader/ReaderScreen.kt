@@ -79,6 +79,8 @@ import androidx.compose.foundation.background
 import androidx.compose.material.icons.filled.FormatAlignJustify
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -216,8 +218,12 @@ import com.baca.shared.parser.FormattedSpan
 import com.baca.shared.parser.TEXT_COLOR
 import com.baca.shared.parser.INVISIBLE
 import com.baca.shared.domain.reader.SearchHit
+import com.baca.shared.domain.reader.Utterance
+import com.baca.shared.domain.reader.utteranceAfter
+import com.baca.shared.domain.reader.utteranceFrom
 import com.baca.shared.domain.reader.SelectionPoint
 import com.baca.shared.domain.reader.TextSelection
+import com.baca.shared.domain.reader.lookupTerm
 import com.baca.shared.parser.BlockKind
 import com.baca.shared.parser.Chapter
 import com.baca.shared.parser.ParseOptions
@@ -256,6 +262,8 @@ fun ReaderScreen(
     jumpToAnchor: AnchorJump? = null,
     /** A setting that changes how the book is read (colour scheme, direction, CSS, replacements) changed: read it again under [ParseOptions]. */
     onOptionsChange: (ParseOptions) -> Unit = {},
+    /** the voice Read aloud speaks with; none hides it */
+    speech: Speech? = rememberSpeech(book.language),
 ) {
     var display by remember { mutableStateOf(store.loadDisplay()) }
     var sheet by remember { mutableStateOf(if (openContents) SheetKind.CONTENTS else SheetKind.NONE) }
@@ -273,6 +281,9 @@ fun ReaderScreen(
     var editing by remember { mutableStateOf<EditorState?>(null) }
     // a picture open full screen, by its src
     var fullPicture by remember { mutableStateOf<String?>(null) }
+    // Read aloud: on while [reading]; [spoken] is the sentence being said, tinted on its page
+    var reading by remember { mutableStateOf(false) }
+    var spoken by remember { mutableStateOf<Utterance?>(null) }
 
     // at the running text's optical size, for measuring and drawing alike (the layout factory, built once, reads
     // the latest); one set per size, as new families each recomposition would resolve every font again
@@ -381,6 +392,39 @@ fun ReaderScreen(
     LaunchedEffect(chapter.href, pageNo) { selection = null }
     val selectionTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
     val matchHere = searchMatch?.takeIf { it.first == chapter.href }?.second
+    val spokenHere = spoken?.takeIf { it.chapterIndex == chapterIndex }?.let {
+        TextSelection(SelectionPoint(it.blockIndex, it.start), SelectionPoint(it.blockIndex, it.end))
+    }
+    // Reads from the top of the page shown, sentence by sentence, turning pages to keep the sentence in view.
+    // When the reader moves to another page meanwhile, reading goes on from there after the sentence being said.
+    LaunchedEffect(reading, speech) {
+        val voice = speech ?: return@LaunchedEffect
+        if (!reading) return@LaunchedEffect
+        fun fromPageTop(): Utterance? {
+            val top = session.layoutFor(session.chapterIndex).positionForPage(session.pageIndex)
+            return utteranceFrom(book.chapters, session.chapterIndex, top.blockIndex, top.charOffset)
+        }
+        fun onScreen(u: Utterance): Boolean {
+            if (u.chapterIndex != session.chapterIndex) return false
+            val page = session.layoutFor(u.chapterIndex).pageForPosition(u.blockIndex, u.start, "")?.pageIndex ?: return false
+            return page - session.pageIndex in 0 until columns
+        }
+        var next = fromPageTop()
+        var shown = session.chapterIndex to session.pageIndex
+        try {
+            while (next != null) {
+                val now = next
+                spoken = now
+                if (!onScreen(now)) session.jumpToAnchor(book.chapters[now.chapterIndex].href, now.blockIndex, now.start)
+                shown = session.chapterIndex to session.pageIndex
+                voice.say(now.text)
+                next = if (session.chapterIndex to session.pageIndex == shown) utteranceAfter(book.chapters, now) else fromPageTop()
+            }
+        } finally {
+            spoken = null
+            reading = false
+        }
+    }
     val pickSearchHit: (SearchHit) -> Unit = { hit ->
         sheet = SheetKind.NONE
         val href = book.chapters[hit.chapterIndex].href
@@ -608,6 +652,15 @@ fun ReaderScreen(
                                 tint = if (marked) accent else MaterialTheme.colorScheme.onSurface,
                             )
                         }
+                        if (speech != null) {
+                            IconButton(onClick = { reading = !reading }) {
+                                androidx.compose.material3.Icon(
+                                    imageVector = Icons.Filled.RecordVoiceOver,
+                                    contentDescription = if (reading) "Stop reading aloud" else "Read aloud",
+                                    tint = if (reading) accent else MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
                     }
                     Text(
                         book.title.ifBlank { com.baca.shared.AppInfo.name },
@@ -785,7 +838,7 @@ fun ReaderScreen(
                                     ranges,
                                     textStart,
                                     line.endExclusive,
-                                    (selection ?: matchHere)?.rangeIn(line.blockIndex, block.text.length),
+                                    (selection ?: spokenHere ?: matchHere)?.rangeIn(line.blockIndex, block.text.length),
                                     selectionTint,
                                 ).let { text ->
                                     // a hyphenated break: the text has no hyphen (or an invisible soft one), the measured line drew one
@@ -1124,6 +1177,24 @@ fun ReaderScreen(
                 }
             }
 
+            // while reading aloud, a pill over the page stops it (the bars are usually hidden then)
+            if (reading) {
+                Row(
+                    Modifier.align(Alignment.BottomCenter)
+                        .padding(bottom = barBelow + 72.dp)
+                        .shadow(4.dp, RoundedCornerShape(24.dp))
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .clickable { reading = false }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    androidx.compose.material3.Icon(Icons.Filled.Stop, contentDescription = null, tint = accent)
+                    Text("Stop reading", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                }
+            }
+
             // "Reader selection" (design page): the selected text, its two handles and the toolbar
             selection?.let { current ->
                 val copyText = rememberCopyToClipboard()
@@ -1148,6 +1219,12 @@ fun ReaderScreen(
                             onCopy = {
                                 copyText(current.text(blocks))
                                 selection = null
+                            },
+                            onDefine = lookupTerm(current.text(blocks))?.let { term ->
+                                {
+                                    lookUpWord(term)
+                                    selection = null
+                                }
                             },
                             modifier = modifier,
                         )
@@ -1338,6 +1415,7 @@ private fun SelectionToolbar(
     onColor: (String) -> Unit,
     onNote: () -> Unit,
     onCopy: () -> Unit,
+    onDefine: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val pill = Color(0xFF15181E)
@@ -1375,6 +1453,14 @@ private fun SelectionToolbar(
             fontWeight = FontWeight.Bold,
             modifier = Modifier.clickable(onClick = onCopy).padding(horizontal = 4.dp),
         )
+        if (onDefine != null) {
+            Text(
+                "Define",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable(onClick = onDefine).padding(horizontal = 4.dp),
+            )
+        }
     }
 }
 

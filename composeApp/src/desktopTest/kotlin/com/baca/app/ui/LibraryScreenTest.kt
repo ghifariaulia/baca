@@ -8,6 +8,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.baca.shared.db.BookRow
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -42,6 +44,35 @@ class LibraryScreenTest {
         }
         // read through (99%) and marked finished each get one; the 40% book none
         assertEquals(2, rule.onAllNodesWithContentDescription("Finished").fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun `picking an order in the sort menu reorders the grid and reports the choice`() {
+        val books = listOf(
+            LibraryBook(row("h1", "Moby-Dick", "H. Melville").copy(addedAt = 3L), null),
+            LibraryBook(row("h2", "Emma", "J. Austen").copy(addedAt = 2L), null),
+            LibraryBook(row("h3", "Dracula", "B. Stoker").copy(addedAt = 1L), null),
+        )
+        var sort by androidx.compose.runtime.mutableStateOf(com.baca.shared.domain.LibrarySort.ADDED)
+        rule.setContent {
+            AppTheme {
+                LibraryScreen(
+                    books = books, onAdd = {}, onOpen = {}, onResume = {}, onDelete = {},
+                    sort = sort, onSortChange = { sort = it },
+                )
+            }
+        }
+        fun gridOrder() = listOf("Moby-Dick", "Emma", "Dracula")
+            .sortedBy { rule.onNodeWithText(it).fetchSemanticsNode().boundsInRoot.left }
+        assertEquals(listOf("Moby-Dick", "Emma", "Dracula"), gridOrder())
+
+        rule.onNodeWithContentDescription("Sort books").performClick()
+        rule.onNodeWithText("Title").performClick()
+        rule.waitForIdle()
+
+        assertEquals(com.baca.shared.domain.LibrarySort.TITLE, sort)
+        rule.onNodeWithText("Title").assertExists()
+        assertEquals(listOf("Dracula", "Emma", "Moby-Dick"), gridOrder())
     }
 
     @Test
