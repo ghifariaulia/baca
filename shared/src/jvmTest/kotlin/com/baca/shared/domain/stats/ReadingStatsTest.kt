@@ -30,7 +30,8 @@ class ReadingStatsTest {
         assertEquals(100, summary.today.locations)
         assertEquals(1, summary.streak)
         assertEquals(1, summary.booksFinished)
-        assertTrue(summary.achievements.first { it.title == "First book" }.unlocked)
+        assertEquals("Bookworm I", summary.achievements.first { it.name == "Bookworm" }.title)
+        assertEquals(1000 / 3600L, summary.achievements.first { it.name == "Devoted" }.value)
         assertEquals("2026-11-16", summary.week.last().first)
     }
 
@@ -89,6 +90,6 @@ class ReadingStatsTest {
         val summary = stats().summary("2026-11-16")
         assertEquals(0, summary.xp)
         assertEquals(Level(1, 0, 100), summary.level)
-        assertNull(summary.achievements.firstOrNull { it.unlocked })
+        assertNull(summary.achievements.firstOrNull { it.tier > 0 })
     }
 }

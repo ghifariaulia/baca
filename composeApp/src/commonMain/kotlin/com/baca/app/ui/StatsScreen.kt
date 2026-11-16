@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.baca.shared.domain.stats.StatsSummary
 import com.baca.shared.domain.stats.XpRules
+import com.baca.shared.domain.stats.grouped
 import com.baca.shared.domain.stats.weekdayOf
 
 /** Reading stats (TECH 10.9): level, streak, today against the goal, the week, totals and achievements. */
@@ -136,16 +137,26 @@ private fun Achievements(summary: StatsSummary) {
     Card {
         Text("ACHIEVEMENTS", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
         summary.achievements.forEach { achievement ->
-            Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            val reached = achievement.tier > 0
+            Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.Top) {
                 Icon(
-                    if (achievement.unlocked) Icons.Filled.CheckCircle else Icons.Outlined.Lock,
-                    contentDescription = if (achievement.unlocked) "Unlocked" else "Locked",
-                    tint = if (achievement.unlocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (reached) Icons.Filled.CheckCircle else Icons.Outlined.Lock,
+                    contentDescription = if (reached) "Reached" else "Not yet reached",
+                    tint = if (reached) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(22.dp),
                 )
-                Column(Modifier.padding(start = 12.dp)) {
+                Column(Modifier.padding(start = 12.dp).weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(achievement.title, style = Type.cardTitle)
                     Text(achievement.description, style = Type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val next = achievement.nextGoal
+                    if (next == null) {
+                        Text("Every tier reached", style = Type.caption, color = MaterialTheme.colorScheme.primary)
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(Modifier.weight(1f)) { Bar(achievement.value / next.toFloat(), 4.dp) }
+                            Text("${grouped(achievement.value)} / ${grouped(next)}", style = Type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
         }

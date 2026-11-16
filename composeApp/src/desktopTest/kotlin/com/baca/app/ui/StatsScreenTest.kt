@@ -37,6 +37,9 @@ class StatsScreenTest {
         // earlier reading counts in the totals: Emma's 200 pages and the 100 read today
         rule.onNodeWithText("300").assertExists()
         assertEquals(0, rule.onAllNodesWithText("Earlier reading").fetchSemanticsNodes().size)
-        rule.onNodeWithText("First book").assertExists()
+        // one book finished: Bookworm's first tier, and the next asks for five
+        rule.onNodeWithText("Bookworm I").assertExists()
+        rule.onNodeWithText("Finish 5 books").assertExists()
+        rule.onNodeWithText("1 / 5").assertExists()
     }
 }

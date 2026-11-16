@@ -23,8 +23,6 @@ data class PageOutcome(
     val levelUp: Int?,
 )
 
-data class Achievement(val title: String, val description: String, val unlocked: Boolean)
-
 /** Everything the stats screen shows. */
 data class StatsSummary(
     val xp: Int,
@@ -89,10 +87,10 @@ class ReadingStats(private val store: StatsStore) {
         val earlier = earlier()
         val xp = earlier.xp + days.values.sumOf { it.xp }
         val reads = store.withPrefix(READ_PREFIX).values.map { json.decodeFromString(ReadThrough.serializer(), it) }
-        val finishes = reads.sumOf { it.finishes }
         val booksFinished = reads.count { it.finishes > 0 }
         val locations = earlier.locations + days.values.sumOf { it.locations }
         val longest = longestStreak(days)
+        val seconds = days.values.sumOf { it.seconds.toLong() }
         val level = levelOf(xp)
         return StatsSummary(
             xp = xp,
@@ -103,16 +101,8 @@ class ReadingStats(private val store: StatsStore) {
             week = lastDays(today, 7).map { it to (days[it] ?: DayRecord()) },
             booksFinished = booksFinished,
             locations = locations,
-            seconds = days.values.sumOf { it.seconds.toLong() },
-            achievements = listOf(
-                Achievement("First book", "Finish a book", booksFinished >= 1),
-                Achievement("Bookworm", "Finish 10 books", booksFinished >= 10),
-                Achievement("Library", "Finish 50 books", booksFinished >= 50),
-                Achievement("Re-reader", "Finish a book a second time", finishes > booksFinished),
-                Achievement("On a roll", "Meet the daily goal 7 days in a row", longest >= 7),
-                Achievement("Habit", "Meet the daily goal 30 days in a row", longest >= 30),
-                Achievement("Seasoned", "Reach level 10", level.number >= 10),
-            ),
+            seconds = seconds,
+            achievements = achievementsOf(booksFinished, longest, locations, seconds, level.number),
         )
     }
 
