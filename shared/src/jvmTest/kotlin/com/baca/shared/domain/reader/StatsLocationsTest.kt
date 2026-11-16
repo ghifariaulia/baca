@@ -15,12 +15,14 @@ import kotlin.test.assertEquals
 
 class StatsLocationsTest {
 
+    private var savedProgress: Float? = null
     private val store = object : PositionStore {
         override val deviceId = "test"
         override fun loadPosition(bookHash: String): Locator? = null
         override fun savePosition(bookHash: String, locator: Locator) {}
         override fun getLocal(key: String): String? = null
         override fun putLocal(key: String, value: String) {}
+        override fun saveBookProgress(bookHash: String, fraction: Float) { savedProgress = fraction }
     }
 
     private val text = (1..200).joinToString(" ") { "word$it" }
@@ -53,6 +55,31 @@ class StatsLocationsTest {
             assertEquals(29, shown.last().last)
             shown.zipWithNext { a, b -> assertEquals(true, b.first in a.last..a.last + 1, "pages $a then $b at height $pageHeight") }
         }
+    }
+
+    @Test
+    fun `the book's last page saves its progress as all of it, not where the page starts`() = runTest {
+        val session = session()
+        session.ensureView(Viewport(100, 300), ReflowSettings(fontSizePx = 20f, lineHeightRatio = 1.0f, imageHeightPx = 60))
+        session.jumpToFraction(0.5)
+        assertEquals(true, savedProgress!! < 1f)
+        while (session.canTurn(1)) session.turnPage(1)
+        assertEquals(1f, savedProgress)
+    }
+
+    @Test
+    fun `with the last page on screen in a spread, the footer and saved progress read the book's end`() = runTest {
+        val session = session()
+        session.ensureView(Viewport(100, 300), ReflowSettings(fontSizePx = 20f, lineHeightRatio = 1.0f, imageHeightPx = 60))
+        while (session.canTurn(1)) session.turnPage(1)
+        session.turnPage(-1) // the last page but one: alone, short of the end
+        assertEquals(true, session.readingFraction() < 1f)
+
+        session.pagesOnScreen = 2 // a spread: the last page is beside it
+        session.commitPosition()
+        assertEquals(session.locationTotal(), session.locationNumber())
+        assertEquals(1f, session.readingFraction())
+        assertEquals(1f, savedProgress)
     }
 
     @Test

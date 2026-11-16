@@ -1,6 +1,7 @@
 package com.baca.app.ui
 
 import com.baca.shared.domain.isFinished
+import com.baca.shared.domain.shownProgress
 import com.baca.shared.domain.LibrarySort
 import com.baca.shared.domain.SortFacts
 import com.baca.shared.domain.sortLibrary
@@ -118,7 +119,7 @@ private fun filterPredicate(query: String, filter: LibraryFilter): (LibraryBook)
 }
 
 private fun sortFacts(lib: LibraryBook) =
-    SortFacts(lib.row.title, lib.row.author, lib.row.addedAt, lib.lastReadAt, lib.progress)
+    SortFacts(lib.row.title, lib.row.author, lib.row.addedAt, lib.lastReadAt, if (isFinished(lib.finished, lib.progress)) 1f else lib.progress)
 
 /** "ALL BOOKS" with the grid's order on the right; tapping the order lists the others. */
 @Composable
@@ -303,7 +304,7 @@ private fun BookCell(
         Spacer(Modifier.height(6.dp))
         Text(lib.row.title, fontSize = 12.sp, maxLines = 1, textAlign = TextAlign.Left)
         Spacer(Modifier.height(4.dp))
-        MiniProgressBar(lib.progress ?: 0f)
+        MiniProgressBar(shownProgress(lib.finished, lib.progress))
     }
 }
 

@@ -123,6 +123,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -391,6 +392,8 @@ fun ReaderScreen(
     // a vertical book's page is one square; the others may show a spread of columns, or scroll
     val scrolled = display.flow == "scrolled" && !book.vertical
     val columns = if (book.vertical || scrolled) 1 else display.columns
+    // a spread shows the next page beside this one (a scroll sets its own count where it is laid out)
+    SideEffect { if (!scrolled) session.pagesOnScreen = columns }
     val page = layout.pages[pageNo]
     // where each drawn line of this page sits, for selection handles to find text under a finger
     val lineGeometry = remember(chapter.href, pageNo, layout) { HashMap<Pair<Int, Int>, LineGeometry>() }
@@ -992,6 +995,10 @@ fun ReaderScreen(
                                 }
                                 LaunchedEffect(listState) {
                                     snapshotFlow { listState.firstVisibleItemIndex }.collect { if (!jumping) session.showPage(it) }
+                                }
+                                // the pages the scroll shows, so the book's end reads as such with its last page in view
+                                LaunchedEffect(listState) {
+                                    snapshotFlow { listState.layoutInfo.visibleItemsInfo.size }.collect { session.pagesOnScreen = it }
                                 }
                                 LazyColumn(Modifier.fillMaxSize(), listState) {
                                     items(pageCount) { index ->

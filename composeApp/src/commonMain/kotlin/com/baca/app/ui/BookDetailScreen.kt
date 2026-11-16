@@ -1,5 +1,7 @@
 package com.baca.app.ui
 
+import com.baca.shared.domain.shownProgress
+
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
@@ -105,6 +107,7 @@ fun BookDetailScreen(
             Spacer(Modifier.height(16.dp))
 
             // progress card
+            val shown = shownProgress(finished, progress)
             Column(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surface)
@@ -112,7 +115,7 @@ fun BookDetailScreen(
             ) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween) {
                     Text(
-                        "${((progress ?: 0f) * 100).toInt()}%",
+                        "${(shown * 100).toInt()}%",
                         style = Type.body,
                     )
                     Text(
@@ -128,7 +131,7 @@ fun BookDetailScreen(
                 Spacer(Modifier.height(6.dp))
                 Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.outline)) {
                     Box(
-                        Modifier.fillMaxWidth(progress ?: 0f).height(3.dp)
+                        Modifier.fillMaxWidth(shown).height(3.dp)
                             .clip(RoundedCornerShape(2.dp))
                             .background(MaterialTheme.colorScheme.primary),
                     )

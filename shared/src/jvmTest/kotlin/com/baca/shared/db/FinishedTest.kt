@@ -2,6 +2,7 @@ package com.baca.shared.db
 
 import com.baca.shared.domain.Locator
 import com.baca.shared.domain.isFinished
+import com.baca.shared.domain.shownProgress
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -33,6 +34,14 @@ class FinishedTest {
         assertTrue(isFinished(markedFinished = true, progress = 0.2f))
         assertFalse(isFinished(markedFinished = false, progress = 0.5f))
         assertFalse(isFinished(markedFinished = false, progress = null))
+    }
+
+    @Test
+    fun `a finished book shows all of its progress, marked or read through`() {
+        assertEquals(1f, shownProgress(markedFinished = true, progress = 0.3f))
+        assertEquals(1f, shownProgress(markedFinished = false, progress = 0.99f))
+        assertEquals(0.5f, shownProgress(markedFinished = false, progress = 0.5f))
+        assertEquals(0f, shownProgress(markedFinished = false, progress = null))
     }
 
     @Test

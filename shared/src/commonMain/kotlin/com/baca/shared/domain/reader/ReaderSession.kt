@@ -144,6 +144,13 @@ class ReaderSession(
     }
 
     /** False at the book's first page going back and its last page going forward. */
+    /** Pages on screen from the one at [pageIndex]: 2 in a two-page spread, those a scroll shows. The reader sets it. */
+    var pagesOnScreen: Int = 1
+
+    /** Whether the book's last page is among those on screen. */
+    fun endOnScreen(): Boolean =
+        adjacentChapter(chapterIndex, 1) == null && pageIndex + pagesOnScreen.coerceAtLeast(1) >= layoutFor(chapterIndex).pageCount()
+
     fun canTurn(delta: Int): Boolean = if (delta < 0) {
         adjacentChapter(chapterIndex, -1) != null || pageIndex > 0
     } else {
@@ -190,8 +197,12 @@ class ReaderSession(
     }
 
     /** The footer's page number: the page's location ([BookLocations]), else its page in the book. */
-    fun locationNumber(): Int =
-        if (locations.total > 0) locations.number(chapterIndex, pageIndex, layoutFor(chapterIndex).pageCount()) else bookPageNumber()
+    fun locationNumber(): Int = when {
+        // the book's end on screen reads as its last page, whichever page the screen starts on
+        endOnScreen() -> locationTotal()
+        locations.total > 0 -> locations.number(chapterIndex, pageIndex, layoutFor(chapterIndex).pageCount())
+        else -> bookPageNumber()
+    }
 
     /**
      * The page number the footer shows at a place in the book (an annotation's anchor), counted the same way
@@ -209,6 +220,7 @@ class ReaderSession(
 
     /** Where the page starts, as a fraction of the book, counted as [locationNumber] is (the footer's bar). */
     fun readingFraction(): Float {
+        if (endOnScreen()) return 1f
         if (locations.total > 0) return place().toFloat()
         val total = bookTotalPages()
         return if (total <= 1) 0f else ((bookPageNumber() - 1) / (total - 1).toFloat()).coerceIn(0f, 1f)
@@ -407,13 +419,14 @@ class ReaderSession(
         if (chapters.isEmpty()) return
         if (locator == null) readingAnchor = null
         repo.savePosition(bookHash, locator ?: currentLocator())
-        // the reader's own fraction: by locations, or pagesBefore / (total - 1)
+        // the reader's own fraction: by locations, or pagesBefore / (total - 1); with the book's last page on
+        // screen it is all of it, as where the page starts (the place) is short of the end and would read 99%
         if (locations.total > 0) {
-            repo.saveBookProgress(bookHash, place().toFloat())
+            repo.saveBookProgress(bookHash, if (endOnScreen()) 1f else place().toFloat())
             return
         }
         val total = bookTotalPages()
         val before = (0 until chapterIndex).sumOf { layoutFor(it).pageCount() }
-        if (total > 1) repo.saveBookProgress(bookHash, (before + pageIndex).toFloat() / (total - 1))
+        if (total > 1) repo.saveBookProgress(bookHash, if (endOnScreen()) 1f else (before + pageIndex).toFloat() / (total - 1))
     }
 }

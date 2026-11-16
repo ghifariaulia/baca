@@ -61,6 +61,25 @@ class BookDetailScreenTest {
     }
 
     @Test
+    fun `marking a book finished shows it at 100 percent`() {
+        val r = row()
+        var finished by mutableStateOf(false)
+        rule.setContent {
+            AppTheme {
+                BookDetailScreen(
+                    row = r, progress = 0.3f, lastReadAt = 1L, addedAt = r.addedAt, sizeBytes = 1,
+                    onBack = {}, onContinue = {}, onRemove = {},
+                    finished = finished, onToggleFinished = { finished = !finished },
+                )
+            }
+        }
+        rule.onNodeWithText("30%").assertExists()
+        rule.onNodeWithText("Mark as finished").performScrollTo().performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("100%").assertExists()
+    }
+
+    @Test
     fun `unread book says Start reading and can be marked finished`() {
         val r = row()
         var finished by mutableStateOf(false)
