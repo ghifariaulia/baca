@@ -2,6 +2,7 @@ package com.baca.app.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.EditNote
@@ -102,6 +103,7 @@ enum class NavItem(val label: String) {
     LIBRARY("Library"),
     NOTES("Notes"),
     BOOKMARKS("Bookmarks"),
+    STATS("Stats"),
     SETTINGS("Settings"),
 }
 
@@ -112,6 +114,7 @@ fun NavIcon(item: NavItem, tint: Color, iconSize: Dp = 22.dp) {
         NavItem.LIBRARY -> Icons.Outlined.AutoStories
         NavItem.NOTES -> Icons.Outlined.EditNote
         NavItem.BOOKMARKS -> Icons.Outlined.BookmarkBorder
+        NavItem.STATS -> Icons.Outlined.Insights
         NavItem.SETTINGS -> Icons.Outlined.Settings
     }
     androidx.compose.material3.Icon(

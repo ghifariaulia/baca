@@ -2,6 +2,10 @@ package com.baca.shared.backup
 
 import com.baca.shared.db.Baca
 import com.baca.shared.db.inMemoryDb
+import com.baca.shared.db.DbStatsStore
+import com.baca.shared.domain.stats.EarlierBook
+import com.baca.shared.domain.stats.PageReading
+import com.baca.shared.domain.stats.ReadingStats
 import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toPath
@@ -66,6 +70,25 @@ class LibraryBackupTest {
         // the next local write must out-rank restored records
         val clock = b.sync_stateQueries.selectSyncStateAll().executeAsList().single { it.device_id == "dev-B" }
         assertTrue(clock.own_lamport >= 9)
+    }
+
+    @Test
+    fun `reading stats travel with a backup`() {
+        val a = device("dev-A", "/a/sync")
+        val statsA = ReadingStats(DbStatsStore(a))
+        statsA.catchUpOnce { listOf(EarlierBook("old", 100, listOf(0..49, 50..99), progress = 0.5f, finished = false)) }
+        statsA.pageRead("new", PageReading(0..1, 10, emptyList(), dwellMs = 20_000, chars = 1500), "2026-11-16")
+        val archive = tempDir("out") / "baca-backup.zip"
+        fs.sink(archive).use { LibraryBackup(a, fs).create(it) }
+
+        val b = device("dev-B", "/b/sync")
+        LibraryBackup(b, fs).restore(archive, tempDir("b").toString())
+
+        val statsB = ReadingStats(DbStatsStore(b))
+        assertEquals(statsA.summary("2026-11-16"), statsB.summary("2026-11-16"))
+        var askedAgain = false
+        statsB.catchUpOnce { askedAgain = true; emptyList() }
+        assertTrue(!askedAgain, "the restored library was already caught up")
     }
 
     @Test

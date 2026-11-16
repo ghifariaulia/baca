@@ -75,6 +75,8 @@ actual fun lookUpWord(term: String) {
     context.startActivity(chooser)
 }
 
+actual fun todayKey(): String = java.time.LocalDate.now().toString()
+
 actual fun clockText(): String =
     android.text.format.DateFormat.getTimeFormat(AndroidContexts.current).format(java.util.Date())
 

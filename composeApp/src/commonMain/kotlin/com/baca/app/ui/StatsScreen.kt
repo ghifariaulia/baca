@@ -1,0 +1,189 @@
+package com.baca.app.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.baca.shared.domain.stats.StatsSummary
+import com.baca.shared.domain.stats.XpRules
+import com.baca.shared.domain.stats.weekdayOf
+
+/** Reading stats (TECH 10.9): level, streak, today against the goal, the week, totals and achievements. */
+@Composable
+fun StatsScreen(summary: StatsSummary?) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(
+            Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("Stats", style = Type.screenTitle)
+            if (summary == null) return@Column
+            LevelCard(summary)
+            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Tile("Streak", days(summary.streak), "Best ${days(summary.longestStreak)}", Modifier.weight(1f).fillMaxHeight())
+                Tile(
+                    "Today",
+                    minutes(summary.today.seconds.toLong()),
+                    if (summary.today.goalMet) "Goal met" else "Goal ${minutes(XpRules.GOAL_SECONDS.toLong())}",
+                    Modifier.weight(1f).fillMaxHeight(),
+                    progress = summary.today.seconds / XpRules.GOAL_SECONDS.toFloat(),
+                )
+                Tile("Finished", "${summary.booksFinished}", if (summary.booksFinished == 1) "book" else "books", Modifier.weight(1f).fillMaxHeight())
+            }
+            Week(summary)
+            Totals(summary)
+            Achievements(summary)
+        }
+    }
+}
+
+@Composable
+private fun LevelCard(summary: StatsSummary) {
+    val level = summary.level
+    Card {
+        Text("LEVEL", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+            Text("${level.number}", fontSize = 40.sp, fontWeight = FontWeight.Bold)
+            Text("${summary.xp} XP", style = Type.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Bar(level.xpIntoLevel / level.xpForNext.toFloat(), 8.dp)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "${level.xpForNext - level.xpIntoLevel} XP to level ${level.number + 1}",
+            style = Type.caption,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun Tile(label: String, value: String, caption: String, modifier: Modifier, progress: Float? = null) {
+    Card(modifier) {
+        Text(label.uppercase(), style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        progress?.let {
+            Bar(it, 4.dp)
+            Spacer(Modifier.height(4.dp))
+        }
+        Text(caption, style = Type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun Week(summary: StatsSummary) {
+    val most = summary.week.maxOf { it.second.seconds }.coerceAtLeast(XpRules.GOAL_SECONDS)
+    Card {
+        Text("THIS WEEK", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth().height(96.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            summary.week.forEach { (day, record) ->
+                Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+                        val share = record.seconds / most.toFloat()
+                        if (share > 0f) {
+                            Box(
+                                Modifier.fillMaxWidth().fillMaxHeight(share.coerceIn(0.04f, 1f))
+                                    .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                    .background(if (record.goalMet) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(WEEKDAYS[weekdayOf(day)], style = Type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Totals(summary: StatsSummary) {
+    Card {
+        Text("TOTALS", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Fact("Pages read", "${summary.locations}")
+        Fact("Time read", minutes(summary.seconds))
+    }
+}
+
+@Composable
+private fun Achievements(summary: StatsSummary) {
+    Card {
+        Text("ACHIEVEMENTS", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        summary.achievements.forEach { achievement ->
+            Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (achievement.unlocked) Icons.Filled.CheckCircle else Icons.Outlined.Lock,
+                    contentDescription = if (achievement.unlocked) "Unlocked" else "Locked",
+                    tint = if (achievement.unlocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp),
+                )
+                Column(Modifier.padding(start = 12.dp)) {
+                    Text(achievement.title, style = Type.cardTitle)
+                    Text(achievement.description, style = Type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Fact(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = Type.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = Type.body, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun Card(modifier: Modifier = Modifier.fillMaxWidth(), content: @Composable () -> Unit) {
+    Column(
+        modifier.clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) { content() }
+}
+
+@Composable
+private fun Bar(share: Float, height: androidx.compose.ui.unit.Dp) {
+    Box(Modifier.fillMaxWidth().height(height).clip(RoundedCornerShape(height / 2)).background(MaterialTheme.colorScheme.outline)) {
+        Box(
+            Modifier.fillMaxWidth(share.coerceIn(0f, 1f)).height(height)
+                .clip(RoundedCornerShape(height / 2))
+                .background(MaterialTheme.colorScheme.primary),
+        )
+    }
+}
+
+private fun days(count: Int) = if (count == 1) "1 day" else "$count days"
+
+private fun minutes(seconds: Long): String {
+    val total = seconds / 60
+    return if (total < 60) "$total min" else "${total / 60} h ${total % 60} min"
+}
+
+private val WEEKDAYS = listOf("M", "T", "W", "T", "F", "S", "S")

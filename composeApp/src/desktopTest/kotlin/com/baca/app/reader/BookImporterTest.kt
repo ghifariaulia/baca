@@ -3,6 +3,7 @@ package com.baca.app.reader
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.baca.shared.db.DbBookRepository
 import com.baca.shared.db.Baca
+import okio.Path.Companion.toPath
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -120,5 +121,27 @@ class BookImporterTest {
         file.deleteOnExit()
         assertNull(importer.import(file.absolutePath))
         assertEquals(0, repo.all().size)
+    }
+
+    @Test
+    fun `earlier reading counts a book's locations and chapters as the reader does`() {
+        val driver = JdbcSqliteDriver("jdbc:sqlite:")
+        Baca.Schema.create(driver)
+        val db = Baca(driver)
+        val repo = DbBookRepository(db, now = { 1L })
+        val importer = BookImporter(repo, java.nio.file.Files.createTempDirectory("import-store").toFile().absolutePath)
+        val epub = java.io.File.createTempFile("earlier", ".epub").apply { deleteOnExit() }
+        epub.writeBytes(javaClass.classLoader.getResourceAsStream("books/frankenstein.epub")!!.readBytes())
+        val row = assertNotNull(importer.import(epub.absolutePath)).row
+        db.settings_localQueries.setLocal("progress:${row.bookHash}", "0.5")
+
+        val earlier = importer.earlierBooks(folder = null).single()
+        val parsed = com.baca.shared.parser.parseEpub(row.path.toPath())
+        val locations = com.baca.shared.domain.reader.BookLocations(parsed.chapters, parsed.toc)
+        assertEquals(locations.total, earlier.locations)
+        assertEquals(locations.chapterRanges(), earlier.chapters)
+        assertTrue(earlier.chapters.size > 10, "Frankenstein's letters and chapters")
+        assertEquals(0.5f, earlier.progress)
+        assertTrue(!earlier.finished)
     }
 }

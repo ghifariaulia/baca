@@ -36,6 +36,8 @@ actual fun lookUpWord(term: String) {
     }
 }
 
+actual fun todayKey(): String = java.time.LocalDate.now().toString()
+
 actual fun clockText(): String =
     java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
 

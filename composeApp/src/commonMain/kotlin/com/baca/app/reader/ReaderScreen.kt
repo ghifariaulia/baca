@@ -219,6 +219,9 @@ import com.baca.shared.parser.TEXT_COLOR
 import com.baca.shared.parser.INVISIBLE
 import com.baca.shared.domain.reader.SearchHit
 import com.baca.shared.domain.reader.Utterance
+import com.baca.shared.domain.stats.PageOutcome
+import com.baca.shared.domain.stats.PageReading
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.baca.shared.domain.reader.utteranceAfter
 import com.baca.shared.domain.reader.utteranceFrom
 import com.baca.shared.domain.reader.SelectionPoint
@@ -264,6 +267,8 @@ fun ReaderScreen(
     onOptionsChange: (ParseOptions) -> Unit = {},
     /** the voice Read aloud speaks with; none hides it */
     speech: Speech? = rememberSpeech(book.language),
+    /** credits a page (or spread) once it is turned away from, for reading stats; null keeps no stats */
+    onPageRead: (suspend (PageReading) -> PageOutcome)? = null,
 ) {
     var display by remember { mutableStateOf(store.loadDisplay()) }
     var sheet by remember { mutableStateOf(if (openContents) SheetKind.CONTENTS else SheetKind.NONE) }
@@ -394,6 +399,24 @@ fun ReaderScreen(
     val matchHere = searchMatch?.takeIf { it.first == chapter.href }?.second
     val spokenHere = spoken?.takeIf { it.chapterIndex == chapterIndex }?.let {
         TextSelection(SelectionPoint(it.blockIndex, it.start), SelectionPoint(it.blockIndex, it.end))
+    }
+    // Reading stats: how long each page (or spread) stays up, credited when it goes; a milestone it reaches is noted
+    val milestone = remember { mutableStateOf<String?>(null) }
+    val reportPage by rememberUpdatedState(onPageRead)
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val laidOut = session.initialized
+    LaunchedEffect(laidOut, chapterIndex, pageNo, columns) {
+        val report = reportPage ?: return@LaunchedEffect
+        if (!laidOut) return@LaunchedEffect
+        val shown = session.locationsShown(columns) ?: return@LaunchedEffect
+        val pages = session.layoutFor(chapterIndex).pages
+        val chars = (pageNo until pageNo + columns).sumOf { p ->
+            pages.getOrNull(p)?.sumOf { if (it.isImage) 0 else it.endExclusive - it.start } ?: 0
+        }
+        val chapters = session.chapterLocations()
+        timeInView(lifecycle) { ms ->
+            milestoneOf(report(PageReading(shown, session.locationTotal(), chapters, ms, chars)))?.let { milestone.value = it }
+        }
     }
     // Reads from the top of the page shown, sentence by sentence, turning pages to keep the sentence in view.
     // When the reader moves to another page meanwhile, reading goes on from there after the sentence being said.
@@ -1176,6 +1199,8 @@ fun ReaderScreen(
                     }
                 }
             }
+
+            MilestoneNote(milestone, Modifier.align(Alignment.TopCenter).padding(top = 72.dp))
 
             // while reading aloud, a pill over the page stops it (the bars are usually hidden then)
             if (reading) {

@@ -3,6 +3,7 @@ package com.baca.shared.domain.reader
 import com.baca.shared.parser.Chapter
 import com.baca.shared.parser.TocEntry
 import kotlin.math.ceil
+import kotlin.math.roundToInt
 import kotlin.math.floor
 import kotlin.math.roundToLong
 
@@ -23,6 +24,13 @@ class BookLocations(chapters: List<Chapter>, toc: List<TocEntry>) {
 
     /** Where each chapter starts, as a fraction of the book (the footer's ticks). */
     val chapterStarts: List<Float> = chapterStartsOf(chapters, toc)
+
+    /** The chapters (as [chapterStarts] marks them) as ranges of 0-based locations; empty without locations or chapters. */
+    fun chapterRanges(): List<IntRange> {
+        if (total <= 0 || chapterStarts.isEmpty()) return emptyList()
+        val bounds = (listOf(0) + chapterStarts.map { (it * total).roundToInt() } + total).distinct()
+        return bounds.zipWithNext { from, to -> from until to }.filter { !it.isEmpty() }
+    }
 
     /** Where page [page] of the [pages] in [chapter] starts, as a fraction of the book. */
     fun place(chapter: Int, page: Int, pages: Int): Double =

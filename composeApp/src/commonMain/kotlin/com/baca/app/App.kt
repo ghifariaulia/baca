@@ -61,6 +61,13 @@ import com.baca.app.ui.ReaderThemes
 import com.baca.app.ui.isDarkScheme
 import com.baca.shared.domain.isFinished
 import com.baca.shared.domain.LibrarySort
+import com.baca.shared.db.DbStatsStore
+import com.baca.shared.domain.stats.ReadingStats
+import com.baca.shared.domain.stats.StatsSummary
+import com.baca.shared.domain.stats.statsBookId
+import com.baca.app.reader.todayKey
+import com.baca.app.ui.StatsScreen
+import androidx.compose.runtime.produceState
 import com.baca.app.ui.SettingsScreen
 import com.baca.app.ui.BookDetailScreen
 import com.baca.app.ui.BookDetails
@@ -112,6 +119,7 @@ private sealed class Screen {
     data object Library : Screen()
     data object Notes : Screen()
     data object Bookmarks : Screen()
+    data object Stats : Screen()
     data object Settings : Screen()
     data class Detail(val row: BookRow) : Screen()
     data class Reader(val book: OpenBook, val jump: AnchorJump? = null, val page: Int? = null) : Screen()
@@ -135,6 +143,9 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
     AppTheme(dark = dark) {
         val booksRepo = remember(db) { DbBookRepository(db, now = defaultNow()) }
         val annotRepo = remember(db) { DbAnnotationRepository(db, now = defaultNow()) }
+        val stats = remember(db) { ReadingStats(DbStatsStore(db)) }
+        // stats work reads, changes and writes the same keys: one task at a time, so fast page turns lose nothing
+        val statsWork = remember { Dispatchers.IO.limitedParallelism(1) }
         var annotTick by remember { mutableIntStateOf(0) }
         val storeDir = rememberBookStoreDir()
         val importer = remember(booksRepo, storeDir) { BookImporter(booksRepo, storeDir) }
@@ -279,6 +290,13 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
             if (healed) libraryTick++
         }
 
+        // Reading done before stats were kept is credited once (a restored backup made before them, again)
+        LaunchedEffect(booksRepo, importer, libraryFolder, libraryTick) {
+            // a library folder that can't be reached yet leaves its books for the next start
+            if (libraryFolderPath != null && libraryFolder == null) return@LaunchedEffect
+            withContext(statsWork) { stats.catchUpOnce { importer.earlierBooks(libraryFolder) } }
+        }
+
         // Titles read under the old rule (the last dc:title won) are read again, once
         LaunchedEffect(booksRepo, importer, libraryFolder) {
             if (store.getLocal(KEY_TITLES_READ) == TITLES_READ) return@LaunchedEffect
@@ -305,6 +323,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                 NavItem.LIBRARY -> Screen.Library
                 NavItem.NOTES -> Screen.Notes
                 NavItem.BOOKMARKS -> Screen.Bookmarks
+                NavItem.STATS -> Screen.Stats
                 NavItem.SETTINGS -> Screen.Settings
             }
         }
@@ -420,6 +439,11 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                                         }
                                     },
                                     jumpToAnchor = current.jump,
+                                    onPageRead = { page ->
+                                        withContext(statsWork) {
+                                            stats.pageRead(statsBookId(book.bookHash, booksRepo.workKey(book.bookHash)), page, todayKey())
+                                        }
+                                    },
                                     onOptionsChange = { options ->
                                         // read again under the reader's new settings; the reader comes back where it was
                                         scope.launch(Dispatchers.IO) {
@@ -440,6 +464,11 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                                 bookPath = book.path,
                                 bookHash = book.bookHash,
                                 store = store,
+                                onPageRead = { page ->
+                                    withContext(statsWork) {
+                                        stats.pageRead(statsBookId(book.bookHash, booksRepo.workKey(book.bookHash)), page, todayKey())
+                                    }
+                                },
                                 onBack = {
                                     screenState = booksRepo.byHash(book.bookHash)
                                         ?.let { Screen.Detail(it) } ?: Screen.Library
@@ -534,6 +563,12 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                 }
                 Screen.Bookmarks -> NavShell(NavItem.BOOKMARKS, navTo) {
                     BookmarksScreen(groups = annotationGroups(), onOpenAnnotation = ::openAnnotation)
+                }
+                Screen.Stats -> NavShell(NavItem.STATS, navTo) {
+                    val summary by produceState<StatsSummary?>(null) {
+                        value = withContext(statsWork) { stats.summary(todayKey()) }
+                    }
+                    StatsScreen(summary)
                 }
                 Screen.Settings -> NavShell(NavItem.SETTINGS, navTo) {
                     SettingsScreen(

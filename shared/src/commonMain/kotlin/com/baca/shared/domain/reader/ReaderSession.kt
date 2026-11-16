@@ -6,6 +6,7 @@ import com.baca.shared.parser.TocEntry
 import com.baca.shared.render.ReflowLayout
 import com.baca.shared.render.ReflowSettings
 import kotlin.math.ceil
+import kotlin.math.floor
 
 /** Reading viewport in pixels: the text column size inside margins. */
 data class Viewport(
@@ -60,7 +61,9 @@ class ReaderSession(
 
     private var viewport = Viewport(0, 0)
     private var settings = ReflowSettings(0f)
-    private var initialized = false
+    /** Whether the book is laid out and on its saved page; before that the reader shows a placeholder page. */
+    var initialized = false
+        private set
     // a jump asked for before the first layout (Notes/Bookmarks screens open the reader with one)
     private var pendingJump: Triple<String, Int, Int>? = null
     private val layouts = mutableMapOf<Int, ReflowLayout>()
@@ -220,6 +223,23 @@ class ReaderSession(
         else (layoutFor(chapterIndex).pageCount() - 1 - pageIndex).coerceAtLeast(0)
 
     private fun place(): Double = locations.place(chapterIndex, pageIndex, layoutFor(chapterIndex).pageCount())
+
+    /**
+     * The book's locations (0-based) that the [count] pages from the one shown hold, for reading stats;
+     * null when the book's locations aren't known. Every page holds at least the location it starts in.
+     */
+    fun locationsShown(count: Int): IntRange? {
+        val total = locations.total
+        if (total <= 0) return null
+        val pages = layoutFor(chapterIndex).pageCount()
+        val first = floor(locations.place(chapterIndex, pageIndex, pages) * total).toInt().coerceIn(0, total - 1)
+        val end = locations.place(chapterIndex, (pageIndex + count).coerceAtMost(pages), pages)
+        val last = if (end >= 1.0 - 1e-9) total - 1 else (ceil(end * total).toInt() - 1).coerceIn(first, total - 1)
+        return first..last
+    }
+
+    /** The contents' chapters (the footer's ticks) as ranges of locations, for reading stats; empty without either. */
+    fun chapterLocations(): List<IntRange> = locations.chapterRanges()
 
     /** Where each chapter after the first starts, as a fraction of the book (footer ticks). */
     fun chapterStartFractions(): List<Float> {

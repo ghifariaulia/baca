@@ -56,7 +56,8 @@ class LibraryBackup(
         fs.createDirectories(dir)
         // records only: restoring adds book files and never removes any, so the books it would hold are still here
         (dir.parent ?: dir).let { parent -> fs.sink(parent / SAFETY_COPY).use { create(it, withBooks = false) } }
-        zip.list("/$FILES_PREFIX".toPath()).forEach { entry ->
+        // a backup of a library without book files has no books folder
+        zip.listOrNull("/$FILES_PREFIX".toPath()).orEmpty().forEach { entry ->
             zip.source(entry).use { input ->
                 fs.sink(dir / entry.name).buffer().use { it.writeAll(input) }
             }

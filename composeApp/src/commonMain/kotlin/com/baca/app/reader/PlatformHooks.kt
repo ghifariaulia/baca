@@ -38,6 +38,9 @@ expect fun openExternalLink(url: String)
 /** Shows [term]'s meaning in the system's dictionary apps, or in the browser where there are none. */
 expect fun lookUpWord(term: String)
 
+/** Today's date where the device is, as `yyyy-mm-dd` (reading stats). */
+expect fun todayKey(): String
+
 /** The time now, in the device's 12/24-hour style (reader footer). */
 expect fun clockText(): String
 

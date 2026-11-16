@@ -5,6 +5,10 @@ import com.baca.shared.db.BookRow
 import com.baca.shared.db.DbBookRepository
 import com.baca.shared.domain.computeBookHash
 import com.baca.shared.domain.workKeyOf
+import com.baca.shared.domain.isFinished
+import com.baca.shared.domain.stats.EarlierBook
+import com.baca.shared.domain.reader.BookLocations
+import com.baca.shared.domain.stats.statsBookId
 import com.baca.shared.parser.info
 import com.baca.shared.parser.BookInfo
 import com.baca.shared.parser.CbzBook
@@ -235,6 +239,39 @@ class BookImporter(
         }
         return changed
     }
+
+    /**
+     * Every book in the library as earlier reading, for the stats catch-up: its saved progress, and its locations
+     * and chapters as the reader counts them, read from its copy (once, in the background).
+     */
+    fun earlierBooks(folder: LibraryFolder?): List<EarlierBook> = repo.visible().map { row ->
+        val staged = row.path.startsWith("content://")
+        val readable = if (staged) runCatching { folder?.stage(row.path) }.getOrNull() else row.path
+        val counted = readable?.let {
+            try { locationsOf(row, it) } finally { if (staged) folder?.unstage(it) }
+        }
+        val progress = repo.progressFor(row.bookHash) ?: 0f
+        EarlierBook(
+            id = statsBookId(row.bookHash, repo.workKey(row.bookHash)),
+            // a copy that can't be read counts by its kept page total, without chapter bonuses
+            locations = counted?.first ?: repo.info(row.bookHash)?.pages ?: 0,
+            chapters = counted?.second.orEmpty(),
+            progress = progress,
+            finished = isFinished(repo.isFinished(row.bookHash), progress),
+        )
+    }
+
+    // a comic's locations are its pages; a book's are BookLocations', which the reader credits.
+    // A file that won't parse returns null, and earlierBooks falls back to its kept page total
+    private fun locationsOf(row: BookRow, readable: String): Pair<Int, List<IntRange>>? = runCatching {
+        if (row.format == "cbz") {
+            BookFormats.parseCbzFile(readable.toPath(), row.title)?.pages?.size?.let { it to emptyList() }
+        } else {
+            BookFormats.parse(readable.toPath(), row.format)?.let { book ->
+                BookLocations(book.chapters, book.toc).let { it.total to it.chapterRanges() }
+            }
+        }
+    }.getOrNull()
 
     /**
      * The details page's facts for a book imported before they were stored: read its copy

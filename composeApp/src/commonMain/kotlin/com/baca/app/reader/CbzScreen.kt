@@ -26,6 +26,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.baca.shared.domain.stats.PageOutcome
+import com.baca.shared.domain.stats.PageReading
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -79,6 +83,8 @@ fun CbzScreen(
     onAnnotationDelete: (id: String) -> Unit = {},
     /** Open straight on this page (Notes list) instead of the saved one. */
     startPage: Int? = null,
+    /** credits a page once it is turned away from, for reading stats (a comic's locations are its pages) */
+    onPageRead: (suspend (PageReading) -> PageOutcome)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val images = rememberBookImages(bookPath)
@@ -90,6 +96,22 @@ fun CbzScreen(
         session.ensureView()
         startPage?.let { session.goToPage(it) }
         viewportReady = true
+    }
+
+    // Reading stats: each page's time in view, credited when it goes; a picture has no words to wait for
+    val milestone = remember { mutableStateOf<String?>(null) }
+    val reportPage by rememberUpdatedState(onPageRead)
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val shownPage = remember(tick) { session.pageIndex }
+    // read here, not in the effect: the effect would see the newest value before it is restarted with it
+    val ready = viewportReady
+    LaunchedEffect(ready, shownPage) {
+        val report = reportPage ?: return@LaunchedEffect
+        if (!ready || book.pages.isEmpty()) return@LaunchedEffect
+        timeInView(lifecycle) { ms ->
+            milestoneOf(report(PageReading(shownPage..shownPage, book.pages.size, emptyList(), ms, chars = 0)))
+                ?.let { milestone.value = it }
+        }
     }
 
     // tick bumps on every page change, so reading it keeps the mark current
@@ -129,6 +151,7 @@ fun CbzScreen(
     ) {
         LaunchedEffect(Unit) { focusRequester.requestFocus() }
         PlatformBackHandler(onBack = onBack)
+        Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 4.dp).height(56.dp),
@@ -249,6 +272,8 @@ fun CbzScreen(
                     )
                 }
             }
+        }
+        MilestoneNote(milestone, Modifier.align(Alignment.TopCenter).padding(top = 64.dp))
         }
     }
 }
