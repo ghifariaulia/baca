@@ -69,4 +69,42 @@ class FixedLayoutTest {
         assertEquals(false, horizontal.vertical)
         assertEquals(false, horizontal.pageRtl)
     }
+
+    @Test
+    fun `an absolute-positioned PDFTron page with transform scale is reconstructed into reflowable paragraphs and scaled sizes`() {
+        val css = """
+            <style>
+            .s1 { border:0; margin:0; white-space:pre; position:absolute; display:block; }
+            .fs8 { font-size:614.00px; }
+            .fs1 { font-size:2000.00px; }
+            .t0 { transform:scale(1.152000); }
+            #TextContainer1 { position:absolute; transform:scale(0.031257); }
+            </style>
+        """.trimIndent()
+        val body = """
+            <div class="PageContainer" id="Page">
+              <div id="TextContainer1">
+                <div class="s1 t0" style="left:13985.2px;bottom:37552.6px;"><span class="s1 fs1" style="bottom:0px;letter-spacing:78.0px;">C</span></div>
+                <div class="s1 t0" style="left:15690.2px;bottom:37552.6px;"><span class="s1 fs1" style="bottom:0px;letter-spacing:78.0px;">OOKING</span></div>
+                <div class="s1 t0" style="left:26023.6px;bottom:37552.6px;"><span class="s1 fs1" style="bottom:0px;letter-spacing:78.0px;">WITH</span></div>
+                <span class="s1 fs8" style="left:4717.3px;bottom:34950.0px;word-spacing:6.1px;">doors as a signature restaurant that would enable us to cook with free</span>
+                <span class="s1 fs8" style="left:21896.6px;bottom:34950.5px;">-</span>
+                <span class="s1 fs8" style="left:4717.3px;bottom:34134.0px;letter-spacing:1.8px;word-spacing:42.8px;">dom and respect for our culinary tradition.</span>
+              </div>
+            </div>
+        """.trimIndent()
+        val book = parseEpub(epub("""<meta property="rendition:layout">pre-paginated</meta>""", listOf(body), head = css))
+        val texts = book.chapters.single().blocks.filterIsInstance<Block.Text>()
+        assertEquals(
+            listOf(
+                "COOKING WITH",
+                "doors as a signature restaurant that would enable us to cook with freedom and respect for our culinary tradition.",
+            ),
+            texts.map { it.text },
+        )
+        // letter-spacing 1.8px in a 614px font is ~0.0029em, not 1.8 / 16 = 0.1125em
+        val bodySpan = texts[1].spans.last()
+        kotlin.test.assertTrue(bodySpan.letterSpacing < 0.02f, "letterSpacing must be relative to the element's font size, was ${bodySpan.letterSpacing}")
+        kotlin.test.assertTrue(bodySpan.wordSpacing < 0.2f, "wordSpacing must be relative to the element's font size, was ${bodySpan.wordSpacing}")
+    }
 }

@@ -102,10 +102,10 @@ internal data class CssStyle(
     val linePx: Float? = null,
     val hyphenate: Boolean? = null,
     val invisible: Boolean? = null,
-    /** `word-spacing` in em */
-    val wordSpacing: Float? = null,
-    /** `letter-spacing` in em; 0 for `normal` */
-    val letterSpacing: Float? = null,
+    /** `word-spacing` as a length (em or px); null for unset, 0px for `normal` */
+    val wordSpacing: CssLength? = null,
+    /** `letter-spacing` as a length (em or px); null for unset, 0px for `normal` */
+    val letterSpacing: CssLength? = null,
     /** `white-space` keeps the text's spaces and line breaks (`pre`, `pre-wrap`, `pre-line`) */
     val keepsSpaces: Boolean? = null,
     /** `background-image: url(…)`, as the book writes it */
@@ -114,6 +114,13 @@ internal data class CssStyle(
     val width: CssLength? = null,
     val height: CssLength? = null,
     val maxWidth: CssLength? = null,
+    /** `position` as written (`absolute`, `fixed`, `relative`, `static`) */
+    val position: String? = null,
+    /** `left` and `bottom` coordinates in CSS px, when positioned */
+    val leftPx: Float? = null,
+    val bottomPx: Float? = null,
+    /** `transform: scale(s)` factor, when scaled */
+    val transformScale: Float? = null,
 ) {
     /** [other]'s set values win. */
     private val setsSize get() = fontScale != null || fontAbsolute != null || fontKeyword != null
@@ -186,6 +193,10 @@ internal data class CssStyle(
         width = other.width ?: width,
         height = other.height ?: height,
         maxWidth = other.maxWidth ?: maxWidth,
+        position = other.position ?: position,
+        leftPx = other.leftPx ?: leftPx,
+        bottomPx = other.bottomPx ?: bottomPx,
+        transformScale = other.transformScale ?: transformScale,
     )
 }
 
@@ -677,7 +688,7 @@ private fun CssStyle.declare(name: String, value: String, written: String): CssS
     "line-height" -> copy(lineRatio = lineRatioOf(value) ?: lineRatio, linePx = (cssLength(value) as? CssLength.Px)?.px)
     "hyphens", "-webkit-hyphens" -> copy(hyphenate = value != "none" && value != "manual")
     "visibility" -> copy(invisible = value == "hidden" || value == "collapse")
-    "word-spacing" -> copy(wordSpacing = if (value == "normal") 0f else (cssLength(value, signed = true) ?: return this).letterEm())
+    "word-spacing" -> copy(wordSpacing = if (value == "normal") CssLength.Px(0f) else cssLength(value, signed = true) ?: wordSpacing)
     "display" -> copy(hidden = value == "none", display = value)
     "font-size" -> relativeSize(value)?.let { copy(fontScale = it, fontAbsolute = null, fontKeyword = null) }
         ?: SIZE_KEYWORDS.indexOf(value).takeIf { it >= 0 }?.let { copy(fontKeyword = it, fontScale = null, fontAbsolute = null) }
@@ -761,12 +772,17 @@ private fun CssStyle.declare(name: String, value: String, written: String): CssS
         backgroundImage = URL.find(written)?.groupValues?.get(1)?.trim('\'', '"', ' ') ?: backgroundImage,
         background = value.split(' ').firstNotNullOfOrNull { backgroundOf(it) } ?: background,
     )
-    "letter-spacing" -> copy(letterSpacing = if (value == "normal") 0f else (cssLength(value, signed = true) ?: return this).letterEm())
+    "letter-spacing" -> copy(letterSpacing = if (value == "normal") CssLength.Px(0f) else cssLength(value, signed = true) ?: letterSpacing)
     "list-style" -> value.split(Regex("\\s+")).firstOrNull { it in LIST_STYLES }?.let { copy(listStyle = it) } ?: this
     "width" -> copy(width = cssLength(value))
     "height" -> copy(height = cssLength(value))
     "max-width" -> copy(maxWidth = cssLength(value))
     "min-width" -> copy(minWidth = cssLength(value))
+    "position" -> copy(position = value)
+    "left" -> copy(leftPx = (cssLength(value, signed = true) as? CssLength.Px)?.px ?: leftPx)
+    "bottom" -> copy(bottomPx = (cssLength(value, signed = true) as? CssLength.Px)?.px ?: bottomPx)
+    "transform", "-webkit-transform", "-moz-transform", "-ms-transform", "-o-transform" ->
+        SCALE_TRANSFORM.find(value)?.groupValues?.get(1)?.toFloatOrNull()?.takeIf { it > 0f }?.let { copy(transformScale = it) } ?: this
     "column-count", "-webkit-column-count", "-moz-column-count" -> copy(columnCount = value.toIntOrNull() ?: 1)
     "column-gap", "-webkit-column-gap", "-moz-column-gap" -> copy(columnGap = cssLength(value))
     "text-decoration", "text-decoration-line" -> copy(underline = value.contains("underline"), lineThrough = value.contains("line-through"))
@@ -808,11 +824,14 @@ internal fun parseColor(value: String): Long? {
         }
         return (0xFFL shl 24) or (channels[0] shl 16) or (channels[1] shl 8) or channels[2]
     }
+    if (value == "transparent") return INVISIBLE
     return NAMED_COLORS[value]?.let { (0xFFL shl 24) or it }
 }
 
 /** `color: inherit` or `currentColor`: the text's own colour, which is the theme's ink unless a parent sets one. */
 const val TEXT_COLOR = -1L
+
+private val SCALE_TRANSFORM = Regex("""scale\(\s*([0-9]*\.?[0-9]+)""")
 
 private val NAMED_COLORS = mapOf(
     "black" to 0x000000L, "white" to 0xFFFFFFL, "red" to 0xFF0000L, "green" to 0x008000L, "blue" to 0x0000FFL,

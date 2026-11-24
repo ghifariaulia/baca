@@ -346,6 +346,17 @@ sealed class Block {
 }
 
 /**
+ * Positioning metrics for an absolute-positioned block from a fixed-layout (e.g. PDFTron) page,
+ * before consecutive fragments on the same line and lines in the same paragraph are merged.
+ */
+internal data class PositionedFrame(
+    val leftPx: Float,
+    val bottomPx: Float,
+    val fontPx: Float,
+    val letterSpacingPx: Float,
+)
+
+/**
  * Offsets contract (docs/TECH.md 5.2/5.3): a block's text is its spans joined in
  * order, and every locator charOffset and annotation anchor charOffset is an
  * index into that exact string. Spans never overlap and never reorder.
@@ -1069,6 +1080,7 @@ internal fun parseXhtml(
     var pendingAvoid = false
     val avoidInside = ArrayDeque<Pair<Int, Int>>()
     val blockKeeps = mutableListOf<Pair<Boolean, Boolean>>()
+    val blockFrames = mutableListOf<PositionedFrame?>()
 
     fun takeGap(): Spacing? {
         val gap = if (pendingMargin == null && pendingPadding == Spacing.ZERO && pendingOuter == Spacing.ZERO) null
@@ -1086,11 +1098,12 @@ internal fun parseXhtml(
     /** A block's boxes, as they'll be once closed ([finishBoxes]). */
     fun boxIds(): List<Int> = openedBoxes.map { it.box.id }
 
-    fun addBlock(block: Block) {
+    fun addBlock(block: Block, frame: PositionedFrame? = null) {
         blocks.add(block)
         blockBoxes.add(boxIds())
         blockCuts.add(takenCut)
         blockKeeps.add((pendingAvoid || avoidInside.any { it.second < blocks.size - 1 }) to avoidInside.isNotEmpty())
+        blockFrames.add(frame)
         pendingAvoid = false
         takenCut = null
     }
@@ -1134,13 +1147,19 @@ internal fun parseXhtml(
         // line, as in HTML (books use <p>&nbsp;</p> for scene breaks)
         if (collapsed.any { it.text.isNotEmpty() }) {
             val style = styles.last()
+            val frame = if (style.absolute && style.transformScale < 0.5f && style.leftPx != null && style.bottomPx != null) {
+                PositionedFrame(style.leftPx, style.bottomPx, (style.rawScale * BROWSER_EM_PX).coerceAtLeast(1f), style.rawLetterSpacingPx)
+            } else {
+                null
+            }
             addBlock(
                 Block.Text(
                     collapsed, kind, headingLevel, blockAlign, blockIndent, blockScale, takeGap(),
-                    style.inset, emptyList(), blockFloatsRight, style.insetEnd, pendingMarker, blockKeepsSpaces,
+                    style.inset, emptyList(), blockFloatsRight, style.insetEnd, pendingMarker, if (frame != null) false else blockKeepsSpaces,
                     style.insetShare, style.insetEndShare, blockDropCap, blockLineRatio, blockHyphenate, style.cell,
                     takeBreak(), blockRagged, style.columns, lang = style.lang, indentShare = blockIndentShare, linePx = blockLinePx, rtl = style.rtl,
                 ).let { if (it.ragged) it.copy(align = TextAlign.START) else it },
+                frame,
             )
             pendingMarker = null
         }
@@ -1538,6 +1557,7 @@ internal fun parseXhtml(
                         inside.clear()
                         blockBoxes.subList(held.from, blockBoxes.size).clear()
                         blockKeeps.subList(held.from, blockKeeps.size).clear()
+                        blockFrames.subList(held.from, blockFrames.size).clear()
                         pendingMargin = null
                         pendingPadding = Spacing.ZERO
                         addBlock(Block.Rule(gap, height = held.height, line = false, breakBefore = breaks))
@@ -1573,10 +1593,9 @@ internal fun parseXhtml(
             else -> {}
         }
     }
-    anchorBlocks?.putAll(idBlocks)
     anchors?.putAll(idsAt.mapValues { (_, at) -> if (bodyText > 0) at.toFloat() / bodyText else 0f })
     // each block with its boxes as they ended up, their insets known now they're closed
-    return blocks.mapIndexed { i, block ->
+    val finished = blocks.mapIndexed { i, block ->
         val boxes = blockBoxes[i].mapNotNull { id ->
             finishedBoxes[id]?.let { it.box.copy(topInset = it.topInset ?: Spacing.ZERO, bottomInset = it.bottomInset) }
         }
@@ -1588,6 +1607,9 @@ internal fun parseXhtml(
             is Block.Rule -> block.copy(boxes = boxes, marginBefore = cut, keepWithPrevious = withPrevious, keepLines = lines)
         }
     }
+    val result = if (blockFrames.any { it != null }) mergePositionedBlocks(finished, blockFrames, idBlocks) else finished
+    anchorBlocks?.putAll(idBlocks)
+    return result
 }
 
 /** An element's inherited style: tag defaults, then the book's CSS for it. */
@@ -1658,17 +1680,34 @@ private data class Computed(
     val pushesBlocks: TextAlign? = null,
     /** a table cell's place in its row ([TableCell.spareAbove]): row groups centre theirs, rows and cells take it on */
     val rowAlign: Float = 0f,
+    /** cumulative `transform: scale(s)` factor from open ancestors */
+    val transformScale: Float = 1f,
+    /** unscaled font size relative to 16px, before [transformScale] or [MIN_SCALE]/[MAX_SCALE] clamping */
+    val rawScale: Float = 1f,
+    /** unscaled `letter-spacing` in CSS px (when set in px) */
+    val rawLetterSpacingPx: Float = 0f,
+    /** positioned coordinates in the coordinate space of the transform container */
+    val leftPx: Float? = null,
+    val bottomPx: Float? = null,
+    val absolute: Boolean = false,
 ) {
     fun inherit(tag: String, declared: CssStyle): Computed {
         val ownFace = declared.face ?: face
         val ownMono = declared.genericMono ?: genericMono
+        val ownTransform = transformScale * (declared.transformScale ?: 1f)
         // a keyword's size, or a length's; else the parent's, scaled, and by the quirk where it came from a keyword
-        val ownScale = (
+        val ownRawScale = (
             declared.fontKeyword?.let { (if (ownMono) MONOSPACE_KEYWORD_PX else KEYWORD_PX)[it] / BROWSER_EM_PX }
                 ?: declared.fontAbsolute
-                ?: (scale * (declared.fontScale ?: 1f) * if (sizeAbsolute) 1f else monospaceQuirk(genericMono, ownMono))
+                ?: (rawScale * (declared.fontScale ?: 1f) * if (sizeAbsolute) 1f else monospaceQuirk(genericMono, ownMono))
             )
-            .coerceIn(MIN_SCALE, MAX_SCALE)
+        val ownScale = (ownRawScale * ownTransform).coerceIn(MIN_SCALE, MAX_SCALE)
+        val ownFontPx = (ownRawScale * BROWSER_EM_PX).coerceAtLeast(1f)
+        fun spacingEm(len: CssLength?): Float? = when (len) {
+            is CssLength.Em -> len.em
+            is CssLength.Px -> len.px / ownFontPx
+            else -> null
+        }
         return Computed(
             bold = declared.bold ?: (bold || tag in boldTags || tag in headingTags),
             italic = declared.italic ?: (italic || tag in italicTags),
@@ -1730,8 +1769,8 @@ private data class Computed(
             inlineBackground = if (isBlock(tag, declared.display)) null else declared.background?.takeIf { it != TRANSPARENT } ?: inlineBackground,
             // and its hyphenation on body, p, li and div
             hyphenate = tag in hyphenTags || (declared.hyphenate ?: hyphenate),
-            invisible = declared.invisible ?: invisible,
-            wordSpacing = declared.wordSpacing ?: wordSpacing,
+            invisible = declared.invisible ?: (declared.color == INVISIBLE || invisible),
+            wordSpacing = spacingEm(declared.wordSpacing) ?: wordSpacing,
             keepsSpaces = declared.keepsSpaces ?: keepsSpaces,
             // vertical-align isn't inherited, but the text inside a raised element rides on it; `super` and
             // `sub` move by a third and a fifth of the parent's size and a device px (probed)
@@ -1748,7 +1787,7 @@ private data class Computed(
             },
             baselineLine = if (declared.baseline != null) 0f else declared.baselineLine ?: baselineLine,
             transform = declared.transform ?: transform,
-            letterSpacing = declared.letterSpacing ?: letterSpacing,
+            letterSpacing = spacingEm(declared.letterSpacing) ?: letterSpacing,
             widthShare = (declared.width as? CssLength.Percent)?.let { widthShare * it.percent / 100f } ?: widthShare,
             // a browser's `column-gap: normal` is 1em
             columns = when {
@@ -1767,6 +1806,12 @@ private data class Computed(
                 "tr", "td", "th" -> rowAlign
                 else -> 0f
             },
+            transformScale = ownTransform,
+            rawScale = ownRawScale,
+            rawLetterSpacingPx = (declared.letterSpacing as? CssLength.Px)?.px ?: rawLetterSpacingPx,
+            leftPx = declared.leftPx?.takeIf { it != 0f } ?: leftPx ?: declared.leftPx,
+            bottomPx = declared.bottomPx?.takeIf { it != 0f } ?: bottomPx ?: declared.bottomPx,
+            absolute = declared.position == "absolute" || absolute,
         )
     }
 }
@@ -2042,3 +2087,188 @@ internal fun XmlReader.attr(name: String): String? {
     }
     return null
 }
+
+/**
+ * Reconstructs lines and paragraphs from absolute-positioned fragments on a fixed-layout
+ * (e.g. PDFTron) page: fragments on the same baseline (`bottomPx`) join into a line with
+ * spaces inserted across word gaps, and consecutive lines of the same column and font size
+ * join into paragraphs with end-of-line hyphens closed up.
+ */
+private fun mergePositionedBlocks(
+    blocks: List<Block>,
+    frames: List<PositionedFrame?>,
+    idBlocks: MutableMap<String, Int>,
+): List<Block> {
+    data class Item(val block: Block.Text, val frame: PositionedFrame, val oldIndex: Int)
+    class Line(var bottomPx: Float, var fontPx: Float, var leftPx: Float, val items: MutableList<Item>)
+
+    val out = mutableListOf<Block>()
+    val pending = mutableListOf<Item>()
+    val oldToNew = IntArray(blocks.size)
+
+    fun estWidth(text: String, fontPx: Float, letterSpacingPx: Float): Float {
+        var w = 0f
+        for (ch in text) {
+            val ratio = when {
+                ch in "MW@%" -> 0.82f
+                ch in "OQGCDHNRU" -> 0.68f
+                ch in "ABEFKSTVXYZ" -> 0.60f
+                ch in "IJL1.,:;!|iIlj" -> 0.28f
+                ch.isUpperCase() -> 0.62f
+                else -> 0.48f
+            }
+            w += fontPx * ratio + maxOf(letterSpacingPx, 0f)
+        }
+        return w
+    }
+
+    fun rescaleSpans(targetScale: Float, block: Block.Text): List<FormattedSpan> {
+        val ratio = (block.scale ?: 1f) / targetScale
+        return if (kotlin.math.abs(ratio - 1f) <= 0.01f) block.spans
+        else block.spans.map { it.copy(scale = it.scale * ratio) }
+    }
+
+    fun buildLineBlock(line: Line): Pair<Block.Text, String> {
+        val dominant = line.items.filter { it.block.text.isNotBlank() }.maxByOrNull { it.block.text.trim().length } ?: line.items.first()
+        val baseBlock = dominant.block
+        val targetScale = baseBlock.scale ?: 1f
+        val spans = mutableListOf<FormattedSpan>()
+        var prevRight: Float? = null
+        var builtText = ""
+        for (item in line.items) {
+            val t = item.block.text
+            if (t.isEmpty()) continue
+            val itemSpans = rescaleSpans(targetScale, item.block)
+            val gap = prevRight?.let { item.frame.leftPx - it } ?: 0f
+            if (prevRight != null && gap > item.frame.fontPx * 0.22f && !builtText.endsWith(' ') && !t.startsWith(' ')) {
+                val first = itemSpans.first()
+                spans.add(first.copy(text = " "))
+                builtText += " "
+            }
+            spans.addAll(itemSpans)
+            builtText += t
+            prevRight = item.frame.leftPx + estWidth(t, item.frame.fontPx, item.frame.letterSpacingPx)
+        }
+        val collapsed = collapseWhitespace(spans)
+        val text = collapsed.joinToString("") { it.text }
+        return baseBlock.copy(spans = collapsed, gapBefore = Spacing(em = 0.5f)) to text
+    }
+
+    fun flushPending() {
+        if (pending.isEmpty()) return
+        val lines = mutableListOf<Line>()
+        for (item in pending) {
+            if (item.block.spans.all { it.color == INVISIBLE }) {
+                oldToNew[item.oldIndex] = out.size
+                continue
+            }
+            val last = lines.lastOrNull()
+            if (last != null && kotlin.math.abs(item.frame.bottomPx - last.bottomPx) <= maxOf(item.frame.fontPx, last.fontPx) * 0.35f) {
+                last.items.add(item)
+                val nonBlank = last.items.filter { it.block.text.isNotBlank() }
+                if (nonBlank.isNotEmpty()) {
+                    last.fontPx = nonBlank.maxBy { it.block.text.trim().length }.frame.fontPx
+                    last.leftPx = nonBlank.minOf { it.frame.leftPx }
+                }
+            } else {
+                lines.add(Line(item.frame.bottomPx, item.frame.fontPx, item.frame.leftPx, mutableListOf(item)))
+            }
+        }
+        pending.clear()
+
+        val builtLines = lines.mapNotNull { ln ->
+            val (blk, txt) = buildLineBlock(ln)
+            if (txt.isBlank()) {
+                ln.items.forEach { oldToNew[it.oldIndex] = out.size }
+                null
+            } else {
+                Triple(ln, blk, txt)
+            }
+        }
+
+        val paragraphs = mutableListOf<MutableList<Triple<Line, Block.Text, String>>>()
+        for (entry in builtLines) {
+            val (ln, _, txt) = entry
+            val prevGroup = paragraphs.lastOrNull()
+            if (prevGroup != null) {
+                val (prevLn, _, prevTxt) = prevGroup.last()
+                val dy = prevLn.bottomPx - ln.bottomPx
+                val sameFs = kotlin.math.abs(prevLn.fontPx - ln.fontPx) < 40f
+                val isIndented = (ln.leftPx - prevLn.leftPx) > ln.fontPx * 0.7f
+                val sameCol = kotlin.math.abs(ln.leftPx - prevLn.leftPx) < ln.fontPx * 3.0f
+                val startsItem = txt.startsWith("•") || PAGE_LIST_STEP.containsMatchIn(txt)
+                val prevEndsPage = PAGE_REF_END.containsMatchIn(prevTxt)
+                if (sameFs && sameCol && dy > 0f && dy <= ln.fontPx * 1.65f && !isIndented && !startsItem && !prevEndsPage && ln.fontPx <= 950f) {
+                    prevGroup.add(entry)
+                } else {
+                    paragraphs.add(mutableListOf(entry))
+                }
+            } else {
+                paragraphs.add(mutableListOf(entry))
+            }
+        }
+
+        for (para in paragraphs) {
+            val newIndex = out.size
+            para.forEach { (ln, _, _) -> ln.items.forEach { oldToNew[it.oldIndex] = newIndex } }
+            val firstBlock = para.first().second
+            val targetScale = firstBlock.scale ?: 1f
+            val mergedSpans = mutableListOf<FormattedSpan>()
+            for ((idx, triple) in para.withIndex()) {
+                val lineSpans = rescaleSpans(targetScale, triple.second)
+                if (idx > 0 && mergedSpans.isNotEmpty() && lineSpans.isNotEmpty()) {
+                    val prevLast = mergedSpans.last()
+                    val nextFirst = lineSpans.first()
+                    val prevText = prevLast.text
+                    val nextText = nextFirst.text
+                    val prevCharBeforeHyphen = if (prevText.endsWith('-')) {
+                        prevText.dropLast(1).lastOrNull() ?: mergedSpans.getOrNull(mergedSpans.lastIndex - 1)?.text?.lastOrNull()
+                    } else {
+                        null
+                    }
+                    if (prevText.endsWith('-') && prevCharBeforeHyphen?.isLetter() == true && nextText.firstOrNull()?.isLowerCase() == true) {
+                        val stripped = prevText.dropLast(1)
+                        if (stripped.isEmpty()) mergedSpans.removeAt(mergedSpans.lastIndex)
+                        else mergedSpans[mergedSpans.lastIndex] = prevLast.copy(text = stripped)
+                    } else if (!prevText.endsWith(' ') && !nextText.startsWith(' ')) {
+                        mergedSpans[mergedSpans.lastIndex] = prevLast.copy(text = "$prevText ")
+                    }
+                }
+                mergedSpans.addAll(lineSpans)
+            }
+            val compacted = mutableListOf<FormattedSpan>()
+            for (s in mergedSpans) {
+                val last = compacted.lastOrNull()
+                if (last != null && last.image == null && s.image == null && last.spacer == null && s.spacer == null && last.copy(text = "") == s.copy(text = "")) {
+                    compacted[compacted.lastIndex] = last.copy(text = last.text + s.text)
+                } else {
+                    compacted.add(s)
+                }
+            }
+            out.add(firstBlock.copy(spans = compacted, gapBefore = Spacing(em = 0.6f)))
+        }
+    }
+
+    blocks.forEachIndexed { i, block ->
+        val frame = frames[i]
+        if (block is Block.Text && frame != null) {
+            pending.add(Item(block, frame, i))
+        } else {
+            flushPending()
+            oldToNew[i] = out.size
+            out.add(block)
+        }
+    }
+    flushPending()
+    if (blocks.isNotEmpty()) {
+        val maxIdx = (out.size - 1).coerceAtLeast(0)
+        for (entry in idBlocks.entries) {
+            val mapped = if (entry.value in oldToNew.indices) oldToNew[entry.value] else maxIdx
+            entry.setValue(mapped.coerceIn(0, maxIdx))
+        }
+    }
+    return out
+}
+
+private val PAGE_LIST_STEP = Regex("""^\d+\s+[A-Z]""")
+private val PAGE_REF_END = Regex("""\bp\.\s*\d+$""")
