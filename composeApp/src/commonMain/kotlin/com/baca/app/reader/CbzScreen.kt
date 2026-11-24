@@ -8,31 +8,49 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.FormatAlignJustify
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.baca.shared.domain.stats.PageOutcome
 import com.baca.shared.domain.stats.PageReading
@@ -69,6 +87,8 @@ import com.baca.shared.domain.reader.PositionStore
 import com.baca.shared.parser.CbzBook
 import com.baca.shared.domain.AnnotationEntry
 import com.baca.shared.domain.FixedAnchorDto
+import com.baca.shared.domain.loadDisplay
+import com.baca.shared.domain.saveDisplay
 import kotlinx.coroutines.launch
 
 /**
@@ -143,11 +163,14 @@ fun CbzScreen(
 
     val zoom = remember { mutableFloatStateOf(1f) }
     val pan = remember { mutableStateOf(Offset.Zero) }
+    var display by remember { mutableStateOf(store.loadDisplay()) }
+    LaunchedEffect(display) { store.saveDisplay(display) }
+    var sheet by remember { mutableStateOf<String?>(null) }
     var barsVisible by remember { mutableStateOf(true) }
     var barsShowTick by remember { mutableIntStateOf(0) }
     var seeking by remember { mutableStateOf(false) }
-    LaunchedEffect(barsVisible, barsShowTick, seeking) {
-        if (barsVisible && !seeking) {
+    LaunchedEffect(barsVisible, barsShowTick, seeking, sheet) {
+        if (barsVisible && !seeking && sheet == null) {
             kotlinx.coroutines.delay(BARS_AUTO_HIDE_MS)
             barsVisible = false
         }
@@ -178,8 +201,11 @@ fun CbzScreen(
             },
         color = MaterialTheme.colorScheme.background,
     ) {
+        FullScreen(enabled = display.fullScreen && !barsVisible)
         LaunchedEffect(Unit) { focusRequester.requestFocus() }
-        PlatformBackHandler(onBack = onBack)
+        PlatformBackHandler {
+            if (sheet != null) sheet = null else onBack()
+        }
         Box(Modifier.fillMaxSize()) {
             AnimatedVisibility(
                 visible = barsVisible,
@@ -187,21 +213,31 @@ fun CbzScreen(
                 enter = fadeIn() + slideInVertically { -it },
                 exit = fadeOut() + slideOutVertically { -it },
             ) {
-                Row(
-                    Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = 4.dp).height(56.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                Box(
+                    Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+                        .windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top))
+                        .padding(horizontal = 4.dp).height(56.dp),
                 ) {
-                    androidx.compose.material3.IconButton(onClick = onBack) {
-                        Text("‹", fontSize = 26.sp, color = MaterialTheme.colorScheme.onSurface)
-                    }
-                    IconButton(onClick = { barsShowTick++; toggleBookmark() }) {
-                        val marked = pageBookmarks.isNotEmpty()
-                        Icon(
-                            imageVector = if (marked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                            contentDescription = if (marked) "Remove bookmark" else "Add bookmark",
-                            tint = if (marked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                        )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(0.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.align(Alignment.CenterStart),
+                    ) {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        IconButton(onClick = { barsShowTick++; toggleBookmark() }) {
+                            val marked = pageBookmarks.isNotEmpty()
+                            Icon(
+                                imageVector = if (marked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                                contentDescription = if (marked) "Remove bookmark" else "Add bookmark",
+                                tint = if (marked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                     }
                     Text(
                         book.title,
@@ -209,19 +245,63 @@ fun CbzScreen(
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center,
+                        modifier = Modifier.align(Alignment.Center).padding(horizontal = 104.dp),
                     )
-                    Spacer(Modifier.weight(1f))
-                    Text(
-                        "${book.pages.size}p",
-                        style = Type.caption,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(end = 16.dp),
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                    ) {
+                        IconButton(onClick = {
+                            barsShowTick++
+                            sheet = if (sheet == "bookmarks") null else "bookmarks"
+                        }) {
+                            Icon(
+                                imageVector = Icons.Filled.FormatAlignJustify,
+                                contentDescription = "Contents",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        IconButton(onClick = {
+                            barsShowTick++
+                            sheet = if (sheet == "display") null else "display"
+                        }) {
+                            Text(
+                                "Aa",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.semantics { contentDescription = "Display settings" },
+                            )
+                        }
+                    }
                 }
             }
 
-            Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        var totalDrag = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { totalDrag = 0f },
+                            onDragEnd = {
+                                if (zoom.floatValue <= 1f) {
+                                    val threshold = size.width * 0.15f
+                                    if (totalDrag < -threshold) turn(1)
+                                    else if (totalDrag > threshold) turn(-1)
+                                }
+                            },
+                        ) { change, dragAmount ->
+                            if (zoom.floatValue <= 1f) {
+                                change.consume()
+                                totalDrag += dragAmount
+                            }
+                        }
+                    },
+            ) {
                 if (viewportReady && book.pages.isNotEmpty()) {
                     val pageIdx = session.pageIndex.coerceIn(0, book.pages.lastIndex)
                     val fixedPage = book.fixedPages.getOrNull(pageIdx)
@@ -234,16 +314,7 @@ fun CbzScreen(
                             translationX = pan.value.x
                             translationY = pan.value.y
                         }
-                        .pointerInput(Unit) {
-                            detectTransformGestures { _, gesturePan, gestureZoom, _ ->
-                                zoom.value = (zoom.value * gestureZoom).coerceIn(1f, 6f)
-                                pan.value = if (zoom.value > 1f) {
-                                    pan.value + gesturePan
-                                } else {
-                                    Offset.Zero
-                                }
-                            }
-                        }
+                        .pinchZoomAndPan(zoom, pan)
                     if (fixedPage != null) {
                         val loadedFonts = bookFonts
                         if (loadedFonts != null) {
@@ -310,6 +381,7 @@ fun CbzScreen(
             ) {
                 Column(
                     Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+                        .windowInsetsPadding(WindowInsets.navigationBars)
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
                     SeekBar(
@@ -340,6 +412,55 @@ fun CbzScreen(
                             style = Type.caption,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                }
+            }
+            if (sheet != null) {
+                Box(
+                    Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f))
+                        .clickable { sheet = null },
+                )
+                Column(
+                    Modifier.fillMaxWidth().align(Alignment.BottomCenter)
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                        .pointerInput(Unit) { detectTapGestures { } }
+                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                        .heightIn(max = 560.dp),
+                ) {
+                    Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp, bottom = 12.dp)) {
+                        Box(
+                            Modifier.width(36.dp).height(4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(MaterialTheme.colorScheme.outline),
+                        )
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (sheet == "bookmarks") "Bookmarks" else "Display",
+                            style = Type.cardTitle,
+                            fontSize = 18.sp,
+                        )
+                        TextButton(onClick = { sheet = null }) {
+                            Text("Done", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    if (sheet == "bookmarks") {
+                        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                            AnnotationCards(
+                                entries = annotations.filter { !it.deleted && it.kind == KIND_BOOKMARK },
+                                book = null,
+                                ink = MaterialTheme.colorScheme.onSurface,
+                                onTap = { entry ->
+                                    val target = entry.fixedAnchor?.pageIndex ?: return@AnnotationCards
+                                    scope.launch { session.goToPage(target) }
+                                    tick++
+                                    sheet = null
+                                },
+                            )
+                        }
+                    } else {
+                        DisplayContent(display) { display = it }
                     }
                 }
             }

@@ -371,6 +371,8 @@ data class Chapter(
     val bodyFamily: String? = null,
     /** set in a vertical writing mode: lines run down the page, from the right edge */
     val vertical: Boolean = false,
+    /** a pre-paginated page with absolute-positioned text and pictures, drawn as designed */
+    val fixedPage: FixedPage? = null,
 )
 
 /** A contents entry; [level] 1 for the top of the contents, 2 for an entry under one of those… */
@@ -513,13 +515,22 @@ fun parseEpub(path: Path, options: ParseOptions = ParseOptions()): ParsedEpub {
         null
     }
     val allFonts = fixedBook?.fonts ?: fonts
+    val finalChapters = if (fixedBook != null) {
+        val byHref = fixedBook.pages.zip(fixedBook.fixedPages).toMap()
+        chapters.map { ch ->
+            val fp = byHref[ch.href]
+            if (fp != null) ch.copy(blocks = fp.blocks, fixedPage = fp) else ch
+        }
+    } else {
+        withRunningText(chapters, allFonts.map { it.family }.toSet())
+    }
     return ParsedEpub(
-        opf.title, opf.author, cover, withRunningText(chapters, allFonts.map { it.family }.toSet()), toc, opf.identifier, opf.language, allFonts,
+        opf.title, opf.author, cover, finalChapters, toc, opf.identifier, opf.language, allFonts,
         textStart = textStart,
         fixedPages = picturePages,
         fixedLayoutBook = fixedBook,
-        vertical = chapters.firstOrNull { c -> c.blocks.any { it is Block.Text && it.text.isNotBlank() } }?.vertical == true,
-        pageRtl = opf.pageRtl || rtlLanguage(opf.language) || chapters.any { it.vertical } || chapters.firstNotNullOfOrNull { c -> c.blocks.firstOrNull { it is Block.Text && it.text.isNotBlank() } as? Block.Text }?.rtl == true,
+        vertical = finalChapters.firstOrNull { c -> c.blocks.any { it is Block.Text && it.text.isNotBlank() } }?.vertical == true,
+        pageRtl = opf.pageRtl || rtlLanguage(opf.language) || finalChapters.any { it.vertical } || finalChapters.firstNotNullOfOrNull { c -> c.blocks.firstOrNull { it is Block.Text && it.text.isNotBlank() } as? Block.Text }?.rtl == true,
         options = options,
         schemeAware = schemeAware || cssFiles.values.any { it?.contains(COLOR_SCHEME, ignoreCase = true) == true },
         meta = opf.meta,

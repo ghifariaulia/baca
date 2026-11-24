@@ -14,6 +14,8 @@ data class FixedPage(
     val backgroundColor: Long? = 0xFFFFFFFFL,
     val images: List<FixedPageImage> = emptyList(),
     val texts: List<FixedPageText> = emptyList(),
+    /** Logical lines/paragraphs reconstructed from [texts] for search, read-aloud and text selection. */
+    val blocks: List<Block.Text> = emptyList(),
 )
 
 data class FixedPageImage(
@@ -40,6 +42,10 @@ data class FixedPageText(
     val scaleX: Float = 1f,
     val scaleY: Float = 1f,
     val rotationDeg: Float = 0f,
+    /** Index into [FixedPage.blocks] and character offset range `[startOffset, endOffset)` within that block's text. */
+    val blockIndex: Int = 0,
+    val startOffset: Int = 0,
+    val endOffset: Int = text.length,
 )
 
 /**
@@ -290,13 +296,105 @@ internal fun parseFixedPage(
     }
 
     if (viewportWidth <= 0f || viewportHeight <= 0f || hasUnpositionedText) return null
+    val (linkedTexts, blocks) = assignTextBlocks(texts)
     return FixedPage(
         widthPx = viewportWidth,
         heightPx = viewportHeight,
         backgroundColor = pageBackground,
         images = images,
-        texts = texts,
+        texts = linkedTexts,
+        blocks = blocks,
     )
+}
+
+/**
+ * Links positioned [FixedPageText] fragments into logical paragraph [Block.Text]s for search,
+ * read-aloud and text selection while keeping every fragment's exact visual coordinates unchanged.
+ */
+private fun assignTextBlocks(rawTexts: List<FixedPageText>): Pair<List<FixedPageText>, List<Block.Text>> {
+    if (rawTexts.isEmpty()) return emptyList<FixedPageText>() to emptyList()
+    class LineGroup(var bottomY: Float, var fontSizePx: Float, var leftX: Float, val indices: MutableList<Int>)
+
+    val lines = mutableListOf<LineGroup>()
+    for (i in rawTexts.indices) {
+        val run = rawTexts[i]
+        val last = lines.lastOrNull()
+        if (last != null && run.rotationDeg == 0f && abs(run.bottomY - last.bottomY) <= maxOf(run.fontSizePx, last.fontSizePx) * 0.45f) {
+            last.indices.add(i)
+            if (run.text.isNotBlank()) {
+                last.fontSizePx = maxOf(last.fontSizePx, run.fontSizePx)
+                last.leftX = minOf(last.leftX, run.xPx)
+            }
+        } else {
+            lines.add(LineGroup(run.bottomY, run.fontSizePx, run.xPx, mutableListOf(i)))
+        }
+    }
+
+    val paragraphs = mutableListOf<MutableList<LineGroup>>()
+    for (ln in lines) {
+        val prevGroup = paragraphs.lastOrNull()
+        if (prevGroup != null) {
+            val prevLn = prevGroup.last()
+            val dy = ln.bottomY - prevLn.bottomY
+            val sameFs = abs(ln.fontSizePx - prevLn.fontSizePx) <= 2.5f
+            val sameCol = abs(ln.leftX - prevLn.leftX) <= ln.fontSizePx * 3f
+            if (sameFs && sameCol && dy > 0f && dy <= ln.fontSizePx * 1.8f && ln.fontSizePx <= 30f) {
+                prevGroup.add(ln)
+            } else {
+                paragraphs.add(mutableListOf(ln))
+            }
+        } else {
+            paragraphs.add(mutableListOf(ln))
+        }
+    }
+
+    val updated = rawTexts.toMutableList()
+    val blocks = mutableListOf<Block.Text>()
+    for ((blockIndex, para) in paragraphs.withIndex()) {
+        val sb = StringBuilder()
+        for ((lineIdx, ln) in para.withIndex()) {
+            if (lineIdx > 0 && sb.isNotEmpty() && !sb.endsWith(' ')) {
+                sb.append(' ')
+            }
+            var prevRight: Float? = null
+            for (idx in ln.indices) {
+                val run = rawTexts[idx]
+                val gap = prevRight?.let { run.xPx - it } ?: 0f
+                if (prevRight != null && gap > run.fontSizePx * 0.18f && sb.isNotEmpty() && !sb.endsWith(' ') && !run.text.startsWith(' ')) {
+                    sb.append(' ')
+                }
+                val start = sb.length
+                sb.append(run.text)
+                val end = sb.length
+                updated[idx] = run.copy(blockIndex = blockIndex, startOffset = start, endOffset = end)
+                prevRight = run.xPx + estimateRunWidth(run)
+            }
+        }
+        blocks.add(
+            Block.Text(
+                spans = listOf(FormattedSpan(sb.toString(), false, false)),
+                kind = BlockKind.PARAGRAPH,
+                headingLevel = 0,
+            ),
+        )
+    }
+    return updated to blocks
+}
+
+private fun estimateRunWidth(run: FixedPageText): Float {
+    var w = 0f
+    for (ch in run.text) {
+        val ratio = when {
+            ch in "MW@%" -> 0.82f
+            ch in "OQGCDHNRU" -> 0.68f
+            ch in "ABEFKSTVXYZ" -> 0.60f
+            ch in "IJL1.,:;!|iIlj" -> 0.28f
+            ch.isUpperCase() -> 0.62f
+            else -> 0.48f
+        }
+        w += run.fontSizePx * ratio * run.scaleX + maxOf(run.letterSpacingPx, 0f)
+    }
+    return w
 }
 
 private val VIEWPORT_W = Regex("""width\s*=\s*([0-9.]+)""", RegexOption.IGNORE_CASE)

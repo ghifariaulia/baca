@@ -5,9 +5,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.dp
 import com.baca.shared.domain.FixedLocator
 import com.baca.shared.domain.Locator
@@ -74,9 +80,10 @@ class FixedPageRenderTest {
                 put("META-INF/container.xml", """<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/c.opf" media-type="application/oebps-package+xml"/></rootfiles></container>""".encodeToByteArray())
                 put(
                     "OEBPS/c.opf",
-                    """<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>FXL</dc:title><meta property="rendition:layout">pre-paginated</meta></metadata><manifest><item id="p0" href="p0.xhtml" media-type="application/xhtml+xml"/><item id="img0" href="images/bg010_00.jpg" media-type="image/jpeg"/></manifest><spine><itemref idref="p0"/></spine></package>""".encodeToByteArray(),
+                    """<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>FXL</dc:title><meta property="rendition:layout">pre-paginated</meta></metadata><manifest><item id="p0" href="p0.xhtml" media-type="application/xhtml+xml"/><item id="p1" href="p1.xhtml" media-type="application/xhtml+xml"/><item id="img0" href="images/bg010_00.jpg" media-type="image/jpeg"/></manifest><spine><itemref idref="p0"/><itemref idref="p1"/></spine></package>""".encodeToByteArray(),
                 )
                 put("OEBPS/p0.xhtml", """<html xmlns="http://www.w3.org/1999/xhtml"><head>$head</head><body>$body</body></html>""".encodeToByteArray())
+                put("OEBPS/p1.xhtml", """<html xmlns="http://www.w3.org/1999/xhtml"><head>$head</head><body>$body</body></html>""".encodeToByteArray())
                 put("OEBPS/images/bg010_00.jpg", redJpg)
             }
         }.toByteArray()
@@ -84,20 +91,31 @@ class FixedPageRenderTest {
         val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "fxl-render-${System.nanoTime()}.epub"
         FileSystem.SYSTEM.write(path) { write(epubBytes) }
         val parsed = parseEpub(path)
-        val fixedBook = assertNotNull(parsed.fixedLayoutBook)
+        assertNotNull(parsed.fixedLayoutBook)
+        assertNotNull(parsed.chapters.first().fixedPage)
 
+        val savedAnnotations = mutableListOf<com.baca.shared.domain.AnnotationEntry>()
         rule.setContent {
             Box(Modifier.size(539.dp, 723.dp)) {
-                CbzScreen(
-                    book = fixedBook,
+                ReaderScreen(
+                    book = parsed,
                     bookPath = path.toString(),
                     bookHash = "fxl-hash",
                     store = FixedRenderTestStore(),
                     onBack = {},
+                    annotations = savedAnnotations,
+                    onAnnotationUpsert = { savedAnnotations.add(it) },
                 )
             }
         }
-        rule.waitUntil(5_000) { rule.onAllNodesWithText("Page 1 of 1").fetchSemanticsNodes().isNotEmpty() }
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Page 1 of 2").fetchSemanticsNodes().isNotEmpty() }
+        // Top bar has Back, Add bookmark, Search, Contents, and Display settings just like a regular EPUB
+        assertTrue(rule.onAllNodesWithContentDescription("Back").fetchSemanticsNodes().isNotEmpty())
+        assertTrue(rule.onAllNodesWithContentDescription("Add bookmark").fetchSemanticsNodes().isNotEmpty())
+        assertTrue(rule.onAllNodesWithContentDescription("Search").fetchSemanticsNodes().isNotEmpty())
+        assertTrue(rule.onAllNodesWithContentDescription("Contents").fetchSemanticsNodes().isNotEmpty())
+        assertTrue(rule.onAllNodesWithContentDescription("Display settings").fetchSemanticsNodes().isNotEmpty())
+
         // Hide the floating chrome bars so we inspect the pure page canvas
         rule.mainClock.advanceTimeBy(3_500)
         rule.waitForIdle()
@@ -113,7 +131,7 @@ class FixedPageRenderTest {
         }
         assertTrue(photoPixels > 100, "Expected photo drawn on the right of the page, found $photoPixels red samples")
 
-        // Top-left header area (x in 40..180, y in 30..60) has dark ink on a white page
+        // Top-left header area (x in 40..180, y in 30..60) has dark ink on a page
         var inkPixels = 0
         for (y in 30..60) {
             for (x in 40..180) {
@@ -122,6 +140,18 @@ class FixedPageRenderTest {
             }
         }
         assertTrue(inkPixels > 20, "Expected header text drawn near the top-left of the page, found $inkPixels ink pixels")
+
+        // Long-pressing on the header text selects a word and opens the SelectionToolbar ("Note", "Copy", "Define")
+        rule.onRoot().performTouchInput { longClick(androidx.compose.ui.geometry.Offset(90f, 45f)) }
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Note").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("Note").assertExists()
+        rule.onNodeWithText("Copy").assertExists()
+
+        // Dismiss selection and swipe left to turn from page 1 to page 2
+        rule.onRoot().performTouchInput { click(center) }
+        rule.waitForIdle()
+        rule.onRoot().performTouchInput { swipeLeft() }
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("2 / 2").fetchSemanticsNodes().isNotEmpty() }
     }
 }
 

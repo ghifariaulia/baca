@@ -336,6 +336,7 @@ fun ReaderScreen(
                     },
                     windowHeightPx = vp.windowHeightPx,
                     windowWidthPx = vp.windowWidthPx,
+                    fixedPage = book.chapters[index].fixedPage != null,
                 )
             },
             onChange = { tick++ },
@@ -389,9 +390,10 @@ fun ReaderScreen(
     }
     val pageCount = layout.pageCount()
     val pageNo = session.pageIndex.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
-    // a vertical book's page is one square; the others may show a spread of columns, or scroll
-    val scrolled = display.flow == "scrolled" && !book.vertical
-    val columns = if (book.vertical || scrolled) 1 else display.columns
+    val isFixedPage = chapter.fixedPage != null
+    // a vertical book's page is one square, and a fixed-layout page fills the view on its own; others may show a spread or scroll
+    val scrolled = display.flow == "scrolled" && !book.vertical && !isFixedPage
+    val columns = if (book.vertical || scrolled || isFixedPage) 1 else display.columns
     // a spread shows the next page beside this one (a scroll sets its own count where it is laid out)
     SideEffect { if (!scrolled) session.pagesOnScreen = columns }
     val page = layout.pages[pageNo]
@@ -521,10 +523,10 @@ fun ReaderScreen(
     }
 
     // released swipe: turn when dragged far enough or flicked, else spring back
-    val swipeEnded: (velocityX: Float) -> Unit = { velocityX ->
+    val swipeEnded: (draggedPx: Float, velocityX: Float) -> Unit = { draggedPx, velocityX ->
         // a book read right to left is turned by swiping the other way
         val flip = if (book.pageRtl) -1f else 1f
-        val dragged = pageShift.value * flip
+        val dragged = draggedPx * flip
         val velocity = velocityX * flip
         val delta = when {
             dragged < -pageWidthPx * SWIPE_FRACTION || velocity < -FLING_VELOCITY -> 1
@@ -788,17 +790,24 @@ fun ReaderScreen(
                         }
                         .then(
                             // a page swipe: scrolled text only moves up and down
-                            if (tapZonesForPageTurnEnabled && !scrolled) {
+                            if (!scrolled) {
                                 Modifier.pointerInput(Unit) {
                                     val velocity = VelocityTracker()
+                                    var totalDrag = 0f
                                     detectHorizontalDragGestures(
-                                        onDragStart = { velocity.resetTracking() },
-                                        onDragEnd = { currentSwipeEnded(velocity.calculateVelocity().x) },
-                                        onDragCancel = { currentSwipeEnded(0f) },
+                                        onDragStart = {
+                                            velocity.resetTracking()
+                                            totalDrag = 0f
+                                        },
+                                        onDragEnd = { currentSwipeEnded(totalDrag, velocity.calculateVelocity().x) },
+                                        onDragCancel = { currentSwipeEnded(0f, 0f) },
                                     ) { change, dragAmount ->
                                         velocity.addPosition(change.uptimeMillis, change.position)
                                         change.consume()
-                                        scope.launch { pageShift.snapTo(pageShift.value + dragAmount) }
+                                        totalDrag += dragAmount
+                                        if (currentDisplay.pageTurnAnimation) {
+                                            scope.launch { pageShift.snapTo(totalDrag) }
+                                        }
                                     }
                                 }
                             } else {
@@ -847,8 +856,8 @@ fun ReaderScreen(
                                             alpha = if (display.pageTurnAnimation) pageAlpha.value else 1f
                                         }.wrapContentSize(Alignment.Center).requiredSize(pageWidth).rotatedPage().padding(top = margin)
                                     } else {
-                                        // scrolled text runs on up to the top edge, so it leaves smoothly rather than vanishing at a margin
-                                        Modifier.fillMaxSize().padding(top = if (scrolled) 0.dp else with(density) { (bandPx + evenPx).toDp() }).graphicsLayer {
+                                        // scrolled text and fixed-layout pages run up to the top edge
+                                        Modifier.fillMaxSize().padding(top = if (scrolled || isFixedPage) 0.dp else with(density) { (bandPx + evenPx).toDp() }).graphicsLayer {
                                             translationX = if (display.pageTurnAnimation) pageShift.value else 0f
                                             alpha = if (display.pageTurnAnimation) pageAlpha.value else 1f
                                         }
@@ -857,6 +866,32 @@ fun ReaderScreen(
                                 ) {
                         // one page's lines, drawn in a column of its own; two columns draw two pages side by side
                         val pageColumn: @Composable (Int) -> Unit = { pageNo ->
+                        val fixed = chapter.fixedPage
+                        if (fixed != null) {
+                            FixedPageView(
+                                page = fixed,
+                                images = images,
+                                bookFonts = bookFonts,
+                                chapterHref = chapter.href,
+                                bookAnnotations = bookAnnotations,
+                                activeRange = selection ?: spokenHere ?: matchHere,
+                                selectionTint = selectionTint,
+                                pageBackground = colors.background,
+                                pageInk = colors.ink,
+                                darkTheme = isDarkScheme(colors.background),
+                                onPlaced = { blockIdx, start, endExclusive, textLayout, topLeft ->
+                                    lineGeometry[blockIdx to start] = LineGeometry(blockIdx, start, endExclusive, textLayout, topLeft)
+                                },
+                                onTapAnnotation = { entry ->
+                                    textUsedTap[0] = true
+                                    editing = EditorState(existing = entry)
+                                },
+                                onLongPress = { blockIdx, charOffset ->
+                                    selection = TextSelection.wordAt(chapter.blocks, blockIdx, charOffset)
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        } else {
                         val page = layout.pages[pageNo]
                         Column(
                             Modifier.width(with(density) { (columnWidthPx + margin.roundToPx() * 2).toDp() })
@@ -1009,6 +1044,7 @@ fun ReaderScreen(
                                     }
                                 }
                             }
+                        }
                         }
                         }
                         if (scrolled) {

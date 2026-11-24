@@ -182,6 +182,8 @@ class ReflowLayout(
     /** the reader's whole window, which a linked stylesheet's `vh` is of */
     windowHeightPx: Int = 0,
     windowWidthPx: Int = 0,
+    /** a pre-paginated page drawn as designed: all of its blocks sit on one single page */
+    private val fixedPage: Boolean = false,
 ) {
     // what a margin's share of the page, window or column comes to
     private val room = Room(pageHeightPx.toFloat(), windowHeightPx.toFloat(), columnWidthPx.toFloat(), windowWidthPx.toFloat())
@@ -256,6 +258,7 @@ class ReflowLayout(
      * quote snippet, then null — the caller falls back to book progression.
      */
     fun pageForPosition(blockIndex: Int, charOffset: Int, quote: String): AnchorRestore? {
+        if (fixedPage) return AnchorRestore(0, AnchorResolution.OFFSETS)
         if (blockIndex in blocks.indices) {
             val line = lineAt(blockIndex, charOffset)
             if (line != null) {
@@ -454,6 +457,9 @@ class ReflowLayout(
     }
 
     private fun buildLines(): List<PageLine> {
+        if (fixedPage) {
+            return blocks.mapIndexed { i, block -> PageLine(i, 0, block.text.length, isImage = block !is Block.Text) }
+        }
         val result = mutableListOf<PageLine>()
         // where the last text line ends in the column, for a right float to sit beside it
         var lastRightPx: Int? = null
@@ -737,6 +743,11 @@ class ReflowLayout(
     }
 
     private fun packPages(): List<List<PageLine>> {
+        if (fixedPage) {
+            gaps.add(FloatArray(lines.size))
+            rowHeights.add(FloatArray(lines.size))
+            return listOf(lines)
+        }
         val pages = mutableListOf<List<PageLine>>()
         var current = mutableListOf<PageLine>()
         var currentGaps = mutableListOf<Float>()

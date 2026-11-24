@@ -68,6 +68,7 @@ fun ImportProgressSheet(
                 title = "From files",
                 subtitle = "Pick EPUB, FB2, PDF, HTML, Markdown, DOCX, RTF, TXT or CBZ files",
                 onClick = onFromFiles,
+                last = onFromFolder == null,
             )
             if (onFromFolder != null) {
                 SheetOption(
@@ -75,6 +76,7 @@ fun ImportProgressSheet(
                     title = "From a folder",
                     subtitle = "Import every supported file in a folder",
                     onClick = onFromFolder,
+                    last = true,
                 )
             }
         } else {
@@ -148,7 +150,7 @@ private fun importRow(item: ImportItem, last: Boolean) {
 }
 
 @Composable
-private fun SheetOption(icon: String, title: String, subtitle: String, onClick: () -> Unit) {
+private fun SheetOption(icon: String, title: String, subtitle: String, onClick: () -> Unit, last: Boolean = false) {
     Column {
         Row(
             Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp),
@@ -167,6 +169,6 @@ private fun SheetOption(icon: String, title: String, subtitle: String, onClick: 
                 Text(subtitle, style = Type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+        if (!last) HorizontalDivider(color = MaterialTheme.colorScheme.outline)
     }
 }

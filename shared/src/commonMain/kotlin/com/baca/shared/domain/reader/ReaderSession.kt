@@ -90,12 +90,17 @@ class ReaderSession(
             initialized = true
             val linked = repo.loadLinkedPosition(bookHash)
             val saved = repo.loadPosition(bookHash)
+            val savedFixed = if (saved == null && chapters.any { it.fixedPage != null }) repo.loadFixedPosition(bookHash) else null
             val jump = pendingJump
             pendingJump = null
             when {
                 jump != null && moveToAnchor(jump.first, jump.second, jump.third) -> {}
                 linked != null -> restoreFromOtherFile(linked)
                 saved != null -> restore(saved)
+                savedFixed != null -> {
+                    chapterIndex = savedFixed.pageIndex.coerceIn(0, (chapters.size - 1).coerceAtLeast(0))
+                    pageIndex = 0
+                }
                 else -> {
                     chapterIndex = startChapter()
                     pageIndex = 0

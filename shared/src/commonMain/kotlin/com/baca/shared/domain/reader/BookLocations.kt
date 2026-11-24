@@ -14,7 +14,14 @@ import kotlin.math.roundToLong
  * contents' entries do, at its top two levels.
  */
 class BookLocations(chapters: List<Chapter>, toc: List<TocEntry>) {
-    private val sizes = chapters.map { if (it.size > 0) maxOf(it.size, BYTES_PER_LOCATION) else 0 }
+    private val isFixedPages = chapters.any { it.fixedPage != null }
+    private val sizes = chapters.map {
+        when {
+            it.size <= 0 -> 0
+            isFixedPages -> BYTES_PER_LOCATION
+            else -> maxOf(it.size, BYTES_PER_LOCATION)
+        }
+    }
     private val sizeTotal = sizes.sum().toDouble()
     /** each chapter's start as a fraction of the book, and the book's end */
     private val starts = sizes.runningFold(0.0) { before, size -> before + size }.map { if (sizeTotal > 0) it / sizeTotal else 0.0 }
