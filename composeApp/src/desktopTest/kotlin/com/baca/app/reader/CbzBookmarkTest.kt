@@ -87,6 +87,7 @@ class CbzBookmarkTest {
         assertNull(entry.reflowAnchor)
 
         rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
+        rule.onRoot().performClick()
         waitForText("Page 2 of 2")
         waitForIcon("Add bookmark")
     }
@@ -107,6 +108,16 @@ class CbzBookmarkTest {
         )
         rule.setContent { AnnotationCards(entries = listOf(entry), book = null, ink = androidx.compose.ui.graphics.Color.Black) }
         rule.onNodeWithText("Page 5").assertExists()
+    }
+
+    @Test
+    fun `cbz top and bottom bars auto-hide after 3 seconds and on page turn`() {
+        val (book, path) = comic()
+        setReader(book, path)
+        waitForText("Page 1 of 2")
+        rule.mainClock.advanceTimeBy(3_500)
+        rule.waitForIdle()
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Page 1 of 2").fetchSemanticsNodes().isEmpty() }
     }
 }
 

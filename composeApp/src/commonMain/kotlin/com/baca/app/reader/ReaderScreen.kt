@@ -462,14 +462,29 @@ fun ReaderScreen(
     }
 
 
-    // Page turns slide: the page moves out toward the turn and fades, the next
-    // one slides in from the other side. A swipe drags the page first.
+    // top bar and footer float over the page and hide on a center tap, on page turn, or after 3s of inactivity;
+    // the page keeps its size, so hiding them never re-paginates the book
+    var barsVisible by remember { mutableStateOf(true) }
+    var barsShowTick by remember { mutableIntStateOf(0) }
+    var panelOpen by remember { mutableStateOf(false) }
+    var seeking by remember { mutableStateOf(false) }
+    LaunchedEffect(barsVisible, barsShowTick, sheet, panelOpen, editing, fullPicture, selection, seeking) {
+        if (barsVisible && sheet == SheetKind.NONE && !panelOpen && editing == null && fullPicture == null && selection == null && !seeking) {
+            kotlinx.coroutines.delay(BARS_AUTO_HIDE_MS)
+            barsVisible = false
+        }
+    }
+
+    // Page turns slide when enabled: the page moves out toward the turn and fades, the next
+    // one slides in from the other side. By default page turns are instant.
     val pageShift = remember { Animatable(0f) }
     val pageAlpha = remember { Animatable(1f) }
     val turnLock = remember { Mutex() }
     var pageWidthPx by remember { mutableIntStateOf(0) }
+    val currentDisplay by rememberUpdatedState(display)
 
     val pageTurn: (Int) -> Unit = { delta ->
+        barsVisible = false
         scope.launch {
             turnLock.withLock {
                 if (scrolled) {
@@ -478,7 +493,14 @@ fun ReaderScreen(
                     return@withLock
                 }
                 if (!session.canTurn(delta)) {
-                    pageShift.animateTo(0f, spring())
+                    if (currentDisplay.pageTurnAnimation) pageShift.animateTo(0f, spring())
+                    else pageShift.snapTo(0f)
+                    return@withLock
+                }
+                if (!currentDisplay.pageTurnAnimation) {
+                    pageShift.snapTo(0f)
+                    pageAlpha.snapTo(1f)
+                    session.turnPage(delta * columns)
                     return@withLock
                 }
                 // next page: content leaves to the left, to the right in a book read right to left
@@ -509,7 +531,14 @@ fun ReaderScreen(
             dragged > pageWidthPx * SWIPE_FRACTION || velocity > FLING_VELOCITY -> -1
             else -> 0
         }
-        if (delta == 0) scope.launch { pageShift.animateTo(0f, spring()) } else pageTurn(delta)
+        if (delta == 0) {
+            scope.launch {
+                if (currentDisplay.pageTurnAnimation) pageShift.animateTo(0f, spring())
+                else pageShift.snapTo(0f)
+            }
+        } else {
+            pageTurn(delta)
+        }
     }
     val currentSwipeEnded by rememberUpdatedState(swipeEnded)
 
@@ -578,9 +607,6 @@ fun ReaderScreen(
     val focusRequester = remember { FocusRequester() }
     // reader chrome (bars, sheets, panels) follows the app theme like every
     // other screen; only the page area takes the reading theme's colors
-    // top bar and footer float over the page and hide on a center tap; the
-    // page keeps its size, so hiding them never re-paginates the book
-    var barsVisible by remember { mutableStateOf(true) }
     // set when a tap opened a highlight or link, so the page tap skips it;
     // a remembered holder, not state: read and written within one gesture
     val textUsedTap = remember { booleanArrayOf(false) }
@@ -630,7 +656,6 @@ fun ReaderScreen(
         val topBand = PADDING_BAND * display.topPercent
         val bottomBand = PADDING_BAND * display.bottomPercent
         val barBelow = with(density) { stableReaderInsets(display.fullScreen).getBottom(density).toDp() }
-        var panelOpen by remember { mutableStateOf(false) }
         // Back closes what's open on top of the page first, then leaves the book
         PlatformBackHandler {
             when {
@@ -749,11 +774,15 @@ fun ReaderScreen(
                                 if (moved || held || textUsedTap[0]) return@awaitEachGesture
                                 // scrolled text is moved by scrolling: its taps only show or hide the bars
                                 val edgeTurns = tapZonesForPageTurnEnabled && display.tapToTurn && !scrolled
+                                fun toggleBars() {
+                                    barsVisible = !barsVisible
+                                    if (barsVisible) barsShowTick++
+                                }
                                 when {
-                                    scrolled -> barsVisible = !barsVisible
+                                    scrolled -> toggleBars()
                                     down.position.x < size.width / 3f -> if (edgeTurns) pageTurn(if (book.pageRtl) 1 else -1)
                                     down.position.x > size.width * 2f / 3f -> if (edgeTurns) pageTurn(if (book.pageRtl) -1 else 1)
-                                    else -> barsVisible = !barsVisible
+                                    else -> toggleBars()
                                 }
                             }
                         }
@@ -810,22 +839,22 @@ fun ReaderScreen(
                     )
                     LaunchedEffect(inner) { viewport = inner }
 
-                        Column(
-                            if (vertical) {
-                                // the swipe moves the page across the screen; the rotation is inside it
-                                Modifier.fillMaxSize().graphicsLayer {
-                                    translationX = pageShift.value
-                                    alpha = pageAlpha.value
-                                }.wrapContentSize(Alignment.Center).requiredSize(pageWidth).rotatedPage().padding(top = margin)
-                            } else {
-                                // scrolled text runs on up to the top edge, so it leaves smoothly rather than vanishing at a margin
-                                Modifier.fillMaxSize().padding(top = if (scrolled) 0.dp else with(density) { (bandPx + evenPx).toDp() }).graphicsLayer {
-                                    translationX = pageShift.value
-                                    alpha = pageAlpha.value
-                                }
-                            },
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
+                                Column(
+                                    if (vertical) {
+                                        // the swipe moves the page across the screen; the rotation is inside it
+                                        Modifier.fillMaxSize().graphicsLayer {
+                                            translationX = if (display.pageTurnAnimation) pageShift.value else 0f
+                                            alpha = if (display.pageTurnAnimation) pageAlpha.value else 1f
+                                        }.wrapContentSize(Alignment.Center).requiredSize(pageWidth).rotatedPage().padding(top = margin)
+                                    } else {
+                                        // scrolled text runs on up to the top edge, so it leaves smoothly rather than vanishing at a margin
+                                        Modifier.fillMaxSize().padding(top = if (scrolled) 0.dp else with(density) { (bandPx + evenPx).toDp() }).graphicsLayer {
+                                            translationX = if (display.pageTurnAnimation) pageShift.value else 0f
+                                            alpha = if (display.pageTurnAnimation) pageAlpha.value else 1f
+                                        }
+                                    },
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
                         // one page's lines, drawn in a column of its own; two columns draw two pages side by side
                         val pageColumn: @Composable (Int) -> Unit = { pageNo ->
                         val page = layout.pages[pageNo]
@@ -994,6 +1023,9 @@ fun ReaderScreen(
                                     jumping = false
                                 }
                                 LaunchedEffect(listState) {
+                                    snapshotFlow { listState.isScrollInProgress }.collect { if (it && !jumping) barsVisible = false }
+                                }
+                                LaunchedEffect(listState) {
                                     snapshotFlow { listState.firstVisibleItemIndex }.collect { if (!jumping) session.showPage(it) }
                                 }
                                 // the pages the scroll shows, so the book's end reads as such with its last page in view
@@ -1045,11 +1077,17 @@ fun ReaderScreen(
                     SeekBar(
                         fraction = session.readingFraction(),
                         onSeek = { fraction ->
+                            seeking = true
+                            barsShowTick++
                             scope.launch {
                                 session.jumpToFraction(fraction.toDouble())
                             }
                         },
-                        onSeekEnd = { scope.launch { session.commitPosition() } },
+                        onSeekEnd = {
+                            seeking = false
+                            barsShowTick++
+                            scope.launch { session.commitPosition() }
+                        },
                     )
                     Spacer(Modifier.height(4.dp))
                     val total = session.locationTotal().coerceAtLeast(1)
@@ -2042,6 +2080,7 @@ private suspend fun AwaitPointerEventScope.awaitUp(pass: PointerEventPass): Poin
 }
 
 private const val TURN_MS = 160
+internal const val BARS_AUTO_HIDE_MS = 3_000L
 // how far (fraction of page width) a turning page slides while it fades
 private const val TURN_TRAVEL = 0.3f
 private const val SWIPE_FRACTION = 0.2f

@@ -79,8 +79,14 @@ class BookmarkTest {
 
         // other pages are not marked; coming back shows the mark again
         rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
+        if (rule.onAllNodesWithContentDescription("Add bookmark").fetchSemanticsNodes().isEmpty()) {
+            rule.onRoot().performClick()
+        }
         waitForIcon("Add bookmark")
         rule.onRoot().performKeyInput { pressKey(Key.DirectionLeft) }
+        if (rule.onAllNodesWithContentDescription("Remove bookmark").fetchSemanticsNodes().isEmpty()) {
+            rule.onRoot().performClick()
+        }
         waitForIcon("Remove bookmark")
 
         // listed with notes in the contents sheet

@@ -61,4 +61,14 @@ class DisplaySettingsTest {
     fun `turning full screen off is kept`() {
         assertFalse(decodeDisplay(DisplaySettings(fullScreen = false).encode()).fullScreen)
     }
+
+    @Test
+    fun `page turn animation is off by default and persists when enabled`() {
+        val default = DisplaySettings()
+        assertFalse(default.pageTurnAnimation)
+        val old = decodeDisplay("""{"fontSizePercent":120}""")
+        assertFalse(old.pageTurnAnimation)
+        val enabled = decodeDisplay(DisplaySettings(pageTurnAnimation = true).encode())
+        assertTrue(enabled.pageTurnAnimation)
+    }
 }

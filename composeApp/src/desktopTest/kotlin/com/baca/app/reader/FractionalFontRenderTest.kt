@@ -57,7 +57,7 @@ class FractionalFontRenderTest {
         // the book opens on its cover picture; page forward to running text (bigger than the chrome's)
         var sizes = sizes()
         repeat(5) {
-            if (sizes.any { it.value > 16f }) return@repeat
+            if (20.sp in sizes) return@repeat
             rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
             rule.waitForIdle()
             sizes = sizes()

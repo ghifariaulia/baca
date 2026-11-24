@@ -51,6 +51,10 @@ class ArrowKeyPagingTest {
 
         // pick a theme, then close the Display sheet: the focused chip leaves
         // composition with the sheet and used to take keyboard focus with it
+        if (rule.onAllNodesWithText("Aa").fetchSemanticsNodes().isEmpty()) {
+            rule.onRoot().performClick()
+            rule.waitUntil(5_000) { rule.onAllNodesWithText("Aa").fetchSemanticsNodes().isNotEmpty() }
+        }
         rule.onNodeWithText("Aa").performClick()
         rule.waitUntil(5_000) { rule.onAllNodesWithText("White").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithText("White").performClick()

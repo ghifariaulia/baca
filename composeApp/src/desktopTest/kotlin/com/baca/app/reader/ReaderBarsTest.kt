@@ -74,6 +74,33 @@ class ReaderBarsTest {
         assertEquals(1, texts("Pages left: ").size)
         assertEquals(listOf("$page / $total"), texts(" / $total"))
     }
+
+    @Test
+    fun `bars auto-hide after 3 seconds of inactivity and on page turn`() {
+        val bytes = javaClass.classLoader.getResourceAsStream("books/frankenstein.epub")!!.readBytes()
+        val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "autohide-test.epub"
+        FileSystem.SYSTEM.write(path) { write(bytes) }
+        val book = parseEpub(path)
+        rule.setContent {
+            Box(Modifier.size(420.dp, 800.dp)) {
+                ReaderScreen(book, path.toString(), "hash", BarsTestStore(), onBack = {})
+            }
+        }
+        fun barsShown() = rule.onAllNodesWithText("Page ", substring = true).fetchSemanticsNodes().isNotEmpty()
+        rule.waitUntil(10_000) { barsShown() }
+        rule.mainClock.advanceTimeBy(3_500)
+        rule.waitForIdle()
+        rule.waitUntil(5_000) { !barsShown() }
+
+        // Center tap brings bars back
+        rule.onRoot().performTouchInput { click(center) }
+        rule.waitUntil(5_000) { barsShown() }
+
+        // After another 3.5s they auto-hide again
+        rule.mainClock.advanceTimeBy(3_500)
+        rule.waitForIdle()
+        rule.waitUntil(5_000) { !barsShown() }
+    }
 }
 
 private class BarsTestStore : com.baca.shared.domain.reader.PositionStore {

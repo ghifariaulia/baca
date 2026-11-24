@@ -45,6 +45,8 @@ data class DisplaySettings(
     val columns: Int = 1,
     /** `paged`, or `scrolled`: the book as one continuous column to scroll */
     val flow: String = "paged",
+    /** whether turning a page slides and fades; off by default */
+    val pageTurnAnimation: Boolean = false,
 ) {
     init {
         require(font in FONTS) { "unknown font: $font" }

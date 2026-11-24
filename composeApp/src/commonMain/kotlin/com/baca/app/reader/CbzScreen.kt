@@ -1,6 +1,12 @@
 package com.baca.app.reader
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
+import androidx.compose.ui.zIndex
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -128,6 +134,20 @@ fun CbzScreen(
 
     val zoom = remember { mutableFloatStateOf(1f) }
     val pan = remember { mutableStateOf(Offset.Zero) }
+    var barsVisible by remember { mutableStateOf(true) }
+    var barsShowTick by remember { mutableIntStateOf(0) }
+    var seeking by remember { mutableStateOf(false) }
+    LaunchedEffect(barsVisible, barsShowTick, seeking) {
+        if (barsVisible && !seeking) {
+            kotlinx.coroutines.delay(BARS_AUTO_HIDE_MS)
+            barsVisible = false
+        }
+    }
+    fun turn(delta: Int) {
+        barsVisible = false
+        scope.launch { session.turnPage(delta) }
+        tick++
+    }
 
     val focusRequester = remember { FocusRequester() }
     Surface(
@@ -142,8 +162,8 @@ fun CbzScreen(
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (event.key) {
-                    Key.DirectionRight, Key.PageDown -> { scope.launch { session.turnPage(1) }; true }
-                    Key.DirectionLeft, Key.PageUp -> { scope.launch { session.turnPage(-1) }; true }
+                    Key.DirectionRight, Key.PageDown -> { turn(1); true }
+                    Key.DirectionLeft, Key.PageUp -> { turn(-1); true }
                     else -> false
                 }
             },
@@ -152,41 +172,47 @@ fun CbzScreen(
         LaunchedEffect(Unit) { focusRequester.requestFocus() }
         PlatformBackHandler(onBack = onBack)
         Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 4.dp).height(56.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+            AnimatedVisibility(
+                visible = barsVisible,
+                modifier = Modifier.align(Alignment.TopCenter).zIndex(1f),
+                enter = fadeIn() + slideInVertically { -it },
+                exit = fadeOut() + slideOutVertically { -it },
             ) {
-                androidx.compose.material3.IconButton(onClick = onBack) {
-                    Text("‹", fontSize = 26.sp, color = MaterialTheme.colorScheme.onSurface)
-                }
-                IconButton(onClick = toggleBookmark) {
-                    val marked = pageBookmarks.isNotEmpty()
-                    Icon(
-                        imageVector = if (marked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                        contentDescription = if (marked) "Remove bookmark" else "Add bookmark",
-                        tint = if (marked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                Row(
+                    Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(horizontal = 4.dp).height(56.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.IconButton(onClick = onBack) {
+                        Text("‹", fontSize = 26.sp, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    IconButton(onClick = { barsShowTick++; toggleBookmark() }) {
+                        val marked = pageBookmarks.isNotEmpty()
+                        Icon(
+                            imageVector = if (marked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                            contentDescription = if (marked) "Remove bookmark" else "Add bookmark",
+                            tint = if (marked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    Text(
+                        book.title,
+                        style = Type.body,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "${book.pages.size}p",
+                        style = Type.caption,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 16.dp),
                     )
                 }
-                Text(
-                    book.title,
-                    style = Type.body,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "${book.pages.size}p",
-                    style = Type.caption,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(end = 16.dp),
-                )
             }
 
-            Box(Modifier.fillMaxWidth().weight(1f)) {
+            Box(Modifier.fillMaxSize()) {
                 if (viewportReady && book.pages.isNotEmpty()) {
                     val href = book.pages[session.pageIndex.coerceIn(0, book.pages.lastIndex)]
                     val bitmap = images?.image(href)
@@ -228,8 +254,16 @@ fun CbzScreen(
                             Modifier.fillMaxHeight().fillMaxWidth(0.33f)
                                 .align(Alignment.CenterStart)
                                 .pointerInput(Unit) {
+                                    detectTapGestures { turn(-1) }
+                                },
+                        )
+                        Box(
+                            Modifier.fillMaxHeight().fillMaxWidth(0.34f)
+                                .align(Alignment.Center)
+                                .pointerInput(Unit) {
                                     detectTapGestures {
-                                        scope.launch { session.turnPage(-1) }; tick++
+                                        barsVisible = !barsVisible
+                                        if (barsVisible) barsShowTick++
                                     }
                                 },
                         )
@@ -237,43 +271,55 @@ fun CbzScreen(
                             Modifier.fillMaxHeight().fillMaxWidth(0.33f)
                                 .align(Alignment.CenterEnd)
                                 .pointerInput(Unit) {
-                                    detectTapGestures {
-                                        scope.launch { session.turnPage(1) }; tick++
-                                    }
+                                    detectTapGestures { turn(1) }
                                 },
                         )
                     }
                 }
             }
 
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                SeekBar(
-                    fraction = session.progress().toFloat(),
-                    onSeek = { fraction ->
-                        scope.launch {
-                            session.goToPage((fraction * (book.pages.size - 1).coerceAtLeast(0)).toInt())
-                            tick++
-                        }
-                    },
-                    onSeekEnd = { /* fixed positions commit on every change */ },
-                )
-                Spacer(Modifier.height(4.dp))
-                val total = book.pages.size
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(
-                        "Page ${session.pageIndex + 1} of $total",
-                        style = Type.caption,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+            AnimatedVisibility(
+                visible = barsVisible,
+                modifier = Modifier.align(Alignment.BottomCenter).zIndex(1f),
+                enter = fadeIn() + slideInVertically { it },
+                exit = fadeOut() + slideOutVertically { it },
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    SeekBar(
+                        fraction = session.progress().toFloat(),
+                        onSeek = { fraction ->
+                            seeking = true
+                            barsShowTick++
+                            scope.launch {
+                                session.goToPage((fraction * (book.pages.size - 1).coerceAtLeast(0)).toInt())
+                                tick++
+                            }
+                        },
+                        onSeekEnd = {
+                            seeking = false
+                            barsShowTick++
+                        },
                     )
-                    Text(
-                        "${(session.progress() * 100).toInt()}%",
-                        style = Type.caption,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Spacer(Modifier.height(4.dp))
+                    val total = book.pages.size
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(
+                            "Page ${session.pageIndex + 1} of $total",
+                            style = Type.caption,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "${(session.progress() * 100).toInt()}%",
+                            style = Type.caption,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
-        }
-        MilestoneNote(milestone, Modifier.align(Alignment.TopCenter).padding(top = 64.dp))
+            MilestoneNote(milestone, Modifier.align(Alignment.TopCenter).padding(top = 64.dp))
         }
     }
 }

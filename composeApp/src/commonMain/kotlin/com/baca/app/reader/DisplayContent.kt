@@ -118,6 +118,12 @@ internal fun DisplayContent(display: DisplaySettings, scrollable: Boolean = true
                 selected = display.flow,
             ) { onChange(display.copy(flow = it)) }
         }
+        SheetSection("PAGE ANIMATION") {
+            SegmentedRow(
+                options = listOf("off" to "Off", "on" to "Slide"),
+                selected = if (display.pageTurnAnimation) "on" else "off",
+            ) { onChange(display.copy(pageTurnAnimation = it == "on")) }
+        }
         if (tapZonesForPageTurnEnabled) {
             SheetSection("PAGE TURN") {
                 SegmentedRow(
