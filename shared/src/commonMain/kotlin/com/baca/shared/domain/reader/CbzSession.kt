@@ -11,6 +11,8 @@ class CbzSession(
     private val pageCount: Int,
     private val repo: PositionStore,
     private val onChange: () -> Unit = {},
+    /** Spine document hrefs for a fixed-layout EPUB, so a position saved when it was reflowed maps to its page index. */
+    private val pageHrefs: List<String> = emptyList(),
 ) {
     var pageIndex: Int = 0
         private set
@@ -21,7 +23,12 @@ class CbzSession(
         if (initialized) return
         initialized = true
         val saved = repo.loadFixedPosition(bookHash)
-        pageIndex = saved?.pageIndex?.coerceIn(0, (pageCount - 1).coerceAtLeast(0)) ?: 0
+        val migratedPage = if (saved == null && pageHrefs.isNotEmpty()) {
+            repo.loadPosition(bookHash)?.href?.let { href -> pageHrefs.indexOf(href).takeIf { it >= 0 } }
+        } else {
+            null
+        }
+        pageIndex = (saved?.pageIndex ?: migratedPage ?: 0).coerceIn(0, (pageCount - 1).coerceAtLeast(0))
         onChange()
     }
 

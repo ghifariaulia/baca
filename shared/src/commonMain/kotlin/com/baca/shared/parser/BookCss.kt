@@ -116,11 +116,15 @@ internal data class CssStyle(
     val maxWidth: CssLength? = null,
     /** `position` as written (`absolute`, `fixed`, `relative`, `static`) */
     val position: String? = null,
-    /** `left` and `bottom` coordinates in CSS px, when positioned */
+    /** `left`, `right`, `top` and `bottom` coordinates in CSS px, when positioned */
     val leftPx: Float? = null,
+    val rightPx: Float? = null,
+    val topPx: Float? = null,
     val bottomPx: Float? = null,
-    /** `transform: scale(s)` factor, when scaled */
+    /** `transform: scale(sx, sy)` and `matrix(...)` rotation in degrees */
     val transformScale: Float? = null,
+    val transformScaleY: Float? = null,
+    val transformRotateDeg: Float? = null,
 ) {
     /** [other]'s set values win. */
     private val setsSize get() = fontScale != null || fontAbsolute != null || fontKeyword != null
@@ -195,8 +199,12 @@ internal data class CssStyle(
         maxWidth = other.maxWidth ?: maxWidth,
         position = other.position ?: position,
         leftPx = other.leftPx ?: leftPx,
+        rightPx = other.rightPx ?: rightPx,
+        topPx = other.topPx ?: topPx,
         bottomPx = other.bottomPx ?: bottomPx,
         transformScale = other.transformScale ?: transformScale,
+        transformScaleY = other.transformScaleY ?: transformScaleY,
+        transformRotateDeg = other.transformRotateDeg ?: transformRotateDeg,
     )
 }
 
@@ -780,9 +788,10 @@ private fun CssStyle.declare(name: String, value: String, written: String): CssS
     "min-width" -> copy(minWidth = cssLength(value))
     "position" -> copy(position = value)
     "left" -> copy(leftPx = (cssLength(value, signed = true) as? CssLength.Px)?.px ?: leftPx)
+    "right" -> copy(rightPx = (cssLength(value, signed = true) as? CssLength.Px)?.px ?: rightPx)
+    "top" -> copy(topPx = (cssLength(value, signed = true) as? CssLength.Px)?.px ?: topPx)
     "bottom" -> copy(bottomPx = (cssLength(value, signed = true) as? CssLength.Px)?.px ?: bottomPx)
-    "transform", "-webkit-transform", "-moz-transform", "-ms-transform", "-o-transform" ->
-        SCALE_TRANSFORM.find(value)?.groupValues?.get(1)?.toFloatOrNull()?.takeIf { it > 0f }?.let { copy(transformScale = it) } ?: this
+    "transform", "-webkit-transform", "-moz-transform", "-ms-transform", "-o-transform" -> parseTransform(value)
     "column-count", "-webkit-column-count", "-moz-column-count" -> copy(columnCount = value.toIntOrNull() ?: 1)
     "column-gap", "-webkit-column-gap", "-moz-column-gap" -> copy(columnGap = cssLength(value))
     "text-decoration", "text-decoration-line" -> copy(underline = value.contains("underline"), lineThrough = value.contains("line-through"))
@@ -831,7 +840,27 @@ internal fun parseColor(value: String): Long? {
 /** `color: inherit` or `currentColor`: the text's own colour, which is the theme's ink unless a parent sets one. */
 const val TEXT_COLOR = -1L
 
-private val SCALE_TRANSFORM = Regex("""scale\(\s*([0-9]*\.?[0-9]+)""")
+private val SCALE_TRANSFORM = Regex("""scale\(\s*([0-9]*\.?[0-9]+)(?:\s*,\s*([0-9]*\.?[0-9]+))?\s*\)""")
+private val MATRIX_TRANSFORM = Regex("""matrix\(\s*([-0-9.]+)\s*,\s*([-0-9.]+)\s*,\s*([-0-9.]+)\s*,\s*([-0-9.]+)""")
+
+private fun CssStyle.parseTransform(value: String): CssStyle {
+    SCALE_TRANSFORM.find(value)?.let { m ->
+        val sx = m.groupValues[1].toFloatOrNull()?.takeIf { it > 0f } ?: return this
+        val sy = m.groupValues[2].toFloatOrNull()?.takeIf { it > 0f } ?: sx
+        return copy(transformScale = sx, transformScaleY = sy, transformRotateDeg = null)
+    }
+    MATRIX_TRANSFORM.find(value)?.let { m ->
+        val a = m.groupValues[1].toFloatOrNull() ?: return this
+        val b = m.groupValues[2].toFloatOrNull() ?: return this
+        val c = m.groupValues[3].toFloatOrNull() ?: return this
+        val d = m.groupValues[4].toFloatOrNull() ?: return this
+        val sx = kotlin.math.hypot(a.toDouble(), b.toDouble()).toFloat().takeIf { it > 0f } ?: 1f
+        val sy = kotlin.math.hypot(c.toDouble(), d.toDouble()).toFloat().takeIf { it > 0f } ?: 1f
+        val deg = (kotlin.math.atan2(b.toDouble(), a.toDouble()) * 180.0 / kotlin.math.PI).toFloat()
+        return copy(transformScale = sx, transformScaleY = sy, transformRotateDeg = deg)
+    }
+    return this
+}
 
 private val NAMED_COLORS = mapOf(
     "black" to 0x000000L, "white" to 0xFFFFFFL, "red" to 0xFF0000L, "green" to 0x008000L, "blue" to 0x0000FFL,

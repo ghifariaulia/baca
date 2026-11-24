@@ -71,40 +71,98 @@ class FixedLayoutTest {
     }
 
     @Test
-    fun `an absolute-positioned PDFTron page with transform scale is reconstructed into reflowable paragraphs and scaled sizes`() {
-        val css = """
+    fun `a pre-paginated book with absolute-positioned text and images is parsed into FixedPages`() {
+        val fontCss = """
+            @font-face {
+                font-style:normal;
+                font-weight:normal;
+                font-family:f5generic;
+                src:url(fonts/f5.otf) format("opentype");
+            }
+        """.trimIndent()
+        val head = """
+            <meta content="width=1078, height=1446" name="viewport"/>
             <style>
+            $fontCss
+            .PageContainer { background-color:#FFFFFF; }
             .s1 { border:0; margin:0; white-space:pre; position:absolute; display:block; }
+            .l5 { line-height:1.14; }
             .fs8 { font-size:614.00px; }
-            .fs1 { font-size:2000.00px; }
-            .t0 { transform:scale(1.152000); }
-            #TextContainer1 { position:absolute; transform:scale(0.031257); }
+            .fs10 { font-size:783.00px; }
+            .f5 { font-family:f5generic; }
+            .t1 { transform:scale(0.784314, 1.215686); }
+            .t4 { transform:matrix(0.000000, -1.000000, 1.000000, 0.000000, 0.000000, 0.000000); }
+            #ImageContainer010_00 { bottom:433.80px; right:0.00px; width:695.27px; height:1012.20px; position:absolute; }
+            #TextContainer10 { height:100%; width:100%; position:absolute; transform-origin:left bottom; transform:scale(0.031257); }
             </style>
         """.trimIndent()
         val body = """
-            <div class="PageContainer" id="Page">
-              <div id="TextContainer1">
-                <div class="s1 t0" style="left:13985.2px;bottom:37552.6px;"><span class="s1 fs1" style="bottom:0px;letter-spacing:78.0px;">C</span></div>
-                <div class="s1 t0" style="left:15690.2px;bottom:37552.6px;"><span class="s1 fs1" style="bottom:0px;letter-spacing:78.0px;">OOKING</span></div>
-                <div class="s1 t0" style="left:26023.6px;bottom:37552.6px;"><span class="s1 fs1" style="bottom:0px;letter-spacing:78.0px;">WITH</span></div>
-                <span class="s1 fs8" style="left:4717.3px;bottom:34950.0px;word-spacing:6.1px;">doors as a signature restaurant that would enable us to cook with free</span>
-                <span class="s1 fs8" style="left:21896.6px;bottom:34950.5px;">-</span>
-                <span class="s1 fs8" style="left:4717.3px;bottom:34134.0px;letter-spacing:1.8px;word-spacing:42.8px;">dom and respect for our culinary tradition.</span>
+            <div class="PageContainer" id="Page" style="position:absolute;top:0px;left:0px;width:1078px;height:1446px;">
+              <div id="ImageContainer010_00"><img alt="bg" height="1012" src="images/bg010_00.jpg" style="position:absolute" width="695"/></div>
+              <div id="TextContainer10">
+                <span class="s1 f5 fs8 l5" style="left:3084.1px;bottom:43114.4px;color:rgb(35,31,31);">10 </span>
+                <span class="s1 f5 fs10 l5 t1" style="left:3827.52px;bottom:43030px;color:rgb(35,31,31);">|</span>
+                <span class="s1 f5 fs8 l5 t4" style="left:13568.2px;bottom:10135.2px;color:rgb(35,31,31);">50ºC</span>
+                <span class="s1 f5 fs8 l5" style="left:1000px;bottom:1000px;color:transparent;">hidden</span>
               </div>
             </div>
         """.trimIndent()
-        val book = parseEpub(epub("""<meta property="rendition:layout">pre-paginated</meta>""", listOf(body), head = css))
-        val texts = book.chapters.single().blocks.filterIsInstance<Block.Text>()
-        assertEquals(
-            listOf(
-                "COOKING WITH",
-                "doors as a signature restaurant that would enable us to cook with freedom and respect for our culinary tradition.",
-            ),
-            texts.map { it.text },
-        )
-        // letter-spacing 1.8px in a 614px font is ~0.0029em, not 1.8 / 16 = 0.1125em
-        val bodySpan = texts[1].spans.last()
-        kotlin.test.assertTrue(bodySpan.letterSpacing < 0.02f, "letterSpacing must be relative to the element's font size, was ${bodySpan.letterSpacing}")
-        kotlin.test.assertTrue(bodySpan.wordSpacing < 0.2f, "wordSpacing must be relative to the element's font size, was ${bodySpan.wordSpacing}")
+        val book = parseEpub(epub("""<meta property="rendition:layout">pre-paginated</meta>""", listOf(body), head = head))
+        val fixedBook = kotlin.test.assertNotNull(book.fixedLayoutBook)
+        assertEquals(listOf("OEBPS/p0.xhtml"), fixedBook.pages)
+        val page = kotlin.test.assertNotNull(fixedBook.fixedPages.single())
+        assertEquals(1078f, page.widthPx)
+        assertEquals(1446f, page.heightPx)
+
+        val img = page.images.single()
+        assertEquals("OEBPS/images/bg010_00.jpg", img.src)
+        assertEquals(1078f - 695.27f, img.xPx, 0.1f)
+        assertEquals(1446f - 433.80f - 1012.20f, img.yPx, 0.1f)
+        assertEquals(695.27f, img.widthPx, 0.1f)
+        assertEquals(1012.20f, img.heightPx, 0.1f)
+
+        // Transparent text is skipped, leaving the 3 visible spans
+        assertEquals(3, page.texts.size)
+        val first = page.texts[0]
+        assertEquals("10 ", first.text)
+        assertEquals(96.4f, first.xPx, 0.1f)
+        assertEquals(1446f - 1347.6f, first.bottomY, 0.1f)
+        assertEquals(19.2f, first.fontSizePx, 0.1f)
+        assertEquals("f5generic", first.family)
+        assertEquals("OEBPS/fonts/f5.otf", fixedBook.fonts.single { it.family == first.family }.path)
+
+        val condensed = page.texts[1]
+        assertEquals("|", condensed.text)
+        assertEquals(0.784314f, condensed.scaleX, 0.001f)
+        assertEquals(1.215686f, condensed.scaleY, 0.001f)
+
+        val rotated = page.texts[2]
+        assertEquals("50ºC", rotated.text)
+        assertEquals(-90f, rotated.rotationDeg, 0.1f)
+
+        // A pre-paginated book with ordinary flowing text still reflows
+        val flowing = parseEpub(epub("""<meta property="rendition:layout">pre-paginated</meta>""", listOf("<p>Plain flowing text</p>"), head = head))
+        assertNull(flowing.fixedLayoutBook)
+    }
+
+    @Test
+    fun `a reflow locator saved before fixed-layout support maps its href to the spine page index`() = kotlinx.coroutines.test.runTest {
+        val hrefs = (1..12).map { if (it == 1) "OEBPS/cover.xhtml" else "OEBPS/page${it.toString().padStart(3, '0')}.xhtml" }
+        val store = object : com.baca.shared.domain.reader.PositionStore {
+            override val deviceId = "test"
+            override fun loadPosition(bookHash: String) = com.baca.shared.domain.Locator(
+                href = "OEBPS/page010.xhtml",
+                blockIndex = 0,
+                charOffset = 0,
+                progression = 0.5,
+                quote = "",
+            )
+            override fun savePosition(bookHash: String, locator: com.baca.shared.domain.Locator) {}
+            override fun getLocal(key: String): String? = null
+            override fun putLocal(key: String, value: String) {}
+        }
+        val session = com.baca.shared.domain.reader.CbzSession("hash", hrefs.size, store, pageHrefs = hrefs)
+        session.ensureView()
+        assertEquals(9, session.pageIndex)
     }
 }

@@ -41,7 +41,7 @@ fun ParsedEpub.info(): BookInfo {
         language = language.orEmpty(),
         chapters = reading.size,
         words = words,
-        pages = BookLocations(chapters, toc).total,
+        pages = fixedLayoutBook?.pages?.size ?: fixedPages?.size ?: BookLocations(chapters, toc).total,
     )
 }
 

@@ -277,7 +277,9 @@ class BookImporter(
             "cbz" -> BookFormats.parseCbzFile(readable.toPath(), row.title)?.pages?.size?.let { it to emptyList() }
             "pdf" -> BookFormats.parsePdfFile(readable.toPath(), row.title)?.pages?.size?.let { it to emptyList() }
             else -> BookFormats.parse(readable.toPath(), row.format)?.let { book ->
-                BookLocations(book.chapters, book.toc).let { it.total to it.chapterRanges() }
+                val fixedCount = book.fixedLayoutBook?.pages?.size ?: book.fixedPages?.size
+                if (fixedCount != null) fixedCount to emptyList()
+                else BookLocations(book.chapters, book.toc).let { it.total to it.chapterRanges() }
             }
         }
     }.getOrNull()
@@ -332,7 +334,10 @@ class BookImporter(
 }
 
 private fun coverBytes(parsed: ParsedEpub, images: EpubImages): ByteArray? {
-    val href = parsed.coverHref ?: return null
+    val href = parsed.coverHref
+        ?: parsed.fixedPages?.firstOrNull()
+        ?: parsed.fixedLayoutBook?.fixedPages?.firstNotNullOfOrNull { it?.images?.firstOrNull()?.src }
+        ?: return null
     if (href.endsWith(".xhtml", true) || href.endsWith(".html", true)) {
         // Wrapper page (Gutenberg-style cover.xhtml): pull its <img>/<image> src.
         val page = images.imageBytes(href) ?: return null

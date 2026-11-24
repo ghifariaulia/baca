@@ -94,8 +94,17 @@ fun CbzScreen(
 ) {
     val scope = rememberCoroutineScope()
     val images = rememberBookImages(bookPath)
+    val bookFonts by rememberBookFonts(bookPath, book.fonts)
     var tick by remember { mutableIntStateOf(0) }
-    val session = remember(bookHash) { CbzSession(bookHash, book.pages.size, store, onChange = { tick++ }) }
+    val session = remember(bookHash) {
+        CbzSession(
+            bookHash = bookHash,
+            pageCount = book.pages.size,
+            repo = store,
+            onChange = { tick++ },
+            pageHrefs = if (book.fixedPages.isNotEmpty()) book.pages else emptyList(),
+        )
+    }
 
     var viewportReady by remember { mutableStateOf(false) }
     LaunchedEffect(bookHash) {
@@ -214,38 +223,53 @@ fun CbzScreen(
 
             Box(Modifier.fillMaxSize()) {
                 if (viewportReady && book.pages.isNotEmpty()) {
-                    val href = book.pages[session.pageIndex.coerceIn(0, book.pages.lastIndex)]
-                    val bitmap = images?.image(href)
-                    if (bitmap != null) {
-                        Image(
-                            painter = BitmapPainter(bitmap),
-                            contentDescription = "${session.pageIndex + 1}",
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    scaleX = zoom.value
-                                    scaleY = zoom.value
-                                    translationX = pan.value.x
-                                    translationY = pan.value.y
+                    val pageIdx = session.pageIndex.coerceIn(0, book.pages.lastIndex)
+                    val fixedPage = book.fixedPages.getOrNull(pageIdx)
+                    val href = book.pages[pageIdx]
+                    val zoomModifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = zoom.value
+                            scaleY = zoom.value
+                            translationX = pan.value.x
+                            translationY = pan.value.y
+                        }
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, gesturePan, gestureZoom, _ ->
+                                zoom.value = (zoom.value * gestureZoom).coerceIn(1f, 6f)
+                                pan.value = if (zoom.value > 1f) {
+                                    pan.value + gesturePan
+                                } else {
+                                    Offset.Zero
                                 }
-                                .pointerInput(Unit) {
-                                    detectTransformGestures { _, gesturePan, gestureZoom, _ ->
-                                        zoom.value = (zoom.value * gestureZoom).coerceIn(1f, 6f)
-                                        pan.value = if (zoom.value > 1f) {
-                                            pan.value + gesturePan
-                                        } else {
-                                            Offset.Zero
-                                        }
-                                    }
-                                },
-                        )
+                            }
+                        }
+                    if (fixedPage != null) {
+                        val loadedFonts = bookFonts
+                        if (loadedFonts != null) {
+                            FixedPageView(
+                                page = fixedPage,
+                                images = images,
+                                bookFonts = loadedFonts,
+                                modifier = zoomModifier,
+                            )
+                        }
                     } else {
-                        Box(
-                            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text("Page ${session.pageIndex + 1} could not be decoded", style = Type.body)
+                        val bitmap = images.image(href)
+                        if (bitmap != null) {
+                            Image(
+                                painter = BitmapPainter(bitmap),
+                                contentDescription = "${session.pageIndex + 1}",
+                                contentScale = ContentScale.Fit,
+                                modifier = zoomModifier,
+                            )
+                        } else {
+                            Box(
+                                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("Page ${session.pageIndex + 1} could not be decoded", style = Type.body)
+                            }
                         }
                     }
                     // tap zones (zoomed-out only; zoom/pan never moves the page)

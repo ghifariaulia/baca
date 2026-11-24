@@ -5,11 +5,15 @@ import okio.Path
 import okio.Path.Companion.toPath
 import okio.openZip
 
-/** One fixed-layout book: the zip's image entries in reading order. */
+/** One fixed-layout book: the zip's image entries (or fixed-layout EPUB pages) in reading order. */
 data class CbzBook(
     val title: String,
-    /** Zip paths (locator hrefs, TECH 5.2 fixed layout), natural-sorted. */
+    /** Zip paths (locator hrefs, TECH 5.2 fixed layout), natural-sorted or spine-ordered. */
     val pages: List<String>,
+    /** Pre-paginated EPUB pages with positioned text and images, one per entry in [pages] when present. */
+    val fixedPages: List<FixedPage?> = emptyList(),
+    /** Embedded `@font-face` fonts for [fixedPages]. */
+    val fonts: List<BookFont> = emptyList(),
 )
 
 private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp")

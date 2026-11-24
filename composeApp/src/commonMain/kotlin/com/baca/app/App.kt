@@ -714,8 +714,9 @@ private fun openBookOf(row: BookRow, folder: LibraryFolder?, options: ParseOptio
         "pdf" -> BookFormats.parsePdfFile(readable.toPath(), readable.substringAfterLast('/'))
             ?.let { OpenBook.Fixed(it, readable, row.bookHash) }
         else -> BookFormats.parse(readable.toPath(), row.format, options)?.let { parsed ->
-            // a fixed-layout book of pictures is read page by page, like a comic
-            parsed.fixedPages?.let { OpenBook.Fixed(CbzBook(parsed.title, it), readable, row.bookHash) }
+            // a fixed-layout book of positioned pages or pictures is read page by page, like a comic
+            parsed.fixedLayoutBook?.let { OpenBook.Fixed(it, readable, row.bookHash) }
+                ?: parsed.fixedPages?.let { OpenBook.Fixed(CbzBook(parsed.title, it), readable, row.bookHash) }
                 ?: OpenBook.Reflow(parsed, readable, row.bookHash)
         }
     }
