@@ -2,5 +2,5 @@ package com.baca.shared
 
 object AppInfo {
     const val name = "Baca"
-    const val version = "0.1.7"
+    const val version = "0.1.8"
 }
