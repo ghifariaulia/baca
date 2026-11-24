@@ -2,6 +2,8 @@ package com.baca.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -553,7 +555,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                         onToggleFinished = {
                             booksRepo.setFinished(current.row.bookHash, !finished)
                             // unread means from the start; a read-through book would count as finished again
-                            if (finished) store.resetToStart(current.row.bookHash, fixedLayout = current.row.format == "cbz")
+                            if (finished) store.resetToStart(current.row.bookHash, fixedLayout = current.row.format == "cbz" || current.row.format == "pdf")
                             libraryTick++
                         },
                     )
@@ -634,6 +636,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                             )
                             Column(
                                 Modifier.fillMaxWidth().align(Alignment.BottomCenter)
+                                    .pointerInput(Unit) { detectTapGestures { } }
                                     .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)),
                             ) {
                                 ImportProgressSheet(
@@ -707,6 +710,8 @@ private fun openBookOf(row: BookRow, folder: LibraryFolder?, options: ParseOptio
     val readable = if (row.path.startsWith("content://")) folder?.stage(row.path) ?: return null else row.path
     return when (row.format) {
         "cbz" -> BookFormats.parseCbzFile(readable.toPath(), readable.substringAfterLast('/'))
+            ?.let { OpenBook.Fixed(it, readable, row.bookHash) }
+        "pdf" -> BookFormats.parsePdfFile(readable.toPath(), readable.substringAfterLast('/'))
             ?.let { OpenBook.Fixed(it, readable, row.bookHash) }
         else -> BookFormats.parse(readable.toPath(), row.format, options)?.let { parsed ->
             // a fixed-layout book of pictures is read page by page, like a comic

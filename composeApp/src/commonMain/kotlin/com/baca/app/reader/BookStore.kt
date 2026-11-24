@@ -13,6 +13,7 @@ import com.baca.shared.parser.info
 import com.baca.shared.parser.BookInfo
 import com.baca.shared.parser.CbzBook
 import com.baca.shared.parser.parseCbz
+import com.baca.shared.parser.parsePdf
 import com.baca.shared.parser.EpubImages
 import com.baca.shared.parser.ParsedEpub
 import com.baca.shared.parser.parseEpub
@@ -43,6 +44,7 @@ expect fun rememberBookStoreDir(): String
 object BookFormats {
     val pickMimeTypes = arrayOf(
         "application/epub+zip",
+        "application/pdf",
         "application/zip", // .fb2.zip
         "application/xml", // .fb2
         "text/xml",
@@ -57,6 +59,7 @@ object BookFormats {
 
     fun of(fileName: String): String? = when {
         fileName.endsWith(".epub", ignoreCase = true) -> "epub"
+        fileName.endsWith(".pdf", ignoreCase = true) -> "pdf"
         fileName.endsWith(".fb2", ignoreCase = true) ||
             fileName.endsWith(".fb2.zip", ignoreCase = true) -> "fb2"
         fileName.endsWith(".cbz", ignoreCase = true) ||
@@ -73,6 +76,10 @@ object BookFormats {
     /** Fixed-layout books bypass the Block pipeline entirely. */
     fun parseCbzFile(path: Path, fileName: String): CbzBook? = runCatching {
         parseCbz(path, fileName)
+    }.getOrNull()
+
+    fun parsePdfFile(path: Path, fileName: String): CbzBook? = runCatching {
+        parsePdf(path, fileName)
     }.getOrNull()
 
     /** [options]: what the reader's settings change in how the book is read. */
@@ -162,13 +169,15 @@ class BookImporter(
         }
         val storedPath = location ?: readable.toString()
 
-        // CBZ: fixed layout — no Block pipeline; cover = first page image.
-        if (format == "cbz") {
-            val cbz = BookFormats.parseCbzFile(readable, fileName) ?: error("unreadable $fileName")
-            val coverPath: String? = cbz.pages.firstOrNull()
+        // CBZ and PDF: fixed layout — no Block pipeline; cover = first page image.
+        if (format == "cbz" || format == "pdf") {
+            val fixed = (if (format == "pdf") BookFormats.parsePdfFile(readable, fileName) else BookFormats.parseCbzFile(readable, fileName))
+                ?: error("unreadable $fileName")
+            val coverPath: String? = fixed.pages.firstOrNull()
                 ?.let { first -> EpubImages(readable).imageBytes(first) }
                 ?.let { bytes ->
-                    val coverFile = dir / "$bookHash-cover.jpg"
+                    val ext = if (format == "pdf") "png" else "jpg"
+                    val coverFile = dir / "$bookHash-cover.$ext"
                     fs.sink(coverFile).use { sink ->
                         sink.buffer().use { buffered -> buffered.write(bytes) }
                     }
@@ -176,13 +185,13 @@ class BookImporter(
                 }
             repo.upsert(
                 bookHash = bookHash,
-                title = cbz.title,
+                title = fixed.title,
                 author = "",
                 path = storedPath,
                 format = format,
                 coverPath = coverPath,
             )
-            repo.setInfo(bookHash, BookInfo(pages = cbz.pages.size))
+            repo.setInfo(bookHash, BookInfo(pages = fixed.pages.size))
             return repo.byHash(bookHash)?.let { Imported(it, isNew = true) }
         }
 
@@ -264,10 +273,10 @@ class BookImporter(
     // a comic's locations are its pages; a book's are BookLocations', which the reader credits.
     // A file that won't parse returns null, and earlierBooks falls back to its kept page total
     private fun locationsOf(row: BookRow, readable: String): Pair<Int, List<IntRange>>? = runCatching {
-        if (row.format == "cbz") {
-            BookFormats.parseCbzFile(readable.toPath(), row.title)?.pages?.size?.let { it to emptyList() }
-        } else {
-            BookFormats.parse(readable.toPath(), row.format)?.let { book ->
+        when (row.format) {
+            "cbz" -> BookFormats.parseCbzFile(readable.toPath(), row.title)?.pages?.size?.let { it to emptyList() }
+            "pdf" -> BookFormats.parsePdfFile(readable.toPath(), row.title)?.pages?.size?.let { it to emptyList() }
+            else -> BookFormats.parse(readable.toPath(), row.format)?.let { book ->
                 BookLocations(book.chapters, book.toc).let { it.total to it.chapterRanges() }
             }
         }
@@ -280,8 +289,11 @@ class BookImporter(
     fun ensureInfo(existing: BookRow, readable: String): BookInfo? {
         repo.info(existing.bookHash)?.let { return it }
         val info = runCatching {
-            if (existing.format == "cbz") BookInfo(pages = BookFormats.parseCbzFile(readable.toPath(), existing.title)?.pages?.size ?: 0)
-            else BookFormats.parse(readable.toPath(), existing.format)?.info()
+            when (existing.format) {
+                "cbz" -> BookInfo(pages = BookFormats.parseCbzFile(readable.toPath(), existing.title)?.pages?.size ?: 0)
+                "pdf" -> BookInfo(pages = BookFormats.parsePdfFile(readable.toPath(), existing.title)?.pages?.size ?: 0)
+                else -> BookFormats.parse(readable.toPath(), existing.format)?.info()
+            }
         }.getOrNull() ?: return null
         repo.setInfo(existing.bookHash, info)
         return info

@@ -9,6 +9,10 @@ import okio.openZip
 class EpubImages(private val bookPath: Path, private val fs: FileSystem = FileSystem.SYSTEM) {
 
     fun imageBytes(zipHref: String): ByteArray? = runCatching {
+        if (zipHref.startsWith(PDF_PAGE_PREFIX)) {
+            val pageIndex = zipHref.removePrefix(PDF_PAGE_PREFIX).toIntOrNull() ?: return null
+            return renderPdfPageBytes(bookPath, pageIndex)
+        }
         val zip = fs.openZip(bookPath)
         val entry = zipHref.toPath()
         if (!zip.exists(entry)) return null

@@ -93,6 +93,7 @@ private fun displayName(context: Context, uri: Uri): String? = runCatching {
 private fun guessExt(context: Context, uri: Uri): String =
     when (context.contentResolver.getType(uri)) {
         "application/epub+zip" -> "epub"
+        "application/pdf" -> "pdf"
         "application/zip" -> "fb2.zip"
         "text/plain" -> "txt"
         "text/html", "application/xhtml+xml" -> "html"

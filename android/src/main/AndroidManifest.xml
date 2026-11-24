@@ -33,6 +33,7 @@
                 <data android:scheme="content" />
                 <data android:scheme="file" />
                 <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/pdf" />
                 <data android:mimeType="application/x-fictionbook+xml" />
                 <data android:mimeType="application/x-fb2+zip" />
                 <data android:mimeType="application/x-cbz" />
@@ -55,6 +56,7 @@
                 <data android:host="*" />
                 <data android:mimeType="*/*" />
                 <data android:pathPattern=".*\\.epub" />
+                <data android:pathPattern=".*\\.pdf" />
                 <data android:pathPattern=".*\\.fb2" />
                 <data android:pathPattern=".*\\.cbz" />
                 <data android:pathPattern=".*\\.md" />

@@ -30,6 +30,9 @@ kotlin {
             implementation(libs.xmlutil.serialization)
             implementation(libs.sqldelight.runtime)
         }
+        jvmMain.dependencies {
+            implementation(libs.pdfbox)
+        }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)

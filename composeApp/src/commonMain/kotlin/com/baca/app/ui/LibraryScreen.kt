@@ -363,7 +363,7 @@ private fun PhoneLibrary(
             }
             Spacer(Modifier.height(16.dp))
             Text(
-                "Supports EPUB, FB2, HTML, Markdown, DOCX, RTF, TXT and CBZ",
+                "Supports EPUB, FB2, PDF, HTML, Markdown, DOCX, RTF, TXT and CBZ",
                 style = Type.caption,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

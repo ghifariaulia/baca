@@ -6,15 +6,23 @@ import androidx.compose.ui.graphics.ImageBitmap
 import com.baca.shared.parser.EpubImages
 import okio.Path.Companion.toPath
 
-/** Decodes EPUB image bytes into [ImageBitmap] with a per-book cache; [binaries] are pictures the book holds itself (FB2). */
+private const val MAX_CACHED_IMAGES = 32
+
+/** Decodes EPUB/CBZ/PDF image bytes into [ImageBitmap] with a bounded per-book cache; [binaries] are pictures the book holds itself (FB2). */
 class BookImages(private val loader: EpubImages, private val binaries: Map<String, ByteArray> = emptyMap()) {
-    private val cache = mutableMapOf<String, ImageBitmap?>()
+    private val cache = LinkedHashMap<String, ImageBitmap?>()
     private val plainGround = mutableMapOf<String, Boolean>()
 
-    /** Decode-once cache; called from layout (main thread) and composition. */
+    /** Decode-once bounded cache; called from layout (main thread) and composition. */
     fun preload(zipHref: String): ImageBitmap? {
         if (zipHref.isBlank()) return null
-        return cache.getOrPut(zipHref) { (binaries[zipHref] ?: loader.imageBytes(zipHref))?.let { decodeImageBytes(it) } }
+        if (cache.containsKey(zipHref)) return cache[zipHref]
+        if (cache.size >= MAX_CACHED_IMAGES) {
+            cache.keys.firstOrNull()?.let { cache.remove(it) }
+        }
+        val decoded = (binaries[zipHref] ?: loader.imageBytes(zipHref))?.let { decodeImageBytes(it) }
+        cache[zipHref] = decoded
+        return decoded
     }
 
     @Composable

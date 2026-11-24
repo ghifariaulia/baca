@@ -114,6 +114,30 @@ class BookImporterTest {
     }
 
     @Test
+    fun pdfImportExtractsPagesTitleAndFirstPageCover() {
+        val (importer, repo) = importer()
+        val pdfFile = java.io.File.createTempFile("import-pdf", ".pdf").apply { deleteOnExit() }
+        org.apache.pdfbox.pdmodel.PDDocument().use { doc ->
+            doc.documentInformation.title = "Sample PDF Book"
+            repeat(2) {
+                val page = org.apache.pdfbox.pdmodel.PDPage()
+                doc.addPage(page)
+            }
+            doc.save(pdfFile)
+        }
+        val first = assertNotNull(importer.import(pdfFile.absolutePath))
+        assertTrue(first.isNew)
+        val row = first.row
+        assertEquals("pdf", row.format)
+        assertEquals("Sample PDF Book", row.title)
+        assertNotNull(row.coverPath)
+        assertEquals(2, repo.info(row.bookHash)?.pages)
+        val images = com.baca.shared.parser.EpubImages(row.path.toPath())
+        val page0 = assertNotNull(images.imageBytes("pdf:0"))
+        assertTrue(page0.isNotEmpty())
+    }
+
+    @Test
     fun unsupportedFilesReturnNull() {
         val (importer, repo) = importer()
         val file = java.io.File.createTempFile("import-x", ".docx")

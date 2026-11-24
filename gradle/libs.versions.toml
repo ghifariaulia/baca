@@ -9,6 +9,7 @@ xmlutil = "1.0.2"
 androidxActivity = "1.13.0"
 kotlinxCoroutines = "1.11.0"
 androidxComposeBom = "2026.09.00"
+pdfbox = "3.0.3"
 
 [libraries]
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
@@ -26,6 +27,7 @@ androidx-compose-runtime = { module = "androidx.compose.runtime:runtime" }
 
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
 compose-ui-test-junit4 = { module = "org.jetbrains.compose.ui:ui-test-junit4", version.ref = "compose" }
+pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -1,9 +1,10 @@
 package com.baca.app.ui
 
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -131,5 +132,31 @@ class LibraryScreenTest {
         rule.waitForIdle()
         assertTrue(rule.onAllNodesWithText("Meditations").fetchSemanticsNodes().isNotEmpty())
         assertTrue(rule.onAllNodesWithText("Moby-Dick").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun `import progress sheet scrolls when importing many files and keeps done button visible`() {
+        val items = (1..25).map { ImportItem("book_$it.epub", ImportStatus.ADDED) }
+        var doneClicked = false
+        rule.setContent {
+            AppTheme {
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(390.dp, 640.dp)) {
+                    ImportProgressSheet(
+                        items = items,
+                        running = false,
+                        folderMode = false,
+                        onFromFiles = {},
+                        onFromFolder = null,
+                        onCancel = {},
+                        onDone = { doneClicked = true },
+                    )
+                }
+            }
+        }
+        rule.waitForIdle()
+        val doneBounds = rule.onNodeWithText("Done").fetchSemanticsNode().boundsInRoot
+        assertTrue(doneBounds.bottom <= 640f, "Done button must fit inside the screen height, was ${doneBounds.bottom}")
+        rule.onNodeWithText("Done").performClick()
+        assertTrue(doneClicked)
     }
 }

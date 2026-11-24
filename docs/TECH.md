@@ -47,7 +47,7 @@ Phase 1 (pure Kotlin, no native deps):
 Phase 2:
 
 - **CBZ** — a ZIP of images. Read with Okio, sort entries naturally, decode with platform image APIs. No native renderer needed.
-- **PDF** — deferred. Not part of the current plan; add later behind a renderer interface when needed.
+- **PDF** — fixed-layout pages rendered on demand into bitmaps (`shared/parser/PdfParser.kt`, `pdf:<index>` entries read through `EpubImages`): Android `PdfRenderer` and Desktop Apache PDFBox. First page is saved as the book's cover thumbnail at import.
 - **DjVu** — only if a real need appears. **MOBI/AZW3** — not planned.
 
 ### 3.1 Book CSS (EPUB)
@@ -85,6 +85,9 @@ Fallback if the Compose reflow engine stalls the project: render chapters in a W
 - `ParseOptions.needsReread` says when a changed setting needs the book parsed again (direction, CSS, replacements, or the colour scheme in a book whose CSS depends on it); `ReaderScreen` then calls `onOptionsChange` and `App` re-parses under the new options.
 - **Columns** (1 or 2): two pages side by side. The layout column is half the page less each column's own margins; a turn moves two pages. Vertical books and scrolled flow ignore it.
 - **Flow** (`paged`, `scrolled`): `scrolled` stacks the chapter's pages in one scrolling list (`LazyColumn`); the page on top is the reading position (`ReaderSession.showPage`), and the arrow keys still move a page, into the next chapter at the end. The list moves only up and down: horizontal swipes do nothing, and every tap just shows or hides the bars (no edge taps). Scrolling stays within a chapter.
+- **Page animation** (`pageTurnAnimation`, off by default): turning a page is instant by default; when switched to *Slide* in Display settings, page turns slide and fade across the page width.
+- **Auto-hiding reader bars**: the top bar and bottom seek bar float over the page and auto-hide after 3 seconds of inactivity (while no sheet, popover, note editor, text selection or active seek drag is open), or immediately when turning a page or scrolling. A center tap toggles the bars and restarts the 3-second timer.
+- **PDFTron / absolute-positioned fixed-layout EPUBs**: pre-paginated EPUBs that position word/syllable blocks inside a scaled transform container (`transform: scale(...)`, `position: absolute`, `left`/`bottom` in px) have their font sizes and `letter-spacing`/`word-spacing` scaled by the container's transform factor and relative to each element's own font size, with same-baseline fragments reconstructed into lines and consecutive lines merged into reflowable paragraphs (`mergePositionedBlocks`).
 
 ## 5. Persistence
 

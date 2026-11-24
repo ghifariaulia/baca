@@ -6,11 +6,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,7 +48,12 @@ fun ImportProgressSheet(
     onCancel: () -> Unit,
     onDone: () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
+    Column(
+        Modifier.fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .heightIn(max = 520.dp),
+    ) {
         Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp, bottom = 12.dp)) {
             Box(
                 Modifier.size(36.dp, 4.dp).clip(RoundedCornerShape(2.dp))
@@ -55,7 +66,7 @@ fun ImportProgressSheet(
             SheetOption(
                 icon = "⎙",
                 title = "From files",
-                subtitle = "Pick EPUB, FB2, HTML, Markdown, DOCX, RTF, TXT or CBZ files",
+                subtitle = "Pick EPUB, FB2, PDF, HTML, Markdown, DOCX, RTF, TXT or CBZ files",
                 onClick = onFromFiles,
             )
             if (onFromFolder != null) {
@@ -79,8 +90,10 @@ fun ImportProgressSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
             )
-            items.forEachIndexed { i, item ->
-                importRow(item, i == items.lastIndex)
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+                items.forEachIndexed { i, item ->
+                    importRow(item, i == items.lastIndex)
+                }
             }
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {

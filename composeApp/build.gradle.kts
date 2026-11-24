@@ -46,6 +46,7 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.test)
                 implementation(libs.compose.ui.test.junit4)
                 implementation(libs.sqldelight.sqlite.driver) // BookImporter repository round-trip
+                implementation(libs.pdfbox)
             }
         }
     }
