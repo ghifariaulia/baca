@@ -4,8 +4,14 @@ import androidx.compose.runtime.Composable
 
 /** The system's voice, reading the book aloud. */
 interface Speech {
+    /** Called when reading starts; [onExternalStop] fires if stopped from a system notification. */
+    fun start(title: String, onExternalStop: () -> Unit) {}
+
     /** Says [text] and returns once it has been said; cancelling the call stops the voice. */
     suspend fun say(text: String)
+
+    /** Called when reading stops (naturally, by user, or on dispose). */
+    fun stop() {}
 }
 
 /**

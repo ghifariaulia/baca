@@ -17,4 +17,8 @@ expect fun rememberBackupSaver(onPicked: ((() -> Sink)?) -> Unit): () -> Unit
 @Composable
 expect fun rememberBackupOpener(onPicked: (String?) -> Unit): () -> Unit
 
+/** Save dialog for exported Markdown notes. [onPicked] receives a sink factory, or null on cancel. */
+@Composable
+expect fun rememberMarkdownSaver(suggestedName: String, onPicked: ((() -> Sink)?) -> Unit): () -> Unit
+
 internal const val BACKUP_FILE_NAME = "baca-backup.zip"

@@ -520,8 +520,10 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                             }
                         }
                     }
-                    val details = remember(current.row, libraryTick, annotTick, libraryFolder, info) {
-                        val marked = annotRepo.forBookDetailed(current.row.bookHash).map { it.entry }.filter { !it.deleted }
+                    val marked = remember(current.row, annotTick) {
+                        annotRepo.forBookDetailed(current.row.bookHash).map { it.entry }.filter { !it.deleted }
+                    }
+                    val details = remember(current.row, libraryTick, marked, libraryFolder, info) {
                         val path = current.row.path
                         val inLibraryFolder = libraryFolderPath != null && (path.startsWith("content://") || !path.startsWith(storeDir))
                         BookDetails(
@@ -551,6 +553,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                             libraryTick++
                         },
                         details = details,
+                        exportEntries = marked,
                         finished = finished,
                         onToggleFinished = {
                             booksRepo.setFinished(current.row.bookHash, !finished)
@@ -567,10 +570,19 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                     BookmarksScreen(groups = annotationGroups(), onOpenAnnotation = ::openAnnotation)
                 }
                 Screen.Stats -> NavShell(NavItem.STATS, navTo) {
-                    val summary by produceState<StatsSummary?>(null) {
+                    var goalTick by remember { mutableStateOf(0) }
+                    val summary by produceState<StatsSummary?>(null, goalTick) {
                         value = withContext(statsWork) { stats.summary(todayKey()) }
                     }
-                    StatsScreen(summary)
+                    StatsScreen(
+                        summary = summary,
+                        onGoalMinutesChange = { minutes ->
+                            scope.launch {
+                                withContext(statsWork) { stats.setGoalMinutes(minutes) }
+                                goalTick++
+                            }
+                        },
+                    )
                 }
                 Screen.Settings -> NavShell(NavItem.SETTINGS, navTo) {
                     SettingsScreen(

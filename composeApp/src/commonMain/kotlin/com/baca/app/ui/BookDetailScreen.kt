@@ -24,7 +24,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,8 +40,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.baca.app.reader.KIND_BOOKMARK
+import com.baca.app.reader.rememberCopyToClipboard
+import com.baca.app.reader.rememberMarkdownSaver
 import com.baca.shared.db.BookRow
+import com.baca.shared.domain.AnnotationEntry
+import com.baca.shared.domain.ExportBook
+import com.baca.shared.domain.formatAnnotationsMarkdown
 import com.baca.shared.parser.BookInfo
+import okio.buffer
 
 /** What the detail screen lists beyond the book's row: where the file is and what the reader has marked in it. */
 data class BookDetails(
@@ -68,6 +80,7 @@ fun BookDetailScreen(
     finished: Boolean = false,
     onToggleFinished: () -> Unit = {},
     details: BookDetails = BookDetails(),
+    exportEntries: List<AnnotationEntry> = emptyList(),
 ) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -211,6 +224,46 @@ fun BookDetailScreen(
                 ),
                 line,
             )
+
+            val canExport = remember(exportEntries) {
+                exportEntries.any { !it.deleted && it.kind != KIND_BOOKMARK }
+            }
+            if (canExport) {
+                val copyToClipboard = rememberCopyToClipboard()
+                var exportStatus by remember { mutableStateOf<String?>(null) }
+                val bookMarkdown = remember(row, exportEntries) {
+                    formatAnnotationsMarkdown(listOf(ExportBook(row.title, row.author, exportEntries)))
+                }
+                val suggested = remember(row.title) {
+                    val clean = row.title.replace(Regex("[^A-Za-z0-9._-]+"), "-").trim('-').ifEmpty { "notes" }
+                    "$clean-notes.md"
+                }
+                val saveMd = rememberMarkdownSaver(suggested) { sinkFactory ->
+                    if (sinkFactory != null) {
+                        runCatching { sinkFactory().buffer().use { it.writeUtf8(bookMarkdown) } }
+                            .onSuccess { exportStatus = "Saved" }
+                            .onFailure { exportStatus = "Save failed" }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                ) {
+                    TextButton(onClick = {
+                        copyToClipboard(bookMarkdown)
+                        exportStatus = "Copied"
+                    }) {
+                        Text("Copy notes", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    }
+                    TextButton(onClick = saveMd) {
+                        Text("Save .md", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    }
+                    exportStatus?.let {
+                        Text(it, style = Type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
 
             Spacer(Modifier.height(24.dp))
             Text(

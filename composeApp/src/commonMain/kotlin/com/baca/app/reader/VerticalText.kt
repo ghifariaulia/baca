@@ -1,10 +1,13 @@
 package com.baca.app.reader
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -20,10 +23,32 @@ import androidx.compose.ui.platform.LocalDensity
  * long vowel mark upright); runs of other text (Latin, digits) stay turned, lying sideways down the line.
  */
 @Composable
-internal fun VerticalLineText(text: AnnotatedString, style: TextStyle, modifier: Modifier = Modifier) {
+internal fun VerticalLineText(
+    text: AnnotatedString,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+    onLongPress: ((Int) -> Unit)? = null,
+) {
     val measurer = rememberTextMeasurer()
     val fontPx = with(LocalDensity.current) { style.fontSize.toPx() }
-    Canvas(modifier) {
+    val spans = remember(text) { mutableListOf<Triple<Float, Float, Int>>() }
+    Canvas(
+        modifier.then(
+            if (onLongPress != null) {
+                Modifier.pointerInput(text) {
+                    detectTapGestures(
+                        onLongPress = { pos ->
+                            val hit = spans.firstOrNull { (s, e, _) -> pos.x in s..e } ?: spans.lastOrNull()
+                            hit?.let { onLongPress(it.third) }
+                        },
+                    )
+                }
+            } else {
+                Modifier
+            },
+        ),
+    ) {
+        spans.clear()
         val middle = size.height / 2
         var x = 0f
         var i = 0
@@ -36,6 +61,7 @@ internal fun VerticalLineText(text: AnnotatedString, style: TextStyle, modifier:
             } else {
                 while (j < text.length && !isUpright(text[j])) j++
             }
+            val tateChuYoko = !upright && isTateChuYokoRun(text, i, j)
             val piece = text.subSequence(i, j).let { p ->
                 if (!upright) p else buildAnnotatedString {
                     append(p)
@@ -44,16 +70,21 @@ internal fun VerticalLineText(text: AnnotatedString, style: TextStyle, modifier:
             }
             val layout = measurer.measure(piece, style, softWrap = false, maxLines = 1)
             val width = layout.size.width.toFloat()
+            spans.add(Triple(x, x + width, i))
             // the centre of the glyphs' em box, which sits on the line's middle
             val ink = layout.firstBaseline - INK_CENTER * fontPx
             val top = Offset(x, middle - ink)
-            if (upright) rotate(-90f, pivot = Offset(x + width / 2, middle)) { drawText(layout, topLeft = top) }
+            if (upright || tateChuYoko) rotate(-90f, pivot = Offset(x + width / 2, middle)) { drawText(layout, topLeft = top) }
             else drawText(layout, topLeft = top)
             x += width
             i = j
         }
     }
 }
+
+/** 1–2 digit runs stand upright side-by-side (tate-chu-yoko) in vertical writing. */
+internal fun isTateChuYokoRun(text: CharSequence, start: Int, end: Int): Boolean =
+    end - start in 1..2 && (start until end).all { text[it].isDigit() }
 
 // where the middle of a glyph's em box lies above its baseline, in em: the CJK fonts' 0.88 ascent and 0.12 descent
 private const val INK_CENTER = 0.38f

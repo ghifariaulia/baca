@@ -36,6 +36,9 @@ data class StatsSummary(
     val locations: Int,
     val seconds: Long,
     val achievements: List<Achievement>,
+    val goalMinutes: Int = ReadingStats.DEFAULT_GOAL_MINUTES,
+    /** the last 35 days, oldest first */
+    val history: List<Pair<String, DayRecord>> = emptyList(),
 )
 
 /**
@@ -53,7 +56,7 @@ class ReadingStats(private val store: StatsStore) {
 
         val day = dayOf(today)
         val seconds = day.seconds + (page.dwellMs / 1000).toInt().coerceAtMost(XpRules.MAX_PAGE_SECONDS)
-        val goalNow = !day.goalMet && seconds >= XpRules.GOAL_SECONDS
+        val goalNow = !day.goalMet && seconds >= goalMinutes() * 60
         val earned = credited.xp + if (goalNow) XpRules.DAILY_GOAL else 0
         store.put(
             DAY_PREFIX + today,
@@ -82,6 +85,13 @@ class ReadingStats(private val store: StatsStore) {
         store.put(CAUGHT_UP_KEY, "1")
     }
 
+    fun goalMinutes(): Int =
+        store.get(GOAL_MINUTES_KEY)?.toIntOrNull()?.coerceIn(MIN_GOAL_MINUTES, MAX_GOAL_MINUTES) ?: DEFAULT_GOAL_MINUTES
+
+    fun setGoalMinutes(minutes: Int) {
+        store.put(GOAL_MINUTES_KEY, minutes.coerceIn(MIN_GOAL_MINUTES, MAX_GOAL_MINUTES).toString())
+    }
+
     fun summary(today: String): StatsSummary {
         val days = days()
         val earlier = earlier()
@@ -92,6 +102,7 @@ class ReadingStats(private val store: StatsStore) {
         val longest = longestStreak(days)
         val seconds = days.values.sumOf { it.seconds.toLong() }
         val level = levelOf(xp)
+        val goal = goalMinutes()
         return StatsSummary(
             xp = xp,
             level = level,
@@ -103,6 +114,8 @@ class ReadingStats(private val store: StatsStore) {
             locations = locations,
             seconds = seconds,
             achievements = achievementsOf(booksFinished, longest, locations, seconds, level.number),
+            goalMinutes = goal,
+            history = lastDays(today, 35).map { it to (days[it] ?: DayRecord()) },
         )
     }
 
@@ -123,6 +136,10 @@ class ReadingStats(private val store: StatsStore) {
         const val DAY_PREFIX = "xp:day:"
         const val EARLIER_KEY = "xp:earlier"
         const val CAUGHT_UP_KEY = "xp:caught-up"
+        const val GOAL_MINUTES_KEY = "xp:goal_minutes"
+        const val DEFAULT_GOAL_MINUTES = 15
+        const val MIN_GOAL_MINUTES = 5
+        const val MAX_GOAL_MINUTES = 180
         private val json = Json { ignoreUnknownKeys = true }
     }
 }

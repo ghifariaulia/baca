@@ -1,6 +1,8 @@
 package com.baca.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,13 +25,22 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.baca.shared.domain.stats.DayRecord
+import com.baca.shared.domain.stats.ReadingStats
 import com.baca.shared.domain.stats.StatsSummary
 import com.baca.shared.domain.stats.XpRules
 import com.baca.shared.domain.stats.grouped
@@ -37,7 +48,10 @@ import com.baca.shared.domain.stats.weekdayOf
 
 /** Reading stats (TECH 10.9): level, streak, today against the goal, the week, totals and achievements. */
 @Composable
-fun StatsScreen(summary: StatsSummary?) {
+fun StatsScreen(
+    summary: StatsSummary?,
+    onGoalMinutesChange: ((Int) -> Unit)? = null,
+) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -45,21 +59,103 @@ fun StatsScreen(summary: StatsSummary?) {
         ) {
             Text("Stats", style = Type.screenTitle)
             if (summary == null) return@Column
+            val goalSeconds = summary.goalMinutes * 60
             LevelCard(summary)
             Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Tile("Streak", days(summary.streak), "Best ${days(summary.longestStreak)}", Modifier.weight(1f).fillMaxHeight())
                 Tile(
                     "Today",
                     minutes(summary.today.seconds.toLong()),
-                    if (summary.today.goalMet) "Goal met" else "Goal ${minutes(XpRules.GOAL_SECONDS.toLong())}",
+                    if (summary.today.goalMet) "Goal met" else "Goal ${minutes(goalSeconds.toLong())}",
                     Modifier.weight(1f).fillMaxHeight(),
-                    progress = summary.today.seconds / XpRules.GOAL_SECONDS.toFloat(),
+                    progress = summary.today.seconds / goalSeconds.toFloat(),
                 )
                 Tile("Finished", "${summary.booksFinished}", if (summary.booksFinished == 1) "book" else "books", Modifier.weight(1f).fillMaxHeight())
             }
+            if (onGoalMinutesChange != null) {
+                DailyGoalCard(summary.goalMinutes, onGoalMinutesChange)
+            }
             Week(summary)
+            if (summary.history.isNotEmpty()) {
+                HistoryCalendar(summary.history)
+            }
             Totals(summary)
             Achievements(summary)
+        }
+    }
+}
+
+@Composable
+private fun DailyGoalCard(goalMinutes: Int, onChange: (Int) -> Unit) {
+    Card {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column {
+                Text("DAILY GOAL", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(4.dp))
+                Text("$goalMinutes min / day", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(
+                    onClick = { onChange((goalMinutes - 5).coerceAtLeast(ReadingStats.MIN_GOAL_MINUTES)) },
+                    enabled = goalMinutes > ReadingStats.MIN_GOAL_MINUTES,
+                    modifier = Modifier.semantics { contentDescription = "Decrease daily goal" },
+                ) {
+                    Text("−", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                }
+                TextButton(
+                    onClick = { onChange((goalMinutes + 5).coerceAtMost(ReadingStats.MAX_GOAL_MINUTES)) },
+                    enabled = goalMinutes < ReadingStats.MAX_GOAL_MINUTES,
+                    modifier = Modifier.semantics { contentDescription = "Increase daily goal" },
+                ) {
+                    Text("+", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryCalendar(history: List<Pair<String, DayRecord>>) {
+    var selected by remember(history) { mutableStateOf(history.lastOrNull()) }
+    Card {
+        Text("HISTORY", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(8.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            history.chunked(7).forEach { week ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    week.forEach { entry ->
+                        val (day, record) = entry
+                        val isSelected = selected?.first == day
+                        val fill = when {
+                            record.goalMet -> MaterialTheme.colorScheme.primary
+                            record.seconds > 0 -> MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                            else -> MaterialTheme.colorScheme.background
+                        }
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .height(22.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(fill)
+                                .then(
+                                    if (isSelected) Modifier.border(1.5.dp, MaterialTheme.colorScheme.onSurface, RoundedCornerShape(4.dp))
+                                    else Modifier,
+                                )
+                                .semantics { contentDescription = "Day $day" }
+                                .clickable { selected = entry },
+                        )
+                    }
+                    repeat(7 - week.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+        selected?.let { (day, record) ->
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "$day · ${minutes(record.seconds.toLong())} · ${record.locations} pages · ${record.xp} XP",
+                style = Type.caption,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -98,7 +194,7 @@ private fun Tile(label: String, value: String, caption: String, modifier: Modifi
 
 @Composable
 private fun Week(summary: StatsSummary) {
-    val most = summary.week.maxOf { it.second.seconds }.coerceAtLeast(XpRules.GOAL_SECONDS)
+    val most = summary.week.maxOf { it.second.seconds }.coerceAtLeast(summary.goalMinutes * 60)
     Card {
         Text("THIS WEEK", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(8.dp))

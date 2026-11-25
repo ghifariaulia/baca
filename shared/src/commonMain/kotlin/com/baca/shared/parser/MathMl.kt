@@ -63,8 +63,11 @@ private class MathWriter {
         "mspace" -> " "
         "mo" -> operator(node)
         "mfrac" -> fraction(node)
-        "msqrt" -> "√(" + all(node) + ")"
-        "mroot" -> node.elements.let { e -> if (e.size < 2) all(node) else "<sup>${write(e[1])}</sup>√(${write(e[0])})" }
+        "msqrt" -> "<span style=\"display:inline-block\">√<span style=\"border-top:1px solid;padding:0 2px\">${all(node)}</span></span>"
+        "mroot" -> node.elements.let { e ->
+            if (e.size < 2) all(node)
+            else "<span style=\"display:inline-block\"><sup>${write(e[1])}</sup>√<span style=\"border-top:1px solid;padding:0 2px\">${write(e[0])}</span></span>"
+        }
         "msup" -> node.elements.let { e -> write(e[0]) + e.getOrNull(1)?.let { "<sup>${write(it)}</sup>" }.orEmpty() }
         "msub" -> node.elements.let { e -> write(e[0]) + e.getOrNull(1)?.let { "<sub>${write(it)}</sub>" }.orEmpty() }
         "msubsup" -> node.elements.let { e -> write(e[0]) + e.getOrNull(1)?.let { "<sub>${write(it)}</sub>" }.orEmpty() + e.getOrNull(2)?.let { "<sup>${write(it)}</sup>" }.orEmpty() }
@@ -73,9 +76,9 @@ private class MathWriter {
         "munderover" -> node.elements.let { e -> write(e[0]) + e.getOrNull(1)?.let { "<sub>${write(it)}</sub>" }.orEmpty() + e.getOrNull(2)?.let { "<sup>${write(it)}</sup>" }.orEmpty() }
         "mmultiscripts" -> node.elements.let { e -> write(e[0]) + e.drop(1).chunked(2).joinToString("") { (s, p) -> "<sub>${write(s)}</sub><sup>${write(p)}</sup>" } }
         "mfenced" -> fenced(node)
-        "mtable" -> node.elements.joinToString("<br/>") { row -> write(row) }
-        "mtr", "mlabeledtr" -> node.elements.joinToString(" ") { write(it) }
-        "mtd" -> all(node)
+        "mtable" -> "<table style=\"margin:0 auto;border-collapse:collapse\">${node.elements.joinToString("") { row -> write(row) }}</table>"
+        "mtr", "mlabeledtr" -> "<tr>${node.elements.joinToString("") { write(it) }}</tr>"
+        "mtd" -> "<td style=\"padding:2px 6px;text-align:center\">${all(node)}</td>"
         else -> all(node).ifEmpty { escape(node.text()) }
     }
 
@@ -99,12 +102,10 @@ private class MathWriter {
     private fun fraction(node: MathNode): String {
         val (num, den) = node.elements.let { it.getOrNull(0) to it.getOrNull(1) }
         if (num == null || den == null) return all(node)
-        fun wrapped(n: MathNode): String {
-            val text = write(n)
-            // a lone token needs no brackets
-            return if (n.name in setOf("mi", "mn") || (n.name == "mrow" && n.elements.size == 1)) text else "($text)"
-        }
-        return wrapped(num) + "⁄" + wrapped(den)
+        return "<span style=\"display:inline-block;text-align:center;vertical-align:middle\">" +
+            "<span style=\"display:block;border-bottom:1px solid;padding:0 2px;font-size:0.8em\">${write(num)}</span>" +
+            "<span style=\"display:block;padding:0 2px;font-size:0.8em\">${write(den)}</span>" +
+            "</span>"
     }
 
     private fun fenced(node: MathNode): String {

@@ -14,6 +14,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 @Composable
@@ -66,7 +67,29 @@ private class AndroidSpeech(private val tts: TextToSpeech) : Speech {
         waiting.remove(id)?.takeIf { it.isActive }?.resume(Unit)
     }
 
-    override suspend fun say(text: String) = suspendCancellableCoroutine { continuation ->
+    override fun start(title: String, onExternalStop: () -> Unit) {
+        ReadAloudController.onExternalStop = onExternalStop
+        ReadAloudController.onInterruptForPause = { tts.stop() }
+        ReadAloudService.start(AndroidContexts.current, title)
+    }
+
+    override fun stop() {
+        ReadAloudController.onExternalStop = null
+        ReadAloudController.onInterruptForPause = null
+        ReadAloudController.paused.value = false
+        tts.stop()
+        ReadAloudService.stop(AndroidContexts.current)
+    }
+
+    override suspend fun say(text: String) {
+        while (true) {
+            ReadAloudController.paused.first { !it }
+            speakOnce(text)
+            if (!ReadAloudController.paused.value) return
+        }
+    }
+
+    private suspend fun speakOnce(text: String) = suspendCancellableCoroutine { continuation ->
         val id = UUID.randomUUID().toString()
         waiting[id] = continuation
         continuation.invokeOnCancellation {

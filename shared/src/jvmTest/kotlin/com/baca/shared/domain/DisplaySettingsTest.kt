@@ -2,6 +2,7 @@ package com.baca.shared.domain
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -70,5 +71,37 @@ class DisplaySettingsTest {
         assertFalse(old.pageTurnAnimation)
         val enabled = decodeDisplay(DisplaySettings(pageTurnAnimation = true).encode())
         assertTrue(enabled.pageTurnAnimation)
+    }
+
+    @Test
+    fun `reader hardware and screen controls persist with defaults and validate bounds`() {
+        val defaults = decodeDisplay("""{"fontSizePercent":120}""")
+        assertFalse(defaults.volumeKeysTurnPages)
+        assertEquals(-1f, defaults.brightness)
+        assertEquals("standard", defaults.tapZoneMode)
+
+        val custom = decodeDisplay(
+            DisplaySettings(volumeKeysTurnPages = true, brightness = 0.6f, tapZoneMode = "swapped").encode(),
+        )
+        assertTrue(custom.volumeKeysTurnPages)
+        assertEquals(0.6f, custom.brightness)
+        assertEquals("swapped", custom.tapZoneMode)
+
+        assertFailsWith<IllegalArgumentException> { DisplaySettings(tapZoneMode = "invalid") }
+        assertFailsWith<IllegalArgumentException> { DisplaySettings(brightness = 1.2f) }
+        assertFailsWith<IllegalArgumentException> { DisplaySettings(brightness = -0.2f) }
+    }
+
+    @Test
+    fun `tapPageDelta respects standard, swapped, disabled, and rtl`() {
+        assertEquals(-1, tapPageDelta(0.1f, rtl = false, mode = "standard"))
+        assertEquals(0, tapPageDelta(0.5f, rtl = false, mode = "standard"))
+        assertEquals(1, tapPageDelta(0.9f, rtl = false, mode = "standard"))
+
+        assertEquals(1, tapPageDelta(0.1f, rtl = false, mode = "swapped"))
+        assertEquals(-1, tapPageDelta(0.9f, rtl = false, mode = "swapped"))
+
+        assertEquals(-1, tapPageDelta(0.1f, rtl = true, mode = "swapped"))
+        assertEquals(0, tapPageDelta(0.1f, rtl = false, mode = "disabled"))
     }
 }

@@ -5,7 +5,27 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Size
+import com.baca.shared.domain.reader.PdfSearchHit
+import com.baca.shared.domain.reader.findPdfWordAt
+import com.baca.shared.domain.reader.lookupTerm
+import com.baca.shared.domain.reader.pdfSelectionRange
+import com.baca.shared.domain.reader.searchPdfPages
+import com.baca.shared.parser.PDF_PAGE_PREFIX
+import com.baca.shared.parser.PdfWordBox
+import com.baca.shared.parser.extractPdfPageText
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okio.Path.Companion.toPath
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -169,6 +189,27 @@ fun CbzScreen(
     var barsVisible by remember { mutableStateOf(true) }
     var barsShowTick by remember { mutableIntStateOf(0) }
     var seeking by remember { mutableStateOf(false) }
+    val isPdf = remember(book) { book.pages.firstOrNull()?.startsWith(PDF_PAGE_PREFIX) == true }
+    val pageWords by produceState<List<PdfWordBox>>(emptyList(), bookPath, shownPage, isPdf) {
+        value = if (isPdf && bookPath.isNotEmpty()) {
+            withContext(Dispatchers.IO) { extractPdfPageText(bookPath.toPath(), shownPage) }
+        } else {
+            emptyList()
+        }
+    }
+    var pdfSelection by remember(shownPage) { mutableStateOf<Pair<Int, Int>?>(null) }
+    var pdfSearchQuery by remember { mutableStateOf("") }
+    val pdfSearchHits by produceState<List<PdfSearchHit>>(emptyList(), pdfSearchQuery, isPdf, bookPath) {
+        val q = pdfSearchQuery.trim()
+        value = if (!isPdf || q.length < 2 || bookPath.isEmpty()) {
+            emptyList()
+        } else {
+            withContext(Dispatchers.IO) {
+                val p = bookPath.toPath()
+                searchPdfPages(book.pages.size, q, { idx -> extractPdfPageText(p, idx) })
+            }
+        }
+    }
     LaunchedEffect(barsVisible, barsShowTick, seeking, sheet) {
         if (barsVisible && !seeking && sheet == null) {
             kotlinx.coroutines.delay(BARS_AUTO_HIDE_MS)
@@ -202,6 +243,8 @@ fun CbzScreen(
         color = MaterialTheme.colorScheme.background,
     ) {
         FullScreen(enabled = display.fullScreen && !barsVisible)
+        ApplyScreenBrightness(display.brightness)
+        PlatformVolumeKeyHandler(enabled = display.volumeKeysTurnPages) { turn(it) }
         LaunchedEffect(Unit) { focusRequester.requestFocus() }
         PlatformBackHandler {
             if (sheet != null) sheet = null else onBack()
@@ -254,6 +297,18 @@ fun CbzScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.align(Alignment.CenterEnd),
                     ) {
+                        if (isPdf) {
+                            IconButton(onClick = {
+                                barsShowTick++
+                                sheet = if (sheet == "search") null else "search"
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Search,
+                                    contentDescription = "Search",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
+                        }
                         IconButton(onClick = {
                             barsShowTick++
                             sheet = if (sheet == "bookmarks") null else "bookmarks"
@@ -328,12 +383,75 @@ fun CbzScreen(
                     } else {
                         val bitmap = images.image(href)
                         if (bitmap != null) {
-                            Image(
-                                painter = BitmapPainter(bitmap),
-                                contentDescription = "${session.pageIndex + 1}",
-                                contentScale = ContentScale.Fit,
-                                modifier = zoomModifier,
-                            )
+                            val pageHighlights = remember(annotations, pageIdx) {
+                                annotations.filter { !it.deleted && it.kind != KIND_BOOKMARK && it.fixedAnchor?.pageIndex == pageIdx }
+                            }
+                            val selRects = remember(pdfSelection, pageWords) {
+                                pdfSelection?.let { (a, b) -> pdfSelectionRange(pageWords, a, b).second }.orEmpty()
+                            }
+                            BoxWithConstraints(
+                                zoomModifier.then(
+                                    if (isPdf && pageWords.isNotEmpty()) {
+                                        Modifier.pointerInput(pageWords) {
+                                            detectTapGestures(
+                                                onLongPress = { offset ->
+                                                    val cw = size.width.toFloat().coerceAtLeast(1f)
+                                                    val ch = size.height.toFloat().coerceAtLeast(1f)
+                                                    val scale = minOf(cw / bitmap.width, ch / bitmap.height)
+                                                    val iw = bitmap.width * scale
+                                                    val ih = bitmap.height * scale
+                                                    val il = (cw - iw) * 0.5f
+                                                    val it = (ch - ih) * 0.5f
+                                                    val nx = ((offset.x - il) / iw).coerceIn(0f, 1f)
+                                                    val ny = ((offset.y - it) / ih).coerceIn(0f, 1f)
+                                                    findPdfWordAt(pageWords, nx, ny)?.let { idx ->
+                                                        pdfSelection = idx to idx
+                                                    }
+                                                },
+                                            )
+                                        }
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                            ) {
+                                Image(
+                                    painter = BitmapPainter(bitmap),
+                                    contentDescription = "${session.pageIndex + 1}",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                                if (isPdf && (pageHighlights.isNotEmpty() || selRects.isNotEmpty())) {
+                                    Canvas(Modifier.fillMaxSize()) {
+                                        val scale = minOf(size.width / bitmap.width, size.height / bitmap.height)
+                                        val iw = bitmap.width * scale
+                                        val ih = bitmap.height * scale
+                                        val il = (size.width - iw) * 0.5f
+                                        val it = (size.height - ih) * 0.5f
+                                        pageHighlights.forEach { entry ->
+                                            val fill = HighlightColors.of(entry.color).copy(alpha = 0.35f)
+                                            entry.fixedAnchor?.rects?.forEach { r ->
+                                                if (r.size >= 4) {
+                                                    drawRect(
+                                                        color = fill,
+                                                        topLeft = Offset(il + r[0] * iw, it + r[1] * ih),
+                                                        size = Size(r[2] * iw, r[3] * ih),
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        selRects.forEach { r ->
+                                            if (r.size >= 4) {
+                                                drawRect(
+                                                    color = Color(0x550F766E),
+                                                    topLeft = Offset(il + r[0] * iw, it + r[1] * ih),
+                                                    size = Size(r[2] * iw, r[3] * ih),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         } else {
                             Box(
                                 Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
@@ -341,6 +459,49 @@ fun CbzScreen(
                             ) {
                                 Text("Page ${session.pageIndex + 1} could not be decoded", style = Type.body)
                             }
+                        }
+                    }
+                    pdfSelection?.let { (startIdx, endIdx) ->
+                        val (selText, selRects) = pdfSelectionRange(pageWords, startIdx, endIdx)
+                        val copyText = rememberCopyToClipboard()
+                        Row(
+                            Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 72.dp)
+                                .shadow(4.dp, RoundedCornerShape(24.dp))
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(MaterialTheme.colorScheme.surface)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            TextButton(onClick = {
+                                if (selText.isNotEmpty() && selRects.isNotEmpty()) {
+                                    onAnnotationUpsert(
+                                        AnnotationEntry(
+                                            id = "${bookHash}-pdf-$pageIdx-${System.currentTimeMillis()}",
+                                            kind = "highlight",
+                                            fixedAnchor = FixedAnchorDto(pageIdx, selRects),
+                                            text = selText,
+                                            color = "yellow",
+                                            createdAt = System.currentTimeMillis(),
+                                            lamport = 0L,
+                                        ),
+                                    )
+                                }
+                                pdfSelection = null
+                            }) { Text("Highlight") }
+                            TextButton(onClick = {
+                                if (selText.isNotEmpty()) copyText(selText)
+                                pdfSelection = null
+                            }) { Text("Copy") }
+                            lookupTerm(selText)?.let { term ->
+                                TextButton(onClick = {
+                                    lookUpWord(term)
+                                    pdfSelection = null
+                                }) { Text("Define") }
+                            }
+                            TextButton(onClick = { pdfSelection = null }) { Text("Clear") }
                         }
                     }
                     // tap zones (zoomed-out only; zoom/pan never moves the page)
@@ -437,7 +598,11 @@ fun CbzScreen(
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            if (sheet == "bookmarks") "Bookmarks" else "Display",
+                            when (sheet) {
+                                "bookmarks" -> "Bookmarks"
+                                "search" -> "Search"
+                                else -> "Display"
+                            },
                             style = Type.cardTitle,
                             fontSize = 18.sp,
                         )
@@ -458,6 +623,30 @@ fun CbzScreen(
                                     sheet = null
                                 },
                             )
+                        }
+                    } else if (sheet == "search") {
+                        OutlinedTextField(
+                            value = pdfSearchQuery,
+                            onValueChange = { pdfSearchQuery = it },
+                            placeholder = { Text("Search PDF") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+                            items(pdfSearchHits) { hit ->
+                                Column(
+                                    Modifier.fillMaxWidth()
+                                        .clickable {
+                                            sheet = null
+                                            scope.launch { session.goToPage(hit.pageIndex); tick++ }
+                                        }
+                                        .padding(vertical = 8.dp),
+                                ) {
+                                    Text("Page ${hit.pageIndex + 1}", style = Type.caption, color = MaterialTheme.colorScheme.primary)
+                                    Text(hit.snippet, style = Type.body, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
                         }
                     } else {
                         DisplayContent(display) { display = it }

@@ -1,8 +1,11 @@
 package com.baca.app.ui
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import kotlin.test.assertEquals
 import com.baca.shared.domain.stats.EarlierBook
 import com.baca.shared.domain.stats.PageReading
@@ -41,5 +44,24 @@ class StatsScreenTest {
         rule.onNodeWithText("Bookworm I").assertExists()
         rule.onNodeWithText("Finish 5 books").assertExists()
         rule.onNodeWithText("1 / 5").assertExists()
+    }
+
+    @Test
+    fun `daily goal stepper and history calendar are interactive`() {
+        val stats = ReadingStats(MapStore())
+        stats.pageRead("dracula", PageReading(0..1, 300, emptyList(), 300_000L, 1500), "2026-11-16")
+        var changedGoal = 0
+        rule.setContent {
+            AppTheme {
+                StatsScreen(
+                    summary = stats.summary("2026-11-16"),
+                    onGoalMinutesChange = { changedGoal = it },
+                )
+            }
+        }
+
+        rule.onNodeWithText("HISTORY").performScrollTo().assertExists()
+        rule.onNodeWithContentDescription("Increase daily goal").performScrollTo().performClick()
+        assertEquals(20, changedGoal)
     }
 }

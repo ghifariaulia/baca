@@ -47,9 +47,15 @@ data class DisplaySettings(
     val flow: String = "paged",
     /** whether turning a page slides and fades; off by default */
     val pageTurnAnimation: Boolean = false,
+    /** Android: volume buttons turn pages while reading */
+    val volumeKeysTurnPages: Boolean = false,
+    /** Android: reader screen brightness (-1f = system default, 0f..1f = override) */
+    val brightness: Float = -1f,
+    /** phones: edge tap behavior (standard | swapped | disabled) */
+    val tapZoneMode: String = "standard",
 ) {
     init {
-        require(font in FONTS) { "unknown font: $font" }
+        require(font in FONTS || isUserFontKey(font)) { "unknown font: $font" }
         require(theme in THEMES) { "unknown theme: $theme" }
         require(fontSizePercent in FONT_SIZE_PERCENTS) { "font size out of range: $fontSizePercent" }
         require(lineSpacingTenths in LINE_SPACING_TENTHS) { "line spacing out of range: $lineSpacingTenths" }
@@ -59,6 +65,8 @@ data class DisplaySettings(
         require(direction in DIRECTIONS) { "unknown direction: $direction" }
         require(columns in 1..2) { "columns out of range: $columns" }
         require(flow in FLOWS) { "unknown flow: $flow" }
+        require(tapZoneMode in TAP_ZONE_MODES) { "unknown tapZoneMode: $tapZoneMode" }
+        require(brightness == -1f || brightness in 0f..1f) { "brightness out of range: $brightness" }
     }
 
     /** What these settings change in how a book is read, for a page of [darkScheme]'s kind. */
@@ -85,6 +93,7 @@ data class DisplaySettings(
         val FONTS = setOf("serif", "sans", "mono", "libron")
         val DIRECTIONS = setOf("auto", "ltr", "rtl")
         val FLOWS = setOf("paged", "scrolled")
+        val TAP_ZONE_MODES = setOf("standard", "swapped", "disabled")
         val THEMES = setOf("white", "paper", "ink", "grey", "dim", "dusk", "black")
         val FONT_SIZE_PERCENTS = 50..250
         val LINE_SPACING_TENTHS = 10..25
@@ -92,6 +101,19 @@ data class DisplaySettings(
         const val FONT_SIZE_STEP = 5
         const val BROWSER_FONT_SP = 16f
     }
+}
+
+/** Page turn delta (-1, 0, +1) for a tap at [xFraction] (0..1) given [rtl] and [mode]. */
+fun tapPageDelta(xFraction: Float, rtl: Boolean, mode: String): Int {
+    if (mode == "disabled") return 0
+    val raw = when {
+        xFraction < 1f / 3f -> -1
+        xFraction > 2f / 3f -> 1
+        else -> 0
+    }
+    if (raw == 0) return 0
+    val directed = if (mode == "swapped") -raw else raw
+    return if (rtl) -directed else directed
 }
 
 private val displayJson = Json { ignoreUnknownKeys = true }

@@ -66,7 +66,16 @@ class ReaderSession(
         private set
     // a jump asked for before the first layout (Notes/Bookmarks screens open the reader with one)
     private var pendingJump: Triple<String, Int, Int>? = null
+    private val history = ArrayDeque<Locator>()
     private val layouts = mutableMapOf<Int, ReflowLayout>()
+
+    val canGoBack: Boolean get() = history.isNotEmpty()
+
+    private fun pushHistory(locator: Locator = currentLocator()) {
+        if (!initialized || chapters.isEmpty()) return
+        history.addLast(locator)
+        while (history.size > MAX_HISTORY) history.removeFirst()
+    }
 
     fun layoutFor(index: Int): ReflowLayout =
         layouts.getOrPut(index) { layoutFactory(index, viewport, settings) }
@@ -273,6 +282,7 @@ class ReaderSession(
     /** Jumps to the start of a chapter (contents panel). */
     suspend fun jumpToChapter(target: Int) {
         if (target in chapters.indices) {
+            pushHistory()
             chapterIndex = target
             pageIndex = 0
             save()
@@ -342,6 +352,7 @@ class ReaderSession(
             jumpToChapter(target)
             return
         }
+        pushHistory()
         chapterIndex = target
         pageIndex = layoutFor(target).pageForPosition(block, 0, "")?.pageIndex ?: 0
         save()
@@ -355,9 +366,20 @@ class ReaderSession(
             pendingJump = Triple(href, blockIndex, charOffset)
             return
         }
+        val prior = currentLocator()
         if (!moveToAnchor(href, blockIndex, charOffset)) return
+        pushHistory(prior)
         save()
         onChange()
+    }
+
+    /** Returns to the previous locator pushed by a jump; false when history is empty. */
+    suspend fun goBack(): Boolean {
+        val target = history.removeLastOrNull() ?: return false
+        restore(target)
+        save()
+        onChange()
+        return true
     }
 
     private fun moveToAnchor(href: String, blockIndex: Int, charOffset: Int): Boolean {
@@ -433,5 +455,9 @@ class ReaderSession(
         val total = bookTotalPages()
         val before = (0 until chapterIndex).sumOf { layoutFor(it).pageCount() }
         if (total > 1) repo.saveBookProgress(bookHash, if (endOnScreen()) 1f else (before + pageIndex).toFloat() / (total - 1))
+    }
+
+    private companion object {
+        const val MAX_HISTORY = 32
     }
 }

@@ -5,6 +5,17 @@ package com.baca.app.reader
  */
 expect val tapZonesForPageTurnEnabled: Boolean
 
+/** Whether hardware reader controls (brightness override, volume-key page turns) are supported. */
+expect val hardwareReaderControlsSupported: Boolean
+
+/** Applies window screen brightness override (-1f = system default, 0f..1f = manual); restores on dispose. */
+@androidx.compose.runtime.Composable
+expect fun ApplyScreenBrightness(brightness: Float)
+
+/** Registers a volume-key page-turn handler while [enabled] (Android). No-op on desktop. */
+@androidx.compose.runtime.Composable
+expect fun PlatformVolumeKeyHandler(enabled: Boolean, onTurn: (delta: Int) -> Unit)
+
 /**
  * Whether the reader holds its page to a column on a wide window (desktop). A phone or
  * tablet reads across the whole window, as LibreraX does.

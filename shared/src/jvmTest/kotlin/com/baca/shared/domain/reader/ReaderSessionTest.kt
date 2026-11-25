@@ -393,4 +393,62 @@ class ReaderSessionTest {
         }
         assertEquals(null, s.pageNumberOf("missing.xhtml", 0, 0, ""))
     }
+
+    @Test
+    fun `navigation history records jumps, ignores page turns, and goBack restores previous position`() = runTest {
+        val store = FakeStore()
+        var changes = 0
+        val s = session(store) { changes++ }
+        s.ensureView(VIEWPORT, SETTINGS)
+        assertEquals(false, s.canGoBack)
+        assertEquals(false, s.goBack())
+
+        // Normal page turns do not push history
+        s.turnPage(1)
+        assertEquals(0, s.chapterIndex)
+        assertEquals(1, s.pageIndex)
+        assertEquals(false, s.canGoBack)
+
+        // Jumping via TOC, href, and anchor pushes prior locators
+        s.jumpToChapter(2)
+        assertEquals(true, s.canGoBack)
+        assertEquals(2, s.chapterIndex)
+
+        s.jumpToHref("OEBPS/c1.xhtml")
+        assertEquals(1, s.chapterIndex)
+
+        s.jumpToAnchor("OEBPS/c2.xhtml", 1, 700)
+        assertEquals(2, s.chapterIndex)
+        assertTrue(s.pageIndex > 0)
+
+        val beforeBackChanges = changes
+        assertEquals(true, s.goBack())
+        assertEquals(1, s.chapterIndex)
+        assertEquals(0, s.pageIndex)
+        assertEquals("OEBPS/c1.xhtml", store.positions["h"]?.href)
+        assertTrue(changes > beforeBackChanges)
+
+        assertEquals(true, s.goBack())
+        assertEquals(2, s.chapterIndex)
+        assertEquals(0, s.pageIndex)
+
+        assertEquals(true, s.goBack())
+        assertEquals(0, s.chapterIndex)
+        assertEquals(1, s.pageIndex)
+        assertEquals(false, s.canGoBack)
+        assertEquals(false, s.goBack())
+    }
+
+    @Test
+    fun `navigation history caps depth at 32 entries`() = runTest {
+        val s = session(FakeStore())
+        s.ensureView(VIEWPORT, SETTINGS)
+        repeat(40) { i ->
+            s.jumpToChapter(if (i % 2 == 0) 1 else 2)
+        }
+        var popped = 0
+        while (s.goBack()) popped++
+        assertEquals(32, popped)
+        assertEquals(false, s.canGoBack)
+    }
 }

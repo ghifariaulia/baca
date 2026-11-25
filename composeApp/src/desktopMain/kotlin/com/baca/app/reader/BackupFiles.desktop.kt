@@ -23,3 +23,12 @@ actual fun rememberBackupOpener(onPicked: (String?) -> Unit): () -> Unit = {
     dialog.isVisible = true
     onPicked(if (dialog.file != null && dialog.directory != null) dialog.directory + dialog.file else null)
 }
+
+@Composable
+actual fun rememberMarkdownSaver(suggestedName: String, onPicked: ((() -> Sink)?) -> Unit): () -> Unit = {
+    val dialog = FileDialog(null as Frame?, "Export notes", FileDialog.SAVE)
+    dialog.file = suggestedName
+    dialog.isVisible = true
+    val chosen = dialog.file?.let { name -> dialog.directory + if (name.endsWith(".md")) name else "$name.md" }
+    onPicked(chosen?.let { path -> { FileSystem.SYSTEM.sink(path.toPath()) } })
+}

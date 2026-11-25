@@ -30,6 +30,14 @@ class ReadAloudTest {
         val said = mutableListOf<String>()
         var finish = CompletableDeferred<Unit>()
         var stopped = false
+        var externalStop: (() -> Unit)? = null
+        var serviceStopped = false
+        override fun start(title: String, onExternalStop: () -> Unit) {
+            externalStop = onExternalStop
+        }
+        override fun stop() {
+            serviceStopped = true
+        }
         override suspend fun say(text: String) {
             said += text
             try {
@@ -98,6 +106,31 @@ class ReadAloudTest {
             rule.waitForIdle()
         }
         assertEquals(firstPage + 1, footerPage(), "after ${voice.said.size} sentences")
+    }
+
+    @Test
+    fun `external stop dismisses reading pill and stops speech`() {
+        val bytes = javaClass.classLoader.getResourceAsStream("books/frankenstein.epub")!!.readBytes()
+        val path = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "read-aloud-ext-stop.epub"
+        FileSystem.SYSTEM.write(path) { write(bytes) }
+        val book = parseEpub(path).openingAtText()
+        val voice = FakeSpeech()
+        rule.setContent {
+            ReaderScreen(
+                book = book, bookPath = path.toString(), bookHash = "hash", store = store, onBack = {},
+                speech = voice,
+            )
+        }
+        rule.waitUntil(20_000) { rule.onAllNodesWithText("Title:", substring = true).fetchSemanticsNodes().isNotEmpty() }
+
+        rule.onNodeWithContentDescription("Read aloud").performClick()
+        rule.waitUntil(5_000) { voice.said.isNotEmpty() && voice.externalStop != null }
+        rule.onNodeWithText("Stop reading").assertExists()
+
+        rule.runOnUiThread { voice.externalStop?.invoke() }
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Stop reading").fetchSemanticsNodes().isEmpty() }
+        assertTrue(voice.stopped)
+        assertTrue(voice.serviceStopped)
     }
 
     // the footer's "page / total"

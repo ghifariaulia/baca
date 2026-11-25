@@ -58,3 +58,25 @@ actual fun rememberFolderPicker(onPicked: (List<String>) -> Unit): () -> Unit {
         }
     }
 }
+
+@Composable
+actual fun rememberFontPicker(onPicked: (String?) -> Unit): () -> Unit {
+    var busy by remember { mutableStateOf(false) }
+    return {
+        if (!busy) {
+            busy = true
+            try {
+                val dialog = FileDialog(null as Frame?, "Choose font (.ttf or .otf)", FileDialog.LOAD)
+                dialog.setFilenameFilter { _, name ->
+                    name.endsWith(".ttf", ignoreCase = true) || name.endsWith(".otf", ignoreCase = true)
+                }
+                dialog.isVisible = true
+                val file = dialog.file
+                val dir = dialog.directory
+                onPicked(if (file != null && dir != null) dir + file else null)
+            } finally {
+                busy = false
+            }
+        }
+    }
+}

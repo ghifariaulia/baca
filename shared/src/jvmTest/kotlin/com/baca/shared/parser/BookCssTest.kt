@@ -737,7 +737,8 @@ class BookCssTest {
         val (mark, big) = b[1].spans.filter { it.text == "found" || it.text == "big" }
         assertEquals(0xFFFFFF00 to 0xFF000000, mark.background to mark.color)
         assertEquals(1.2f, big.scale, 0.001f)
-        assertEquals("found big 漢kan", b[1].text)
+        assertEquals("found big 漢", b[1].text)
+        assertEquals("kan", b[1].spans.last().ruby)
     }
 
     @Test

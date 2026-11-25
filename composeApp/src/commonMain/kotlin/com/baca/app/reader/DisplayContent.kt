@@ -18,7 +18,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +36,8 @@ import androidx.compose.ui.unit.sp
 import com.baca.app.ui.ReaderThemes
 import com.baca.app.ui.Type
 import com.baca.shared.domain.DisplaySettings
+import com.baca.shared.domain.USER_FONT_PREFIX
+import com.baca.shared.domain.UserFont
 import com.baca.shared.parser.TextReplacement
 
 /** Display settings body, shared by the reader's Display sheet and the Settings screen. */
@@ -43,7 +47,14 @@ import com.baca.shared.parser.TextReplacement
  * phone sheet and the desktop popover.
  */
 @Composable
-internal fun DisplayContent(display: DisplaySettings, scrollable: Boolean = true, onChange: (DisplaySettings) -> Unit) {
+internal fun DisplayContent(
+    display: DisplaySettings,
+    scrollable: Boolean = true,
+    userFonts: List<UserFont> = emptyList(),
+    onImportFont: (() -> Unit)? = null,
+    onDeleteFont: ((String) -> Unit)? = null,
+    onChange: (DisplaySettings) -> Unit,
+) {
     Column(if (scrollable) Modifier.fillMaxWidth().verticalScroll(rememberScrollState()) else Modifier.fillMaxWidth()) {
         SheetSection("FONT SIZE") {
             Stepper("${display.fontSizePercent}%") { onChange(display.stepFontSize(it)) }
@@ -56,6 +67,30 @@ internal fun DisplayContent(display: DisplaySettings, scrollable: Boolean = true
                     listOf("libron" to "Libron", "mono" to "Monospace"),
                 ).forEach { row ->
                     SegmentedRow(options = row, selected = display.font) { onChange(display.copy(font = it)) }
+                }
+                userFonts.forEach { uf ->
+                    val key = "$USER_FONT_PREFIX${uf.id}"
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        SegmentedRow(
+                            options = listOf(key to uf.name),
+                            selected = display.font,
+                            modifier = Modifier.weight(1f),
+                        ) { onChange(display.copy(font = it)) }
+                        if (onDeleteFont != null) {
+                            TextButton(onClick = { onDeleteFont(uf.id) }) {
+                                Text("Remove ${uf.name}", style = Type.caption, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+                if (onImportFont != null) {
+                    TextButton(onClick = onImportFont) {
+                        Text("+ Add font (.ttf / .otf)", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -136,6 +171,36 @@ internal fun DisplayContent(display: DisplaySettings, scrollable: Boolean = true
                     options = listOf("on" to "Hide status bar", "off" to "Keep status bar"),
                     selected = if (display.fullScreen) "on" else "off",
                 ) { onChange(display.copy(fullScreen = it == "on")) }
+            }
+        }
+        SheetSection("TAP ZONES") {
+            SegmentedRow(
+                options = listOf("standard" to "Standard", "swapped" to "Swapped", "disabled" to "Bars only"),
+                selected = display.tapZoneMode,
+            ) { onChange(display.copy(tapZoneMode = it)) }
+        }
+        if (hardwareReaderControlsSupported) {
+            SheetSection("BRIGHTNESS") {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Slider(
+                        value = if (display.brightness < 0f) 0.5f else display.brightness,
+                        onValueChange = { onChange(display.copy(brightness = it.coerceIn(0f, 1f))) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { onChange(display.copy(brightness = -1f)) }) {
+                        Text(
+                            if (display.brightness < 0f) "Auto ✓" else "Auto",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = if (display.brightness < 0f) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
+                }
+            }
+            SheetSection("VOLUME KEYS") {
+                SegmentedRow(
+                    options = listOf("off" to "Volume", "on" to "Turn pages"),
+                    selected = if (display.volumeKeysTurnPages) "on" else "off",
+                ) { onChange(display.copy(volumeKeysTurnPages = it == "on")) }
             }
         }
         Advanced(display, onChange)
@@ -241,10 +306,11 @@ internal fun SheetSection(label: String, content: @Composable () -> Unit) {
 internal fun SegmentedRow(
     options: List<Pair<String, String>>,
     selected: String,
+    modifier: Modifier = Modifier.fillMaxWidth(),
     onSelect: (String) -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth(),
+        modifier,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         options.forEach { (key, label) ->

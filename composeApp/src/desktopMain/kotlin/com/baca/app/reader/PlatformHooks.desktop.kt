@@ -7,6 +7,18 @@ import com.baca.shared.domain.reader.webDictionaryUrl
 
 actual val tapZonesForPageTurnEnabled: Boolean = false
 
+actual val hardwareReaderControlsSupported: Boolean = false
+
+@androidx.compose.runtime.Composable
+actual fun ApplyScreenBrightness(brightness: Float) {
+    // desktop windows do not override display brightness
+}
+
+@androidx.compose.runtime.Composable
+actual fun PlatformVolumeKeyHandler(enabled: Boolean, onTurn: (delta: Int) -> Unit) {
+    // desktop does not intercept hardware volume keys
+}
+
 actual val readerColumnCapped: Boolean = true
 
 @androidx.compose.runtime.Composable

@@ -92,4 +92,30 @@ class ReadingStatsTest {
         assertEquals(Level(1, 0, 100), summary.level)
         assertNull(summary.achievements.firstOrNull { it.tier > 0 })
     }
+
+    @Test
+    fun `configurable daily goal persists, clamps bounds, and preserves historical goalMet`() {
+        val rs = stats()
+        assertEquals(15, rs.goalMinutes())
+
+        // Day 1 meets 15-min goal
+        repeat(3) {
+            rs.pageRead("b", PageReading(it..it, 100, emptyList(), 300_000L, 1500), "2026-11-15")
+        }
+        assertEquals(true, rs.summary("2026-11-15").today.goalMet)
+
+        // Raise goal to 30 min (and test clamping)
+        rs.setGoalMinutes(200)
+        assertEquals(180, rs.goalMinutes())
+        rs.setGoalMinutes(30)
+        assertEquals(30, rs.goalMinutes())
+
+        // Historical day keeps goalMet = true; new day needs 30 min
+        val day2 = rs.pageRead("b", PageReading(4..4, 100, emptyList(), 1_200_000L, 1500), "2026-11-16")
+        assertEquals(false, day2.goalMet)
+        val summary = rs.summary("2026-11-16")
+        assertEquals(30, summary.goalMinutes)
+        assertEquals(35, summary.history.size)
+        assertEquals(true, summary.history.first { it.first == "2026-11-15" }.second.goalMet)
+    }
 }

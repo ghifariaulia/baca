@@ -3,6 +3,7 @@ package com.baca.shared.parser
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import okio.Path
 import java.io.ByteArrayOutputStream
@@ -39,3 +40,43 @@ actual fun renderPdfPageBytes(path: Path, pageIndex: Int): ByteArray? = runCatch
         }
     }
 }.getOrNull()
+
+actual fun extractPdfPageText(path: Path, pageIndex: Int): List<PdfWordBox> = runCatching {
+    if (Build.VERSION.SDK_INT < 35) return emptyList()
+    ParcelFileDescriptor.open(path.toFile(), ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+        PdfRenderer(pfd).use { renderer ->
+            if (pageIndex !in 0 until renderer.pageCount) return emptyList()
+            renderer.openPage(pageIndex).use { page ->
+                val pw = page.width.toFloat().coerceAtLeast(1f)
+                val ph = page.height.toFloat().coerceAtLeast(1f)
+                page.getTextContents().flatMap { block ->
+                    val bounds = block.bounds
+                    val words = block.text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+                    if (words.isEmpty() || bounds.isEmpty()) emptyList()
+                    else if (bounds.size == words.size) {
+                        words.zip(bounds).map { (w, r) ->
+                            PdfWordBox(
+                                text = w,
+                                left = (r.left / pw).coerceIn(0f, 1f),
+                                top = (r.top / ph).coerceIn(0f, 1f),
+                                right = (r.right / pw).coerceIn(0f, 1f),
+                                bottom = (r.bottom / ph).coerceIn(0f, 1f),
+                            )
+                        }
+                    } else {
+                        val r = bounds.first()
+                        listOf(
+                            PdfWordBox(
+                                text = words.joinToString(" "),
+                                left = (r.left / pw).coerceIn(0f, 1f),
+                                top = (r.top / ph).coerceIn(0f, 1f),
+                                right = (r.right / pw).coerceIn(0f, 1f),
+                                bottom = (r.bottom / ph).coerceIn(0f, 1f),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}.getOrElse { emptyList() }

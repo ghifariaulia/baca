@@ -20,3 +20,15 @@ internal expect fun readPdfMeta(path: Path): Pair<Int, String?>?
 
 /** Renders 0-based [pageIndex] of the PDF at [path] into PNG bytes; null if unreadable. */
 expect fun renderPdfPageBytes(path: Path, pageIndex: Int): ByteArray?
+
+/** One word on a PDF page, with bounding box normalized to 0f..1f page coordinates. */
+data class PdfWordBox(
+    val text: String,
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float,
+)
+
+/** Extracts words and normalized bounding boxes from 0-based [pageIndex]; empty if unavailable. */
+expect fun extractPdfPageText(path: Path, pageIndex: Int): List<PdfWordBox>

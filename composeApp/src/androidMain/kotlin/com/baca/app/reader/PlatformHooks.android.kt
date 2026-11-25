@@ -8,6 +8,7 @@ import com.baca.shared.domain.reader.webDictionaryUrl
 import java.io.File
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.compose.foundation.layout.displayCutout
@@ -15,6 +16,52 @@ import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
 import androidx.compose.foundation.layout.union
 
 actual val tapZonesForPageTurnEnabled: Boolean = true
+
+actual val hardwareReaderControlsSupported: Boolean = true
+
+@Composable
+actual fun ApplyScreenBrightness(brightness: Float) {
+    val view = LocalView.current
+    androidx.compose.runtime.DisposableEffect(brightness) {
+        val window = (view.context as? Activity)?.window
+        if (window != null) {
+            val lp = window.attributes
+            lp.screenBrightness = if (brightness < 0f) -1f else brightness.coerceIn(0.01f, 1f)
+            window.attributes = lp
+        }
+        onDispose {
+            if (window != null) {
+                val lp = window.attributes
+                lp.screenBrightness = -1f
+                window.attributes = lp
+            }
+        }
+    }
+}
+
+private var activeVolumeTurnHandler: ((Int) -> Unit)? = null
+
+fun dispatchVolumeKeyTurn(delta: Int): Boolean {
+    val handler = activeVolumeTurnHandler ?: return false
+    handler(delta)
+    return true
+}
+
+@Composable
+actual fun PlatformVolumeKeyHandler(enabled: Boolean, onTurn: (delta: Int) -> Unit) {
+    val currentTurn by androidx.compose.runtime.rememberUpdatedState(onTurn)
+    androidx.compose.runtime.DisposableEffect(enabled) {
+        if (enabled) {
+            val callback: (Int) -> Unit = { delta -> currentTurn(delta) }
+            activeVolumeTurnHandler = callback
+            onDispose {
+                if (activeVolumeTurnHandler === callback) activeVolumeTurnHandler = null
+            }
+        } else {
+            onDispose {}
+        }
+    }
+}
 
 actual val readerColumnCapped: Boolean = false
 

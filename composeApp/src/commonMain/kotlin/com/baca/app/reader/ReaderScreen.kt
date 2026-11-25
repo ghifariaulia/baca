@@ -147,7 +147,9 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.ImageBitmap
@@ -205,12 +207,18 @@ import com.baca.app.ui.ReaderThemes
 import com.baca.app.ui.isDarkScheme
 import com.baca.app.ui.Type
 import com.baca.shared.domain.DisplaySettings
+import com.baca.shared.domain.USER_FONT_PREFIX
+import com.baca.shared.domain.loadUserFonts
+import com.baca.shared.domain.resolveDisplayFont
 import com.baca.shared.domain.reader.PositionStore
+import com.baca.shared.domain.reader.FootnoteTarget
+import com.baca.shared.domain.reader.resolveFootnote
 import com.baca.shared.domain.reader.indexOfChapter
 import com.baca.shared.domain.reader.Viewport
 import com.baca.shared.domain.decodeDisplay
 import com.baca.shared.domain.loadDisplay
 import com.baca.shared.domain.saveDisplay
+import com.baca.shared.domain.tapPageDelta
 import com.baca.shared.domain.encode
 import com.baca.shared.domain.reader.ReaderSession
 import com.baca.shared.parser.Block
@@ -290,6 +298,7 @@ fun ReaderScreen(
     // Read aloud: on while [reading]; [spoken] is the sentence being said, tinted on its page
     var reading by remember { mutableStateOf(false) }
     var spoken by remember { mutableStateOf<Utterance?>(null) }
+    var footnote by remember { mutableStateOf<FootnoteTarget?>(null) }
 
     // at the running text's optical size, for measuring and drawing alike (the layout factory, built once, reads
     // the latest); one set per size, as new families each recomposition would resolve every font again
@@ -299,6 +308,30 @@ fun ReaderScreen(
     // the fonts the book ships, by bookFontName; null until read (the layout factory reads the latest)
     val bookFontsState = rememberBookFonts(bookPath, book.fonts)
     val bookFonts by rememberUpdatedState(bookFontsState.value.orEmpty())
+    val storeDir = rememberBookStoreDir()
+    var userFonts by remember(store) { mutableStateOf(store.loadUserFonts()) }
+    val userFontsState = rememberUserFonts(storeDir, userFonts)
+    val userFontFamilies by rememberUpdatedState(userFontsState.value.orEmpty())
+    val pickFont = rememberFontPicker { path ->
+        if (path != null) {
+            scope.launch {
+                val updated = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    importUserFontFile(path, storeDir, store)
+                }
+                userFonts = updated
+                updated.lastOrNull()?.let { display = display.copy(font = "$USER_FONT_PREFIX${it.id}") }
+            }
+        }
+    }
+    val deleteUserFont: (String) -> Unit = { id ->
+        scope.launch {
+            val updated = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                deleteUserFontFile(id, storeDir, store)
+            }
+            userFonts = updated
+            display = resolveDisplayFont(display, updated)
+        }
+    }
     // the patterns for each language the book is written in; null until read
     val languages = remember(book) { (listOfNotNull(book.language) + book.chapters.flatMap { c -> c.blocks.mapNotNull { (it as? Block.Text)?.lang } }).toSet() }
     val hyphenatorsState = rememberHyphenators(languages)
@@ -322,7 +355,7 @@ fun ReaderScreen(
                         textMeasurer, density, imageAspect = { images.aspect(it) }, language = book.language,
                         hyphenatorFor = { language -> language?.let { hyphenators[it] } },
                     ) { name ->
-                        name?.let { bookFonts[it] ?: readerFontFamily(it, appFonts) }
+                        name?.let { bookFonts[it] ?: userFontFamilies[it] ?: readerFontFamily(it, appFonts) }
                     },
                     settings = settings,
                     columnWidthPx = vp.columnWidthPx,
@@ -353,10 +386,10 @@ fun ReaderScreen(
 
     LaunchedEffect(display) { store.saveDisplay(display) }
     // debounce so continuous window drags do not re-layout every frame
-    LaunchedEffect(session, viewport, display, bookFontsState.value != null, hyphenatorsState.value != null) {
+    LaunchedEffect(session, viewport, display, bookFontsState.value != null, userFontsState.value != null, hyphenatorsState.value != null) {
         val vp = viewport ?: return@LaunchedEffect
         // pages are measured in the book's own fonts and hyphenated by its languages' patterns: wait for them
-        if (bookFontsState.value == null || hyphenatorsState.value == null) return@LaunchedEffect
+        if (bookFontsState.value == null || userFontsState.value == null || hyphenatorsState.value == null) return@LaunchedEffect
         kotlinx.coroutines.delay(150)
         scope.launch { session.ensureView(vp, reflowSettingsOf(display, density)) }
     }
@@ -380,7 +413,7 @@ fun ReaderScreen(
         chapter.blocks.map { block ->
             val spacers = (block as? Block.Text)?.let { layout.spacersOf(it) }.orEmpty()
             annotatedOf(block, colors.ink, dark, spacers, (block as? Block.Text)?.let(layout::lineRatioOf) ?: 1f, reflowSettingsOf(display, density).fontSizePx) { span ->
-                span.family?.let { bookFonts[bookFontName(it)] } ?: span.face?.let { readerFontFamily(faceFontName(it), appFonts) }
+                span.family?.let { bookFonts[bookFontName(it)] } ?: span.face?.let { readerFontFamily(faceFontName(it), appFonts, userFontFamilies) }
             }
         }
     }
@@ -439,6 +472,7 @@ fun ReaderScreen(
         }
         var next = fromPageTop()
         var shown = session.chapterIndex to session.pageIndex
+        voice.start(book.title) { reading = false }
         try {
             while (next != null) {
                 val now = next
@@ -449,6 +483,7 @@ fun ReaderScreen(
                 next = if (session.chapterIndex to session.pageIndex == shown) utteranceAfter(book.chapters, now) else fromPageTop()
             }
         } finally {
+            voice.stop()
             spoken = null
             reading = false
         }
@@ -644,6 +679,8 @@ fun ReaderScreen(
         // Focus mode: the phone's status and navigation bars hide with the reader's bars.
         // The page keeps the room they take when shown, so hiding them never re-paginates.
         FullScreen(enabled = display.fullScreen && !barsVisible)
+        ApplyScreenBrightness(display.brightness)
+        PlatformVolumeKeyHandler(enabled = display.volumeKeysTurnPages) { pageTurn(it) }
         BoxWithConstraints(
             Modifier.fillMaxSize().windowInsetsPadding(stableReaderInsets(display.fullScreen)),
         ) {
@@ -766,7 +803,7 @@ fun ReaderScreen(
                         // its own gestures: only a quick, still tap the text didn't
                         // use counts. Edges turn the page (phones, unless switched
                         // off), the middle shows or hides the bars.
-                        .pointerInput(display.tapToTurn, scrolled) {
+                        .pointerInput(display.tapToTurn, display.tapZoneMode, scrolled) {
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Final)
                                 textUsedTap[0] = false
@@ -780,12 +817,12 @@ fun ReaderScreen(
                                     barsVisible = !barsVisible
                                     if (barsVisible) barsShowTick++
                                 }
-                                when {
-                                    scrolled -> toggleBars()
-                                    down.position.x < size.width / 3f -> if (edgeTurns) pageTurn(if (book.pageRtl) 1 else -1)
-                                    down.position.x > size.width * 2f / 3f -> if (edgeTurns) pageTurn(if (book.pageRtl) -1 else 1)
-                                    else -> toggleBars()
+                                val delta = if (edgeTurns && size.width > 0) {
+                                    tapPageDelta(down.position.x / size.width, book.pageRtl, display.tapZoneMode)
+                                } else {
+                                    0
                                 }
+                                if (delta != 0) pageTurn(delta) else toggleBars()
                             }
                         }
                         .then(
@@ -913,7 +950,7 @@ fun ReaderScreen(
                                     textStart,
                                     line.endExclusive,
                                 )
-                                val style = lineStyle(block, layout.lineRatioOf(block), display, colors.ink, appFonts)
+                                val style = lineStyle(block, layout.lineRatioOf(block), display, colors.ink, appFonts, userFontFamilies)
                                 // book CSS centred/right lines and headings stay unjustified
                                 val body = block.kind != BlockKind.HEADING && block.align == BookAlign.START && !block.keepsSpaces && !block.ragged
                                 // where ReflowLayout measured the line: the block's margins, padding and text-indent
@@ -966,7 +1003,15 @@ fun ReaderScreen(
                                         )
                                     }
                                     if (vertical) {
-                                        VerticalLineText(lineText, style, Modifier.fillMaxWidth().height(with(density) { style.lineHeight.toDp() }))
+                                        VerticalLineText(
+                                            lineText,
+                                            style,
+                                            Modifier.fillMaxWidth().height(with(density) { style.lineHeight.toDp() }),
+                                            onLongPress = { offset ->
+                                                val at = (textStart + offset).coerceAtMost(line.endExclusive - 1)
+                                                selection = TextSelection.wordAt(chapter.blocks, line.blockIndex, at)
+                                            },
+                                        )
                                     } else if (block.spans.any { it.href != null }) {
                                         LinkText(
                                             lineText,
@@ -978,8 +1023,13 @@ fun ReaderScreen(
                                             },
                                             onLink = { href ->
                                                 textUsedTap[0] = true
-                                                if (href.startsWith("http")) openExternalLink(href)
-                                                else scope.launch { session.jumpToHref(href) }
+                                                if (href.startsWith("http")) {
+                                                    openExternalLink(href)
+                                                } else {
+                                                    val target = resolveFootnote(book.chapters, href)
+                                                    if (target != null) footnote = target
+                                                    else scope.launch { session.jumpToHref(href) }
+                                                }
                                             },
                                             onLongPress = { offset ->
                                                 val at = (textStart + offset).coerceAtMost(line.endExclusive - 1)
@@ -1213,7 +1263,12 @@ fun ReaderScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    DisplayContent(display) { display = it }
+                    DisplayContent(
+                        display = display,
+                        userFonts = userFonts,
+                        onImportFont = pickFont,
+                        onDeleteFont = deleteUserFont,
+                    ) { display = it }
                 }
             }
             if (isDesktop && sheet == SheetKind.SEARCH) {
@@ -1276,7 +1331,12 @@ fun ReaderScreen(
                             }
                         }
                         SheetKind.SEARCH -> SearchContent(book.chapters, searchQuery, { searchQuery = it }, pickSearchHit)
-                        else -> DisplayContent(display) { display = it }
+                        else -> DisplayContent(
+                            display = display,
+                            userFonts = userFonts,
+                            onImportFont = pickFont,
+                            onDeleteFont = deleteUserFont,
+                        ) { display = it }
                     }
                 }
             }
@@ -1298,6 +1358,73 @@ fun ReaderScreen(
                 ) {
                     androidx.compose.material3.Icon(Icons.Filled.Stop, contentDescription = null, tint = accent)
                     Text("Stop reading", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                }
+            } else if (tick >= 0 && session.canGoBack) {
+                Row(
+                    Modifier.align(Alignment.BottomStart)
+                        .padding(start = 16.dp, bottom = barBelow + 72.dp)
+                        .shadow(4.dp, RoundedCornerShape(24.dp))
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .clickable { scope.launch { session.goBack() } }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    androidx.compose.material3.Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = null,
+                        tint = accent,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text("Back", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            footnote?.let { currentNote ->
+                Box(
+                    Modifier.fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null,
+                        ) { footnote = null },
+                )
+                Column(
+                    Modifier.fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .keepsTaps()
+                        .background(MaterialTheme.colorScheme.surface, SheetShape)
+                        .padding(horizontal = 20.dp, vertical = 14.dp)
+                        .heightIn(max = 360.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(currentNote.title, style = Type.cardTitle, fontSize = 18.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = {
+                                footnote = null
+                                scope.launch { session.jumpToHref(currentNote.href) }
+                            }) {
+                                Text("Go to page", color = accent, fontWeight = FontWeight.Bold)
+                            }
+                            TextButton(onClick = { footnote = null }) {
+                                Text("Close", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                        Text(
+                            currentNote.text,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 15.sp,
+                            lineHeight = 22.sp,
+                        )
+                    }
                 }
             }
 
@@ -1499,6 +1626,7 @@ private fun TappableText(
         inlineContent = inlineContent,
         onTextLayout = { layout = it },
         modifier = modifier
+            .drawRuby(text, style, layout)
             .onGloballyPositioned { coordinates -> layout?.let { onPlaced(it, coordinates.positionInRoot()) } }
             .pointerInput(text, ranges, lineStart) {
                 detectTapGestures(
@@ -1997,7 +2125,14 @@ private enum class SheetKind { NONE, DISPLAY, CONTENTS, SEARCH }
 // --- helpers ---
 
 @Composable
-private fun lineStyle(block: Block.Text, lineRatio: Float, display: DisplaySettings, ink: Color, fonts: com.baca.app.ui.UiFonts): TextStyle {
+private fun lineStyle(
+    block: Block.Text,
+    lineRatio: Float,
+    display: DisplaySettings,
+    ink: Color,
+    fonts: com.baca.app.ui.UiFonts,
+    userFontFamilies: Map<String, FontFamily> = emptyMap(),
+): TextStyle {
     val density = LocalDensity.current
     // exactly the size (to the fraction of a px, as a browser) and line height ReflowLayout
     // measured with, so a drawn line is never wider or taller than the one that was paginated
@@ -2008,7 +2143,7 @@ private fun lineStyle(block: Block.Text, lineRatio: Float, display: DisplaySetti
         TextStyle(
             fontSize = fontPx.toSp(),
             lineHeight = lineHeightPx.toSp(),
-            fontFamily = readerFontFamily(display.font, fonts),
+            fontFamily = readerFontFamily(display.font, fonts, userFontFamilies),
             color = ink,
             lineHeightStyle = PageLineHeightStyle,
             // letters at their exact advance, as a browser places them; hinted ones set lines narrower
@@ -2024,7 +2159,11 @@ private fun lineStyle(block: Block.Text, lineRatio: Float, display: DisplaySetti
 private val PageLineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
 
 /** One mapping for measuring and drawing, so page breaks match the drawn text. */
-internal fun readerFontFamily(key: String, fonts: com.baca.app.ui.UiFonts): FontFamily = when (key) {
+internal fun readerFontFamily(
+    key: String,
+    fonts: com.baca.app.ui.UiFonts,
+    userFonts: Map<String, FontFamily> = emptyMap(),
+): FontFamily = userFonts[key] ?: when (key) {
     "sans" -> fonts.sans
     "mono", SYSTEM_MONO -> FontFamily.Monospace
     "libron" -> fonts.libron
@@ -2153,6 +2292,36 @@ internal fun pageWidthOf(windowWidth: Dp, capped: Boolean): Dp =
     ceil((if (capped) minOf(windowWidth, DESKTOP_COLUMN) else windowWidth).value).dp
 
 private const val TAG_LINK = "baca.href"
+private const val TAG_RUBY = "baca.ruby"
+
+@Composable
+private fun Modifier.drawRuby(
+    text: AnnotatedString,
+    style: TextStyle,
+    layout: TextLayoutResult?,
+): Modifier {
+    val rubies = remember(text) { text.getStringAnnotations(TAG_RUBY, 0, text.length) }
+    if (rubies.isEmpty() || layout == null) return this
+    val measurer = rememberTextMeasurer()
+    val rubyStyle = style.copy(
+        fontSize = style.fontSize * 0.5f,
+        lineHeight = style.fontSize * 0.55f,
+    )
+    return drawWithContent {
+        drawContent()
+        rubies.forEach { ann ->
+            if (ann.start < ann.end && ann.end <= layout.layoutInput.text.length) {
+                val first = layout.getBoundingBox(ann.start)
+                val last = layout.getBoundingBox(ann.end - 1)
+                val measured = measurer.measure(ann.item, rubyStyle, softWrap = false, maxLines = 1)
+                val cx = (first.left + last.right) * 0.5f
+                val x = (cx - measured.size.width * 0.5f).coerceIn(0f, (size.width - measured.size.width).coerceAtLeast(0f))
+                val y = (minOf(first.top, last.top) - measured.size.height * 0.85f).coerceAtLeast(0f)
+                drawText(measured, topLeft = Offset(x, y))
+            }
+        }
+    }
+}
 
 // a browser's link colour (WebKit's -webkit-link), and LibreraX's on a dark page
 private val LINK_BLUE = Color(0xFF0000EE)
@@ -2180,6 +2349,8 @@ private fun annotatedOf(
         block.spans.forEachIndexed { index, span ->
             val link = span.href != null
             if (link) pushStringAnnotation(TAG_LINK, span.href!!)
+            val rubyText = span.ruby
+            if (rubyText != null) pushStringAnnotation(TAG_RUBY, rubyText)
             val bookColor = span.color
             pushStyle(
                 SpanStyle(
@@ -2222,6 +2393,7 @@ private fun annotatedOf(
             }
             wordSpaces(span.text, 0, span.text.length, span.wordSpacing).forEach { (i, style) -> addStyle(style, at + i, at + i + 1) }
             pop()
+            if (rubyText != null) pop()
             if (link) pop()
         }
     }
@@ -2246,7 +2418,7 @@ private fun LinkText(
         maxLines = 1,
         inlineContent = inlineContent,
         onTextLayout = { layout = it },
-        modifier = Modifier.onGloballyPositioned { coordinates -> layout?.let { onPlaced(it, coordinates.positionInRoot()) } }.pointerInput(text) {
+        modifier = Modifier.drawRuby(text, style, layout).onGloballyPositioned { coordinates -> layout?.let { onPlaced(it, coordinates.positionInRoot()) } }.pointerInput(text) {
             detectTapGestures(
                 onTap = { pos ->
                     layout?.let { l ->

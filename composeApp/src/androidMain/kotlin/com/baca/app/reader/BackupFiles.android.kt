@@ -43,4 +43,19 @@ actual fun rememberBackupOpener(onPicked: (String?) -> Unit): () -> Unit {
     return remember(launcher) { { launcher.launch(arrayOf(ZIP_MIME)) } }
 }
 
+@Composable
+actual fun rememberMarkdownSaver(suggestedName: String, onPicked: ((() -> Sink)?) -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri: Uri? ->
+        onPicked(
+            uri?.let {
+                {
+                    checkNotNull(context.contentResolver.openOutputStream(it, "wt")) { "Can't write the Markdown file" }.sink()
+                }
+            },
+        )
+    }
+    return remember(launcher, suggestedName) { { launcher.launch(suggestedName) } }
+}
+
 private const val ZIP_MIME = "application/zip"

@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,13 +43,21 @@ import com.baca.app.reader.DisplayContent
 import com.baca.app.reader.PlatformBackHandler
 import com.baca.app.reader.SegmentedRow
 import com.baca.app.reader.ChoiceChip
+import com.baca.app.reader.deleteUserFontFile
 import com.baca.app.reader.fetchLatestReleaseJson
+import com.baca.app.reader.importUserFontFile
+import com.baca.app.reader.rememberBookStoreDir
+import com.baca.app.reader.rememberFontPicker
+import com.baca.shared.domain.USER_FONT_PREFIX
 import com.baca.shared.domain.UpdateStatus
 import com.baca.shared.domain.checkForUpdate
 import com.baca.shared.domain.loadDisplay
+import com.baca.shared.domain.loadUserFonts
 import com.baca.shared.domain.reader.PositionStore
+import com.baca.shared.domain.resolveDisplayFont
 import com.baca.shared.domain.saveDisplay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** The pages behind the settings menu. */
@@ -88,6 +97,25 @@ internal fun SettingsScreen(
     var display by remember { mutableStateOf(store.loadDisplay()) }
     var page by remember { mutableStateOf<SettingsPage?>(null) }
     LaunchedEffect(display) { store.saveDisplay(display) }
+    val storeDir = rememberBookStoreDir()
+    val scope = rememberCoroutineScope()
+    var userFonts by remember(store) { mutableStateOf(store.loadUserFonts()) }
+    val pickFont = rememberFontPicker { path ->
+        if (path != null) {
+            scope.launch {
+                val updated = withContext(Dispatchers.IO) { importUserFontFile(path, storeDir, store) }
+                userFonts = updated
+                updated.lastOrNull()?.let { display = display.copy(font = "$USER_FONT_PREFIX${it.id}") }
+            }
+        }
+    }
+    val deleteFont: (String) -> Unit = { id ->
+        scope.launch {
+            val updated = withContext(Dispatchers.IO) { deleteUserFontFile(id, storeDir, store) }
+            userFonts = updated
+            display = resolveDisplayFont(display, updated)
+        }
+    }
     // back from a page returns to the menu, not to the library
     PlatformBackHandler(enabled = page != null) { page = null }
     val open = page
@@ -122,7 +150,13 @@ internal fun SettingsScreen(
                 }
             }
             SettingsPage.DISPLAY -> {
-                DisplayContent(display, scrollable = false) { display = it }
+                DisplayContent(
+                    display = display,
+                    scrollable = false,
+                    userFonts = userFonts,
+                    onImportFont = pickFont,
+                    onDeleteFont = deleteFont,
+                ) { display = it }
             }
             SettingsPage.BACKUP -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

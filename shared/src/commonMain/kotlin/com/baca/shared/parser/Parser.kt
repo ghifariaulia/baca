@@ -52,6 +52,8 @@ data class FormattedSpan(
     val inAnchor: Boolean = false,
     /** an inline element's `background-color` behind the text (`<mark>`), 0xAARRGGBB */
     val background: Long? = null,
+    /** furigana / ruby annotation (`<rt>`) drawn above this base span */
+    val ruby: String? = null,
 )
 
 /**
@@ -1178,7 +1180,7 @@ internal fun parseXhtml(
         val merged = mutableListOf<FormattedSpan>()
         for (s in list) {
             val last = merged.lastOrNull()
-            if (last != null && last.image == null && s.image == null && last.spacer == null && s.spacer == null && last.copy(text = "") == s.copy(text = "")) {
+            if (last != null && last.image == null && s.image == null && last.spacer == null && s.spacer == null && last.ruby == null && s.ruby == null && last.copy(text = "") == s.copy(text = "")) {
                 merged[merged.lastIndex] = last.copy(text = last.text + s.text)
             } else {
                 merged.add(s)
@@ -1227,6 +1229,9 @@ internal fun parseXhtml(
     // the body's text so far, as its textContent counts it (hidden text and all), and where each id came in it
     var inBody = false
     var bodyText = 0
+    var rubyDepth = 0
+    var rubyBaseStart = 0
+    var rtText: StringBuilder? = null
     val idsAt = HashMap<String, Int>()
     val idBlocks = HashMap<String, Int>()
     while (reader.hasNext()) {
@@ -1421,11 +1426,16 @@ internal fun parseXhtml(
                     }
                     "nav" -> navDepth++
                     "blockquote" -> quoteDepth++
+                    "ruby" -> {
+                        if (rubyDepth == 0) rubyBaseStart = spans?.size ?: 0
+                        rubyDepth++
+                    }
+                    "rt" -> if (rubyDepth > 0 && rtText == null) rtText = StringBuilder()
                     "img" -> {
                         val src = reader.attr("src")?.let(resolveSrc) ?: ""
                         val height = (declared.height ?: reader.attr("height")?.let(::attrLength)).letterEm()
-                        // as LibreraX draws it: an image the book sizes like a letter stays in its line
-                        if (spans != null && height != null && height > 0f && height <= INLINE_IMAGE_MAX_EM) {
+                        // as LibreraX draws it: an inline image sized in em (up to 6em) stays in its line unless display: block
+                        if (spans != null && !isBlock && height != null && height > 0f && height <= INLINE_IMAGE_MAX_EM) {
                             appendText(INLINE_IMAGE.toString(), InlineImage(src, height))
                         } else {
                             // a picture breaks the paragraph around it; the text after it carries on unindented
@@ -1521,7 +1531,9 @@ internal fun parseXhtml(
             // whitespace-only text (e.g. <i> </i> between words) arrives as
             // IGNORABLE_WHITESPACE; it is real text in XHTML
             EventType.TEXT, EventType.CDSECT, EventType.ENTITY_REF, EventType.IGNORABLE_WHITESPACE ->
-                styleText?.append(reader.text) ?: run {
+                styleText?.append(reader.text) ?: rtText?.let {
+                    if (!styles.last().invisible) it.append(options.replaced(reader.text))
+                } ?: run {
                     // text straight inside a <div>, <td>, <dd>… is a block of its own, as in a browser
                     if (svgDepth > 0) return@run
                     if (spans == null && !inHead && options.replaced(reader.text).any { it !in HTML_SPACE }) openBlock(BlockKind.PARAGRAPH, 0)
@@ -1560,6 +1572,20 @@ internal fun parseXhtml(
                     }
                     "blockquote" -> quoteDepth--
                     "nav" -> navDepth--
+                    "rt" -> rtText?.let { buf ->
+                        val rt = buf.toString().trim()
+                        rtText = null
+                        val list = spans
+                        if (rt.isNotEmpty() && list != null && rubyBaseStart in list.indices) {
+                            val base = list.subList(rubyBaseStart, list.size)
+                            val joined = base.joinToString("") { it.text }
+                            val first = base.first()
+                            repeat(base.size) { list.removeAt(list.lastIndex) }
+                            list.add(first.copy(text = joined, ruby = rt))
+                            rubyBaseStart = list.size
+                        }
+                    }
+                    "ruby" -> rubyDepth = (rubyDepth - 1).coerceAtLeast(0)
                     "head" -> inHead = false
                     "ul", "ol" -> listCounters.removeLastOrNull()
                     "table" -> tables.removeLastOrNull()?.let { pendingPadding += it.spacing.second }
@@ -2019,7 +2045,7 @@ private fun imageBox(declared: CssStyle, reader: XmlReader, parent: Computed): I
 private const val DROP_CAP_LINE_RATIO = 1.2f
 
 // taller than this, an inline image would push its line past the line height every page is measured with
-private const val INLINE_IMAGE_MAX_EM = 1f
+private const val INLINE_IMAGE_MAX_EM = 6f
 
 // LibreraX keeps every size the book gives; these only stop a broken stylesheet (font-size: 0, 100em)
 private const val MIN_SCALE = 0.25f

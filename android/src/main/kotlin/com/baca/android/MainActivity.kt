@@ -2,6 +2,7 @@ package com.baca.android
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -34,6 +35,16 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         Thread { openedBook(intent) }.start()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        val delta = when (keyCode) {
+            KeyEvent.KEYCODE_VOLUME_DOWN -> 1
+            KeyEvent.KEYCODE_VOLUME_UP -> -1
+            else -> return super.onKeyDown(keyCode, event)
+        }
+        if (com.baca.app.reader.dispatchVolumeKeyTurn(delta)) return true
+        return super.onKeyDown(keyCode, event)
     }
 
     /** The book to open, as a file in the cache; set from a background thread, read by the screen. */

@@ -444,7 +444,14 @@ class ReflowLayout(
         for (span in block.spans) {
             val from = at
             at += span.text.length
-            if (at <= start || from >= end || span.image != null || span.spacer != null) continue
+            if (at <= start || from >= end || span.spacer != null) continue
+            span.image?.let { img ->
+                up = maxOf(up, fontPx * img.heightEm)
+                continue
+            }
+            if (span.ruby != null) {
+                up = maxOf(up, strutUp + fontPx * span.scale * 0.55f)
+            }
             val raise = span.baseline + span.baselineLine * ratio
             if (span.scale == 1f && raise == 0f && span.baselinePx == 0f && span.face == blockFace && span.family == null) continue
             val size = fontPx * span.scale
