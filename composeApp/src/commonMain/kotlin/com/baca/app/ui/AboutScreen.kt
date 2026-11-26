@@ -24,7 +24,7 @@ import com.baca.shared.domain.UpdateStatus
 import kotlinx.coroutines.launch
 
 /** Keep in step with the Android versionName and the desktop packageVersion. */
-internal const val APP_VERSION = "0.2.1"
+internal const val APP_VERSION = "0.2.2"
 
 private const val SOURCE_URL = "github.com/ghifariaulia/baca"
 

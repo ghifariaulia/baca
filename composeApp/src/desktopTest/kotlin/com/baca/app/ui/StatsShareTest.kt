@@ -29,7 +29,7 @@ class StatsShareTest {
             locations = 1200,
             seconds = 5400,
             booksFinished = 3,
-            achievements = listOf(Achievement("bookworm", "Bookworm I", "Read 1 book", 1, 3, 5)),
+            achievements = listOf(Achievement("Bookworm", 3L, listOf(1L, 5L), listOf("1 book", "5 books"))),
         )
         rule.setContent {
             AppTheme {
