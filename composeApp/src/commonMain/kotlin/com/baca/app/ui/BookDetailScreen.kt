@@ -6,14 +6,17 @@ import androidx.compose.foundation.background
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -71,6 +74,7 @@ data class BookDetails(
  * progress card with Start/Continue reading, metadata list, mark-finished and
  * remove actions.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BookDetailScreen(
     row: BookRow,
@@ -278,22 +282,26 @@ fun BookDetailScreen(
 
             var editOpen by remember { mutableStateOf(false) }
             var newShelfOpen by remember { mutableStateOf(false) }
+            var removeConfirmOpen by remember { mutableStateOf(false) }
 
             Spacer(Modifier.height(16.dp))
             Text("SHELVES", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(8.dp))
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 shelves.forEach { shelf ->
                     val selected = shelf in bookShelves
                     Box(
                         Modifier
-                            .clip(RoundedCornerShape(18.dp))
+                            .heightIn(min = 44.dp)
+                            .clip(RoundedCornerShape(22.dp))
                             .background(if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.surface)
                             .clickable { onToggleShelf(shelf) }
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             shelf,
@@ -305,10 +313,12 @@ fun BookDetailScreen(
                 }
                 Box(
                     Modifier
-                        .clip(RoundedCornerShape(18.dp))
+                        .heightIn(min = 44.dp)
+                        .clip(RoundedCornerShape(22.dp))
                         .background(MaterialTheme.colorScheme.surface)
                         .clickable { newShelfOpen = true }
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text("+ New shelf", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 }
@@ -352,43 +362,104 @@ fun BookDetailScreen(
             }
 
             if (newShelfOpen) {
-                var shelfName by remember { mutableStateOf("") }
-                AlertDialog(
-                    onDismissRequest = { newShelfOpen = false },
-                    title = { Text("New shelf") },
-                    text = {
-                        OutlinedTextField(value = shelfName, onValueChange = { shelfName = it }, label = { Text("Shelf name") }, singleLine = true)
+                NewShelfDialog(
+                    onDismiss = { newShelfOpen = false },
+                    onCreate = { name ->
+                        onCreateShelf(name)
+                        newShelfOpen = false
                     },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            val trimmed = shelfName.trim()
-                            if (trimmed.isNotEmpty()) onCreateShelf(trimmed)
-                            newShelfOpen = false
-                        }) { Text("Create") }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { newShelfOpen = false }) { Text("Cancel") }
+                )
+            }
+
+            if (removeConfirmOpen) {
+                ConfirmRemoveBookDialog(
+                    title = row.title,
+                    onDismiss = { removeConfirmOpen = false },
+                    onConfirm = {
+                        removeConfirmOpen = false
+                        onRemove()
                     },
                 )
             }
 
             Spacer(Modifier.height(24.dp))
-            Text(
-                if (finished) "Mark as unread" else "Mark as finished",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable(onClick = onToggleFinished).padding(8.dp),
-            )
-            Text(
-                "Remove from library",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFFB3261E),
-                modifier = Modifier.clickable(onClick = onRemove).padding(8.dp),
-            )
+            TextButton(
+                onClick = onToggleFinished,
+                modifier = Modifier.heightIn(min = 44.dp),
+            ) {
+                Text(
+                    if (finished) "Mark as unread" else "Mark as finished",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            TextButton(
+                onClick = { removeConfirmOpen = true },
+                modifier = Modifier.heightIn(min = 44.dp),
+            ) {
+                Text(
+                    "Remove from library",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
+}
+
+@Composable
+internal fun NewShelfDialog(
+    initialName: String = "",
+    title: String = "New shelf",
+    confirmLabel: String = "Create",
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit,
+) {
+    var shelfName by remember(initialName) { mutableStateOf(initialName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = shelfName,
+                onValueChange = { shelfName = it },
+                label = { Text("Shelf name") },
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val trimmed = shelfName.trim()
+                if (trimmed.isNotEmpty()) onCreate(trimmed) else onDismiss()
+            }) { Text(confirmLabel) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+internal fun ConfirmRemoveBookDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Remove from library?") },
+        text = { Text("Remove \"$title\" from your library? Reading progress and notes for this book will be hidden.") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Remove", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 /** Label and value rows in a card, divided from each other but not closed by a line at the end. */

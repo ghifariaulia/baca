@@ -113,6 +113,51 @@ class LibraryOrganizationTest {
     }
 
     @Test
+    fun `creating shelf from library chip invokes onCreateShelf`() {
+        val books = listOf(LibraryBook(row("h1", "Dune", "Frank Herbert"), null))
+        val created = mutableListOf<String>()
+        rule.setContent {
+            AppTheme {
+                LibraryScreen(
+                    books = books,
+                    shelves = emptyList(),
+                    onCreateShelf = { created += it },
+                    onAdd = {},
+                    onOpen = {},
+                    onResume = {},
+                    onDelete = {},
+                )
+            }
+        }
+        rule.onNodeWithText("+ New shelf").performClick()
+        rule.onAllNodes(hasSetTextAction())[1].performTextInput("Sci-Fi")
+        rule.onNodeWithText("Create").performClick()
+        assertEquals(listOf("Sci-Fi"), created)
+    }
+
+    @Test
+    fun `removing book from library context menu asks for confirmation`() {
+        val books = listOf(LibraryBook(row("h1", "Dune", "Frank Herbert"), null))
+        val deleted = mutableListOf<String>()
+        rule.setContent {
+            AppTheme {
+                LibraryScreen(
+                    books = books,
+                    onAdd = {},
+                    onOpen = {},
+                    onResume = {},
+                    onDelete = { deleted += it.bookHash },
+                )
+            }
+        }
+        rule.onAllNodesWithText("Dune")[0].performTouchInput { longClick() }
+        rule.onNodeWithText("Remove from library").performClick()
+        assertEquals(emptyList(), deleted)
+        rule.onNodeWithText("Remove").performClick()
+        assertEquals(listOf("h1"), deleted)
+    }
+
+    @Test
     fun `book detail edits metadata and toggles shelves`() {
         var edited: Triple<String, String, String>? = null
         val toggled = mutableListOf<String>()

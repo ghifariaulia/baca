@@ -1,10 +1,21 @@
 package com.baca.app
 
+import com.baca.shared.domain.UpdateStatus
 import com.baca.shared.domain.addShelf
 import com.baca.shared.domain.bookShelves
+import com.baca.shared.domain.checkForUpdate
+import com.baca.shared.domain.deleteShelfEverywhere
+import com.baca.shared.domain.loadAutoUpdateEnabled
+import com.baca.shared.domain.loadLastUpdateCheckAt
 import com.baca.shared.domain.loadShelves
+import com.baca.shared.domain.loadSkippedUpdateVersion
+import com.baca.shared.domain.renameShelfEverywhere
+import com.baca.shared.domain.saveLastUpdateCheckAt
 import com.baca.shared.domain.saveShelves
+import com.baca.shared.domain.saveSkippedUpdateVersion
 import com.baca.shared.domain.setBookShelves
+import com.baca.shared.domain.shouldCheckForUpdate
+import com.baca.shared.domain.shouldShowUpdatePopup
 import com.baca.shared.domain.toggleBookShelf
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -163,6 +174,18 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
 
         var libraryTick by remember { mutableIntStateOf(0) }
         var screenState by remember { mutableStateOf<Screen>(Screen.Library) }
+        var pendingUpdate by remember { mutableStateOf<UpdateStatus.Available?>(null) }
+
+        LaunchedEffect(Unit) {
+            val nowMs = defaultNow()()
+            if (shouldCheckForUpdate(store.loadAutoUpdateEnabled(), store.loadLastUpdateCheckAt(), nowMs)) {
+                store.saveLastUpdateCheckAt(nowMs)
+                val status = withContext(Dispatchers.IO) {
+                    checkForUpdate(com.baca.app.ui.APP_VERSION) { com.baca.app.reader.fetchLatestReleaseJson() }
+                }
+                pendingUpdate = shouldShowUpdatePopup(status, store.loadSkippedUpdateVersion())
+            }
+        }
         // big books parse off the UI thread; show what's opening meanwhile
         var openingTitle by remember { mutableStateOf<String?>(null) }
 
@@ -691,6 +714,31 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                                 store.setBookShelves(row.bookHash, toggleBookShelf(store.bookShelves(row.bookHash), shelf))
                                 libraryTick++
                             },
+                            onCreateShelf = { name ->
+                                store.saveShelves(addShelf(shelves, name))
+                                libraryTick++
+                            },
+                            onCreateBookShelf = { row, name ->
+                                store.saveShelves(addShelf(shelves, name))
+                                store.setBookShelves(row.bookHash, toggleBookShelf(store.bookShelves(row.bookHash), name))
+                                libraryTick++
+                            },
+                            onRenameShelf = { oldName, newName ->
+                                store.renameShelfEverywhere(oldName, newName, books.map { it.bookHash })
+                                libraryTick++
+                            },
+                            onDeleteShelf = { name ->
+                                store.deleteShelfEverywhere(name, books.map { it.bookHash })
+                                libraryTick++
+                            },
+                            onToggleFinished = { row ->
+                                val currentlyFinished = booksRepo.isFinished(row.bookHash)
+                                booksRepo.setFinished(row.bookHash, !currentlyFinished)
+                                if (currentlyFinished) {
+                                    store.resetToStart(row.bookHash, fixedLayout = row.format == "cbz" || row.format == "pdf")
+                                }
+                                libraryTick++
+                            },
                             groupBySeries = groupBySeries,
                             onToggleGroupBySeries = {
                                 groupBySeries = !groupBySeries
@@ -725,6 +773,20 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                         }
                     }
                 }
+            }
+            pendingUpdate?.takeIf { screenState !is Screen.Reader }?.let { available ->
+                com.baca.app.ui.UpdateAvailableDialog(
+                    available = available,
+                    onDownload = {
+                        com.baca.app.reader.openExternalLink(available.pageUrl)
+                        pendingUpdate = null
+                    },
+                    onLater = { pendingUpdate = null },
+                    onSkip = {
+                        store.saveSkippedUpdateVersion(available.version)
+                        pendingUpdate = null
+                    },
+                )
             }
             pendingRestore?.let { archive ->
                 AlertDialog(

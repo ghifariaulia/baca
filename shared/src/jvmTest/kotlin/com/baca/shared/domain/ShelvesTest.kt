@@ -36,4 +36,26 @@ class ShelvesTest {
         store.setBookShelves("h1", book1)
         assertEquals(listOf("Favorites"), store.bookShelves("h1"))
     }
+
+    @Test
+    fun `renames and deletes shelves across library and books`() {
+        val store = ShelfFakeStore()
+        store.saveShelves(listOf("Sci-Fi", "Favorites"))
+        store.setBookShelves("h1", listOf("Sci-Fi", "Favorites"))
+        store.setBookShelves("h2", listOf("Favorites"))
+
+        store.renameShelfEverywhere("Sci-Fi", "Speculative", listOf("h1", "h2"))
+        assertEquals(listOf("Speculative", "Favorites"), store.loadShelves())
+        assertEquals(listOf("Speculative", "Favorites"), store.bookShelves("h1"))
+        assertEquals(listOf("Favorites"), store.bookShelves("h2"))
+
+        // Duplicate rename is ignored
+        store.renameShelfEverywhere("Speculative", "favorites", listOf("h1", "h2"))
+        assertEquals(listOf("Speculative", "Favorites"), store.loadShelves())
+
+        store.deleteShelfEverywhere("Favorites", listOf("h1", "h2"))
+        assertEquals(listOf("Speculative"), store.loadShelves())
+        assertEquals(listOf("Speculative"), store.bookShelves("h1"))
+        assertEquals(emptyList(), store.bookShelves("h2"))
+    }
 }

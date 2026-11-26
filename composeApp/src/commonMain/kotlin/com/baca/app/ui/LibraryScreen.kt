@@ -13,6 +13,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.foundation.Canvas
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -30,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,10 +43,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +59,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.geometry.Offset
@@ -99,17 +109,30 @@ fun LibraryScreen(
     onSortChange: (LibrarySort) -> Unit = {},
     shelves: List<String> = emptyList(),
     onToggleBookShelf: (BookRow, String) -> Unit = { _, _ -> },
+    onCreateShelf: (String) -> Unit = {},
+    onCreateBookShelf: (BookRow, String) -> Unit = { _, name -> onCreateShelf(name) },
+    onRenameShelf: (String, String) -> Unit = { _, _ -> },
+    onDeleteShelf: (String) -> Unit = {},
+    onToggleFinished: (BookRow) -> Unit = {},
     groupBySeries: Boolean = false,
     onToggleGroupBySeries: () -> Unit = {},
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 900.dp
         if (wide) {
-            DesktopLibrary(books, onAdd, onOpen, onResume, onDelete, onNav, sort, onSortChange, shelves, onToggleBookShelf, groupBySeries, onToggleGroupBySeries)
+            DesktopLibrary(
+                books, onAdd, onOpen, onResume, onDelete, onNav, sort, onSortChange,
+                shelves, onToggleBookShelf, onCreateShelf, onCreateBookShelf, onRenameShelf, onDeleteShelf,
+                onToggleFinished, groupBySeries, onToggleGroupBySeries,
+            )
         } else {
             Column(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxWidth().weight(1f)) {
-                    PhoneLibrary(books, onAdd, onOpen, onResume, onDelete, sort, onSortChange, shelves, onToggleBookShelf, groupBySeries, onToggleGroupBySeries)
+                    PhoneLibrary(
+                        books, onAdd, onOpen, onResume, onDelete, sort, onSortChange,
+                        shelves, onToggleBookShelf, onCreateShelf, onCreateBookShelf, onRenameShelf, onDeleteShelf,
+                        onToggleFinished, groupBySeries, onToggleGroupBySeries,
+                    )
                 }
                 BottomNav(NavItem.LIBRARY, onNav)
             }
@@ -149,14 +172,16 @@ private fun AllBooksHeader(
     ) {
         Text("ALL BOOKS", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Box(
+            Row(
                 Modifier
-                    .clip(RoundedCornerShape(18.dp))
+                    .heightIn(min = 44.dp)
+                    .clip(RoundedCornerShape(22.dp))
                     .background(if (groupBySeries) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
                     .clickable(onClick = onToggleGroupBySeries)
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
                     .semantics { contentDescription = "Group by series" },
-                contentAlignment = Alignment.Center,
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.List,
@@ -164,13 +189,20 @@ private fun AllBooksHeader(
                     modifier = Modifier.size(18.dp),
                     tint = if (groupBySeries) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    "Series",
+                    fontSize = 14.sp,
+                    fontWeight = if (groupBySeries) FontWeight.Bold else FontWeight.Normal,
+                    color = if (groupBySeries) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Box {
                 Row(
                     Modifier
-                        .clip(RoundedCornerShape(18.dp))
+                        .heightIn(min = 44.dp)
+                        .clip(RoundedCornerShape(22.dp))
                         .clickable { open = true }
-                        .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                        .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(sort.label, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
@@ -199,6 +231,7 @@ private fun continueBook(visible: List<LibraryBook>): LibraryBook? =
     visible.filter { it.progress != null && it.progress >= 0.001f && !isFinished(it.finished, it.progress) }
         .maxByOrNull { it.lastReadAt ?: 0L }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FilterChipRow(
     filter: LibraryFilter,
@@ -206,10 +239,18 @@ private fun FilterChipRow(
     shelves: List<String> = emptyList(),
     selectedShelf: String? = null,
     onSelectShelf: (String?) -> Unit = {},
+    onCreateShelf: (String) -> Unit = {},
+    onRenameShelf: (String, String) -> Unit = { _, _ -> },
+    onDeleteShelf: (String) -> Unit = {},
 ) {
+    var newShelfOpen by remember { mutableStateOf(false) }
+    var renameTarget by remember { mutableStateOf<String?>(null) }
+    var deleteTarget by remember { mutableStateOf<String?>(null) }
+
     Row(
         Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         listOf(
             LibraryFilter.ALL to "All",
@@ -221,13 +262,15 @@ private fun FilterChipRow(
             val bg = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.surface
             Box(
                 Modifier
-                    .clip(RoundedCornerShape(18.dp))
+                    .heightIn(min = 44.dp)
+                    .clip(RoundedCornerShape(22.dp))
                     .background(bg)
                     .clickable {
                         onSelect(key)
                         onSelectShelf(null)
                     }
-                    .padding(horizontal = 18.dp, vertical = 8.dp),
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
+                contentAlignment = Alignment.Center,
             ) {
                 Text(
                     label,
@@ -240,43 +283,148 @@ private fun FilterChipRow(
         shelves.forEach { shelf ->
             val selected = selectedShelf == shelf
             val bg = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.surface
-            Box(
-                Modifier
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(bg)
-                    .clickable { onSelectShelf(if (selected) null else shelf) }
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                Text(
-                    shelf,
-                    fontSize = 14.sp,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                    color = if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface,
-                )
+            var shelfMenuOpen by remember(shelf) { mutableStateOf(false) }
+            Box {
+                Box(
+                    Modifier
+                        .heightIn(min = 44.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(bg)
+                        .pointerInput(shelf) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                                        shelfMenuOpen = true
+                                    }
+                                }
+                            }
+                        }
+                        .combinedClickable(
+                            onClick = {
+                                if (selected) {
+                                    onSelectShelf(null)
+                                } else {
+                                    onSelect(LibraryFilter.ALL)
+                                    onSelectShelf(shelf)
+                                }
+                            },
+                            onLongClick = { shelfMenuOpen = true },
+                        )
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        shelf,
+                        fontSize = 14.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                DropdownMenu(expanded = shelfMenuOpen, onDismissRequest = { shelfMenuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Rename shelf") },
+                        onClick = {
+                            shelfMenuOpen = false
+                            renameTarget = shelf
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete shelf", color = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            shelfMenuOpen = false
+                            deleteTarget = shelf
+                        },
+                    )
+                }
             }
         }
+        Box(
+            Modifier
+                .heightIn(min = 44.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .clickable { newShelfOpen = true }
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("+ New shelf", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        }
+    }
+
+    if (newShelfOpen) {
+        NewShelfDialog(
+            onDismiss = { newShelfOpen = false },
+            onCreate = { name ->
+                onCreateShelf(name)
+                newShelfOpen = false
+            },
+        )
+    }
+
+    renameTarget?.let { oldName ->
+        NewShelfDialog(
+            initialName = oldName,
+            title = "Rename shelf",
+            confirmLabel = "Save",
+            onDismiss = { renameTarget = null },
+            onCreate = { newName ->
+                onRenameShelf(oldName, newName)
+                if (selectedShelf.equals(oldName, ignoreCase = true)) {
+                    onSelectShelf(newName)
+                }
+                renameTarget = null
+            },
+        )
+    }
+
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Delete shelf?") },
+            text = { Text("Delete \"$target\"? Books in this shelf stay in your library.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteShelf(target)
+                    if (selectedShelf.equals(target, ignoreCase = true)) onSelectShelf(null)
+                    deleteTarget = null
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("Cancel") }
+            },
+        )
     }
 }
 
 @Composable
 private fun SearchField(query: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
-    // Design pill: white bg, line border, 40dp — no Material padding that crops.
+    // Design pill: white bg, line border, 44dp touch target — no Material padding that crops.
     Row(
         modifier
-            .height(40.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .height(44.dp)
+            .clip(RoundedCornerShape(22.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(20.dp))
-            .padding(horizontal = 16.dp),
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(22.dp))
+            .padding(start = 14.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        Icon(
+            imageVector = Icons.Filled.Search,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
         BasicTextField(
             value = query,
             onValueChange = onChange,
             singleLine = true,
-            textStyle = Type.body,
+            textStyle = Type.body.copy(color = MaterialTheme.colorScheme.onSurface),
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.weight(1f).semantics { contentDescription = "Search library" },
         ) { inner ->
             if (query.isEmpty()) {
                 Text(
@@ -287,6 +435,25 @@ private fun SearchField(query: String, onChange: (String) -> Unit, modifier: Mod
             } else {
                 inner()
             }
+        }
+        if (query.isNotEmpty()) {
+            Box(
+                Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { onChange("") }
+                    .semantics { contentDescription = "Clear search" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        } else {
+            Spacer(Modifier.width(8.dp))
         }
     }
 }
@@ -349,27 +516,192 @@ private fun FinishedBadge(modifier: Modifier = Modifier) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun BookCell(
     lib: LibraryBook,
+    allShelves: List<String>,
     onOpen: (BookRow) -> Unit,
+    onResume: (BookRow) -> Unit,
+    onToggleBookShelf: (BookRow, String) -> Unit,
+    onCreateBookShelf: (BookRow, String) -> Unit,
+    onToggleFinished: (BookRow) -> Unit,
     onDelete: (BookRow) -> Unit,
-    menuOpenFor: (BookRow?) -> Unit,
 ) {
-    Column(
-        Modifier.combinedClickable(
-            onClick = { onOpen(lib.row) },
-            onLongClick = { menuOpenFor(lib.row) },
-        ),
-    ) {
-        Box {
-            BookCover(lib.row, fillWidth = true)
-            if (isFinished(lib.finished, lib.progress)) FinishedBadge(Modifier.align(Alignment.TopEnd).padding(6.dp))
+    var menuOpen by remember(lib.row.bookHash) { mutableStateOf(false) }
+    var shelvesDialogOpen by remember(lib.row.bookHash) { mutableStateOf(false) }
+    var removeConfirmOpen by remember(lib.row.bookHash) { mutableStateOf(false) }
+
+    Box {
+        Column(
+            Modifier
+                .pointerInput(lib.row.bookHash) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            if (event.type == PointerEventType.Press && event.buttons.isSecondaryPressed) {
+                                menuOpen = true
+                            }
+                        }
+                    }
+                }
+                .combinedClickable(
+                    onClick = { onOpen(lib.row) },
+                    onLongClick = { menuOpen = true },
+                ),
+        ) {
+            Box {
+                BookCover(lib.row, fillWidth = true)
+                if (isFinished(lib.finished, lib.progress)) FinishedBadge(Modifier.align(Alignment.TopEnd).padding(6.dp))
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(lib.row.title, fontSize = 12.sp, maxLines = 1, textAlign = TextAlign.Left)
+            Spacer(Modifier.height(4.dp))
+            MiniProgressBar(shownProgress(lib.finished, lib.progress))
         }
-        Spacer(Modifier.height(6.dp))
-        Text(lib.row.title, fontSize = 12.sp, maxLines = 1, textAlign = TextAlign.Left)
-        Spacer(Modifier.height(4.dp))
-        MiniProgressBar(shownProgress(lib.finished, lib.progress))
+
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        if (lib.lastReadAt == null || (lib.progress ?: 0f) == 0f) "Start reading" else "Continue reading",
+                        fontWeight = FontWeight.Medium,
+                    )
+                },
+                onClick = {
+                    menuOpen = false
+                    onResume(lib.row)
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Book details") },
+                onClick = {
+                    menuOpen = false
+                    onOpen(lib.row)
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Shelves") },
+                onClick = {
+                    menuOpen = false
+                    shelvesDialogOpen = true
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(if (lib.finished) "Mark as unread" else "Mark as finished") },
+                onClick = {
+                    menuOpen = false
+                    onToggleFinished(lib.row)
+                },
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+            DropdownMenuItem(
+                text = { Text("Remove from library", color = MaterialTheme.colorScheme.error) },
+                onClick = {
+                    menuOpen = false
+                    removeConfirmOpen = true
+                },
+            )
+        }
+    }
+
+    if (shelvesDialogOpen) {
+        BookShelvesDialog(
+            bookTitle = lib.row.title,
+            bookShelves = lib.shelves,
+            allShelves = allShelves,
+            onToggleShelf = { shelf -> onToggleBookShelf(lib.row, shelf) },
+            onCreateShelf = { name -> onCreateBookShelf(lib.row, name) },
+            onDismiss = { shelvesDialogOpen = false },
+        )
+    }
+
+    if (removeConfirmOpen) {
+        ConfirmRemoveBookDialog(
+            title = lib.row.title,
+            onDismiss = { removeConfirmOpen = false },
+            onConfirm = {
+                removeConfirmOpen = false
+                onDelete(lib.row)
+            },
+        )
+    }
+}
+
+@Composable
+private fun BookShelvesDialog(
+    bookTitle: String,
+    bookShelves: List<String>,
+    allShelves: List<String>,
+    onToggleShelf: (String) -> Unit,
+    onCreateShelf: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var newShelfOpen by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Shelves") },
+        text = {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                Text(
+                    bookTitle,
+                    style = Type.caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                if (allShelves.isEmpty()) {
+                    Text(
+                        "No shelves yet. Create one to organize your books.",
+                        style = Type.body,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                    )
+                } else {
+                    allShelves.forEach { shelf ->
+                        val inShelf = shelf in bookShelves
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 44.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onToggleShelf(shelf) }
+                                .padding(horizontal = 4.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = inShelf,
+                                onCheckedChange = { onToggleShelf(shelf) },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                shelf,
+                                style = Type.body,
+                                fontWeight = if (inShelf) FontWeight.Bold else FontWeight.Normal,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                TextButton(
+                    onClick = { newShelfOpen = true },
+                    modifier = Modifier.heightIn(min = 44.dp),
+                ) {
+                    Text("+ New shelf", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        },
+    )
+    if (newShelfOpen) {
+        NewShelfDialog(
+            onDismiss = { newShelfOpen = false },
+            onCreate = { name ->
+                onCreateShelf(name)
+                newShelfOpen = false
+            },
+        )
     }
 }
 
@@ -387,6 +719,11 @@ private fun PhoneLibrary(
     onSortChange: (LibrarySort) -> Unit,
     shelves: List<String>,
     onToggleBookShelf: (BookRow, String) -> Unit,
+    onCreateShelf: (String) -> Unit,
+    onCreateBookShelf: (BookRow, String) -> Unit,
+    onRenameShelf: (String, String) -> Unit,
+    onDeleteShelf: (String) -> Unit,
+    onToggleFinished: (BookRow) -> Unit,
     groupBySeries: Boolean,
     onToggleGroupBySeries: () -> Unit,
 ) {
@@ -442,7 +779,6 @@ private fun PhoneLibrary(
     }
 
     val visible = sortLibrary(books.filter(filterPredicate(query, filter, selectedShelf)), sort, ::sortFacts)
-    var menuOpenFor by remember { mutableStateOf<BookRow?>(null) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val cols = ((maxWidth - 40.dp) / 116.dp).toInt().coerceIn(2, 5)
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp)) {
@@ -467,7 +803,16 @@ private fun PhoneLibrary(
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                FilterChipRow(filter, { filter = it }, shelves, selectedShelf, { selectedShelf = it })
+                FilterChipRow(
+                    filter = filter,
+                    onSelect = { filter = it },
+                    shelves = shelves,
+                    selectedShelf = selectedShelf,
+                    onSelectShelf = { selectedShelf = it },
+                    onCreateShelf = onCreateShelf,
+                    onRenameShelf = onRenameShelf,
+                    onDeleteShelf = onDeleteShelf,
+                )
                 Spacer(Modifier.height(16.dp))
                 continueBook(visible)?.let { lib ->
                     ContinueReadingCard(
@@ -479,30 +824,49 @@ private fun PhoneLibrary(
                 AllBooksHeader(sort, onSortChange, groupBySeries, onToggleGroupBySeries)
                 Spacer(Modifier.height(8.dp))
             }
-            bookGridContent(visible, cols, 12.dp, groupBySeries, onOpen, onDelete) { menuOpenFor = it }
-        if (visible.isEmpty()) {
-            item {
-                Spacer(Modifier.height(24.dp))
-                Text(
-                    "No books match.",
-                    style = Type.body,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            bookGridContent(
+                visible = visible,
+                cols = cols,
+                rowSpacing = 12.dp,
+                groupBySeries = groupBySeries,
+                allShelves = shelves,
+                onOpen = onOpen,
+                onResume = onResume,
+                onToggleBookShelf = onToggleBookShelf,
+                onCreateBookShelf = onCreateBookShelf,
+                onToggleFinished = onToggleFinished,
+                onDelete = onDelete,
+            )
+            if (visible.isEmpty()) {
+                item {
+                    EmptyFilteredState(
+                        onClear = {
+                            query = ""
+                            filter = LibraryFilter.ALL
+                            selectedShelf = null
+                        },
+                    )
+                }
             }
         }
     }
-    // long press → "Shelves" / "Remove from library" (TECH 10.3, book detail action)
-    menuOpenFor?.let { rowForMenu ->
-        val bookShelves = books.firstOrNull { it.row.bookHash == rowForMenu.bookHash }?.shelves.orEmpty()
-        BookContextMenu(
-            rowForMenu = rowForMenu,
-            bookShelves = bookShelves,
-            allShelves = shelves,
-            onToggleBookShelf = onToggleBookShelf,
-            onDelete = onDelete,
-            onDismiss = { menuOpenFor = null },
+}
+
+@Composable
+private fun EmptyFilteredState(onClear: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            "No books match.",
+            style = Type.body,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
+        TextButton(onClick = onClear, modifier = Modifier.heightIn(min = 44.dp)) {
+            Text("Clear filters", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        }
     }
 }
 
@@ -511,9 +875,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.bookGridContent(
     cols: Int,
     rowSpacing: androidx.compose.ui.unit.Dp,
     groupBySeries: Boolean,
+    allShelves: List<String>,
     onOpen: (BookRow) -> Unit,
+    onResume: (BookRow) -> Unit,
+    onToggleBookShelf: (BookRow, String) -> Unit,
+    onCreateBookShelf: (BookRow, String) -> Unit,
+    onToggleFinished: (BookRow) -> Unit,
     onDelete: (BookRow) -> Unit,
-    onMenuOpen: (BookRow?) -> Unit,
 ) {
     if (groupBySeries && visible.isNotEmpty()) {
         val (seriesGroups, standalones) = groupBySeries(visible, seriesOf = { it.series }, titleOf = { it.row.title })
@@ -526,7 +894,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.bookGridContent(
                 )
             }
             items(group.books.chunked(cols)) { row ->
-                BookGridRow(row, cols, rowSpacing, onOpen, onDelete, onMenuOpen)
+                BookGridRow(row, cols, rowSpacing, allShelves, onOpen, onResume, onToggleBookShelf, onCreateBookShelf, onToggleFinished, onDelete)
             }
         }
         if (standalones.isNotEmpty()) {
@@ -538,12 +906,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.bookGridContent(
                 )
             }
             items(standalones.chunked(cols)) { row ->
-                BookGridRow(row, cols, rowSpacing, onOpen, onDelete, onMenuOpen)
+                BookGridRow(row, cols, rowSpacing, allShelves, onOpen, onResume, onToggleBookShelf, onCreateBookShelf, onToggleFinished, onDelete)
             }
         }
     } else {
         items(visible.chunked(cols)) { row ->
-            BookGridRow(row, cols, rowSpacing, onOpen, onDelete, onMenuOpen)
+            BookGridRow(row, cols, rowSpacing, allShelves, onOpen, onResume, onToggleBookShelf, onCreateBookShelf, onToggleFinished, onDelete)
         }
     }
 }
@@ -553,9 +921,13 @@ private fun BookGridRow(
     row: List<LibraryBook>,
     cols: Int,
     rowSpacing: androidx.compose.ui.unit.Dp,
+    allShelves: List<String>,
     onOpen: (BookRow) -> Unit,
+    onResume: (BookRow) -> Unit,
+    onToggleBookShelf: (BookRow, String) -> Unit,
+    onCreateBookShelf: (BookRow, String) -> Unit,
+    onToggleFinished: (BookRow) -> Unit,
     onDelete: (BookRow) -> Unit,
-    onMenuOpen: (BookRow?) -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth(),
@@ -563,55 +935,12 @@ private fun BookGridRow(
     ) {
         row.forEach { lib ->
             Box(Modifier.weight(1f)) {
-                BookCell(lib, onOpen, onDelete, onMenuOpen)
+                BookCell(lib, allShelves, onOpen, onResume, onToggleBookShelf, onCreateBookShelf, onToggleFinished, onDelete)
             }
         }
         repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
     }
     Spacer(Modifier.height(rowSpacing))
-}
-
-@Composable
-private fun BookContextMenu(
-    rowForMenu: BookRow,
-    bookShelves: List<String>,
-    allShelves: List<String>,
-    onToggleBookShelf: (BookRow, String) -> Unit,
-    onDelete: (BookRow) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var showShelves by remember(rowForMenu) { mutableStateOf(false) }
-    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        if (showShelves) {
-            allShelves.forEach { shelf ->
-                val inShelf = shelf in bookShelves
-                DropdownMenuItem(
-                    text = { Text(shelf, fontWeight = if (inShelf) FontWeight.Bold else FontWeight.Normal) },
-                    trailingIcon = if (inShelf) {
-                        { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                    } else null,
-                    onClick = {
-                        onToggleBookShelf(rowForMenu, shelf)
-                        onDismiss()
-                    },
-                )
-            }
-        } else {
-            if (allShelves.isNotEmpty()) {
-                DropdownMenuItem(
-                    text = { Text("Shelves") },
-                    onClick = { showShelves = true },
-                )
-            }
-            DropdownMenuItem(
-                text = { Text("Remove from library") },
-                onClick = {
-                    onDelete(rowForMenu)
-                    onDismiss()
-                },
-            )
-        }
-    }
 }
 
 @Composable
@@ -674,13 +1003,17 @@ private fun DesktopLibrary(
     onSortChange: (LibrarySort) -> Unit,
     shelves: List<String>,
     onToggleBookShelf: (BookRow, String) -> Unit,
+    onCreateShelf: (String) -> Unit,
+    onCreateBookShelf: (BookRow, String) -> Unit,
+    onRenameShelf: (String, String) -> Unit,
+    onDeleteShelf: (String) -> Unit,
+    onToggleFinished: (BookRow) -> Unit,
     groupBySeries: Boolean,
     onToggleGroupBySeries: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(LibraryFilter.ALL) }
     var selectedShelf by remember { mutableStateOf<String?>(null) }
-    var menuOpenFor by remember { mutableStateOf<BookRow?>(null) }
     val visible = sortLibrary(books.filter(filterPredicate(query, filter, selectedShelf)), sort, ::sortFacts)
 
     Row(Modifier.fillMaxSize()) {
@@ -700,7 +1033,16 @@ private fun DesktopLibrary(
                 }
             }
             Spacer(Modifier.height(12.dp))
-            FilterChipRow(filter, { filter = it }, shelves, selectedShelf, { selectedShelf = it })
+            FilterChipRow(
+                filter = filter,
+                onSelect = { filter = it },
+                shelves = shelves,
+                selectedShelf = selectedShelf,
+                onSelectShelf = { selectedShelf = it },
+                onCreateShelf = onCreateShelf,
+                onRenameShelf = onRenameShelf,
+                onDeleteShelf = onDeleteShelf,
+            )
             Spacer(Modifier.height(20.dp))
 
             // wide continue card with a Resume action (design 'Desktop Library')
@@ -725,7 +1067,7 @@ private fun DesktopLibrary(
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "${((lib.progress ?: 0f) * 100).toInt()}% · last read " +
-                                (lib.lastReadAt?.let { "just now" } ?: "never"),
+                                (lib.lastReadAt?.let { relativeTime(it) } ?: "never"),
                             style = Type.body,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -761,29 +1103,32 @@ private fun DesktopLibrary(
             Spacer(Modifier.height(12.dp))
 
             LazyColumn(Modifier.fillMaxWidth()) {
-            bookGridContent(visible, 6, 20.dp, groupBySeries, onOpen, onDelete) { menuOpenFor = it }
-            if (visible.isEmpty()) {
-                item {
-                    Text(
-                        "No books match.",
-                        style = Type.body,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                bookGridContent(
+                    visible = visible,
+                    cols = 6,
+                    rowSpacing = 20.dp,
+                    groupBySeries = groupBySeries,
+                    allShelves = shelves,
+                    onOpen = onOpen,
+                    onResume = onResume,
+                    onToggleBookShelf = onToggleBookShelf,
+                    onCreateBookShelf = onCreateBookShelf,
+                    onToggleFinished = onToggleFinished,
+                    onDelete = onDelete,
+                )
+                if (visible.isEmpty()) {
+                    item {
+                        EmptyFilteredState(
+                            onClear = {
+                                query = ""
+                                filter = LibraryFilter.ALL
+                                selectedShelf = null
+                            },
+                        )
+                    }
                 }
             }
         }
-        menuOpenFor?.let { rowForMenu ->
-            val bookShelves = books.firstOrNull { it.row.bookHash == rowForMenu.bookHash }?.shelves.orEmpty()
-            BookContextMenu(
-                rowForMenu = rowForMenu,
-                bookShelves = bookShelves,
-                allShelves = shelves,
-                onToggleBookShelf = onToggleBookShelf,
-                onDelete = onDelete,
-                onDismiss = { menuOpenFor = null },
-            )
-        }
-    }
     }
 }
 

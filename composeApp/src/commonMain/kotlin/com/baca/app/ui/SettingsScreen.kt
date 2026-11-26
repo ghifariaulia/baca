@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
@@ -51,10 +52,12 @@ import com.baca.app.reader.rememberFontPicker
 import com.baca.shared.domain.USER_FONT_PREFIX
 import com.baca.shared.domain.UpdateStatus
 import com.baca.shared.domain.checkForUpdate
+import com.baca.shared.domain.loadAutoUpdateEnabled
 import com.baca.shared.domain.loadDisplay
 import com.baca.shared.domain.loadUserFonts
 import com.baca.shared.domain.reader.PositionStore
 import com.baca.shared.domain.resolveDisplayFont
+import com.baca.shared.domain.saveAutoUpdateEnabled
 import com.baca.shared.domain.saveDisplay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -174,7 +177,17 @@ internal fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            SettingsPage.ABOUT -> AboutContent(checkForUpdate)
+            SettingsPage.ABOUT -> {
+                var autoCheck by remember(store) { mutableStateOf(store.loadAutoUpdateEnabled()) }
+                AboutContent(
+                    checkForUpdate = checkForUpdate,
+                    autoCheckEnabled = autoCheck,
+                    onAutoCheckChange = { enabled ->
+                        autoCheck = enabled
+                        store.saveAutoUpdateEnabled(enabled)
+                    },
+                )
+            }
         }
     }
 }
@@ -189,14 +202,15 @@ private fun SettingsFrame(title: String, onBack: () -> Unit, content: @Composabl
         Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().padding(horizontal = 24.dp)) {
             Row(
                 Modifier.padding(top = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    modifier = Modifier.clip(CircleShape).clickable(onClick = onBack).padding(8.dp).size(24.dp),
-                )
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                    )
+                }
                 Text(title, style = Type.screenTitle)
             }
             Spacer(Modifier.height(20.dp))

@@ -38,3 +38,39 @@ fun toggleBookShelf(current: List<String>, shelf: String): List<String> =
     } else {
         current + shelf
     }
+
+fun renameShelf(existing: List<String>, oldName: String, newName: String): List<String> {
+    val clean = newName.trim()
+    if (clean.isEmpty()) return existing
+    if (existing.any { !it.equals(oldName, ignoreCase = true) && it.equals(clean, ignoreCase = true) }) {
+        return existing
+    }
+    return existing.map { if (it.equals(oldName, ignoreCase = true)) clean else it }
+}
+
+fun deleteShelf(existing: List<String>, name: String): List<String> =
+    existing.filterNot { it.equals(name, ignoreCase = true) }
+
+fun PositionStore.renameShelfEverywhere(oldName: String, newName: String, bookHashes: List<String>) {
+    val current = loadShelves()
+    val updated = renameShelf(current, oldName, newName)
+    if (updated == current) return
+    saveShelves(updated)
+    val clean = newName.trim()
+    for (hash in bookHashes) {
+        val memberships = bookShelves(hash)
+        if (memberships.any { it.equals(oldName, ignoreCase = true) }) {
+            setBookShelves(hash, memberships.map { if (it.equals(oldName, ignoreCase = true)) clean else it })
+        }
+    }
+}
+
+fun PositionStore.deleteShelfEverywhere(name: String, bookHashes: List<String>) {
+    saveShelves(deleteShelf(loadShelves(), name))
+    for (hash in bookHashes) {
+        val memberships = bookShelves(hash)
+        if (memberships.any { it.equals(name, ignoreCase = true) }) {
+            setBookShelves(hash, memberships.filterNot { it.equals(name, ignoreCase = true) })
+        }
+    }
+}

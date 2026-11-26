@@ -9,6 +9,7 @@ import androidx.compose.ui.test.performScrollTo
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.baca.app.App
 import com.baca.shared.domain.Locator
+import com.baca.shared.domain.loadAutoUpdateEnabled
 import com.baca.shared.domain.reader.PositionStore
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -213,5 +214,18 @@ class SettingsScreenTest {
         rule.onNodeWithText("About Baca").performClick()
         rule.onNodeWithText("Check for updates").performScrollTo().performClick()
         rule.waitUntil(5_000) { rule.onAllNodesWithText("Couldn't check: no network").fetchSemanticsNodes().isNotEmpty() }
+    }
+
+    @Test
+    fun `about toggles automatic update check preference`() {
+        val s = store()
+        rule.setContent {
+            AppTheme {
+                SettingsScreen(store = s, onBack = {})
+            }
+        }
+        rule.onNodeWithText("About Baca").performClick()
+        rule.onNodeWithText("Off").performScrollTo().performClick()
+        assertEquals(false, s.loadAutoUpdateEnabled())
     }
 }

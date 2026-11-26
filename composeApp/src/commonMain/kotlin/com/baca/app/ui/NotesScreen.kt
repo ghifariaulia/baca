@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,6 +19,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -109,6 +115,13 @@ fun NotesScreen(
             else -> "No highlights yet — press and hold a paragraph in a book."
         },
         onOpenAnnotation = onOpenAnnotation,
+        onClearFilters = if (query.isNotBlank() || colorFilter != null || filter != NotesFilter.ALL) {
+            {
+                query = ""
+                colorFilter = null
+                filter = NotesFilter.ALL
+            }
+        } else null,
         titleAction = {
             if (hasExportable) {
                 TextButton(onClick = {
@@ -144,6 +157,14 @@ fun NotesScreen(
             value = query,
             onValueChange = { query = it },
             placeholder = { Text("Search notes") },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            trailingIcon = if (query.isNotEmpty()) {
+                {
+                    IconButton(onClick = { query = "" }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                    }
+                }
+            } else null,
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -161,10 +182,12 @@ fun NotesScreen(
                 val selected = filter == key
                 Box(
                     Modifier
-                        .clip(RoundedCornerShape(18.dp))
+                        .heightIn(min = 44.dp)
+                        .clip(RoundedCornerShape(22.dp))
                         .background(if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.surface)
                         .clickable { filter = key }
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         label,
@@ -235,6 +258,7 @@ private fun AnnotationGroupsScreen(
     matches: (BookRow, AnnotationEntry) -> Boolean,
     emptyText: String,
     onOpenAnnotation: (BookRow, AnnotationEntry) -> Unit,
+    onClearFilters: (() -> Unit)? = null,
     titleAction: @Composable () -> Unit = {},
     header: @Composable () -> Unit = { Spacer(Modifier.height(4.dp)) },
 ) {
@@ -290,7 +314,17 @@ private fun AnnotationGroupsScreen(
 
         if (groups.all { g -> g.entries.none { matches(g.row, it.entry) } }) {
             item {
-                Text(emptyText, style = Type.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(emptyText, style = Type.body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (onClearFilters != null) {
+                        TextButton(onClick = onClearFilters, modifier = Modifier.heightIn(min = 44.dp)) {
+                            Text("Clear filters", color = MaterialTheme.colorScheme.primary, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
     }

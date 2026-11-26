@@ -1,11 +1,15 @@
 package com.baca.app.reader
 
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalContext
+import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -56,6 +60,27 @@ actual fun rememberMarkdownSaver(suggestedName: String, onPicked: ((() -> Sink)?
         )
     }
     return remember(launcher, suggestedName) { { launcher.launch(suggestedName) } }
+}
+
+@Composable
+actual fun rememberPngSaver(suggestedName: String, onPicked: ((() -> Sink)?) -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri: Uri? ->
+        onPicked(
+            uri?.let {
+                {
+                    checkNotNull(context.contentResolver.openOutputStream(it, "wt")) { "Can't write the image file" }.sink()
+                }
+            },
+        )
+    }
+    return remember(launcher, suggestedName) { { launcher.launch(suggestedName) } }
+}
+
+actual fun encodePng(bitmap: ImageBitmap): ByteArray {
+    val out = ByteArrayOutputStream()
+    bitmap.asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, out)
+    return out.toByteArray()
 }
 
 private const val ZIP_MIME = "application/zip"

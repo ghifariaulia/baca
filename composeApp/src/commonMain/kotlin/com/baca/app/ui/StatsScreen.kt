@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -23,6 +24,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -31,21 +34,33 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.baca.app.reader.encodePng
+import com.baca.app.reader.rememberCopyToClipboard
+import com.baca.app.reader.rememberPngSaver
 import com.baca.shared.domain.stats.DayRecord
 import com.baca.shared.domain.stats.ReadingStats
 import com.baca.shared.domain.stats.StatsSummary
 import com.baca.shared.domain.stats.XpRules
+import com.baca.shared.domain.stats.formatStatsShareText
 import com.baca.shared.domain.stats.grouped
 import com.baca.shared.domain.stats.weekdayOf
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okio.buffer
 
 /** Reading stats (TECH 10.9): level, streak, today against the goal, the week, totals and achievements. */
 @Composable
@@ -53,13 +68,41 @@ fun StatsScreen(
     summary: StatsSummary?,
     onGoalMinutesChange: ((Int) -> Unit)? = null,
 ) {
+    var shareOpen by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Stats", style = Type.screenTitle)
-            if (summary == null) return@Column
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Stats", style = Type.screenTitle)
+                if (summary != null) {
+                    TextButton(
+                        onClick = { shareOpen = true },
+                        modifier = Modifier.heightIn(min = 44.dp),
+                    ) {
+                        Icon(
+                            Icons.Outlined.Share,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.size(6.dp))
+                        Text("Share", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            if (summary == null) {
+                Text(
+                    "Loading reading stats…",
+                    style = Type.body,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                return@Column
+            }
             val goalSeconds = summary.goalMinutes * 60
             LevelCard(summary)
             BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -101,6 +144,167 @@ fun StatsScreen(
             Totals(summary)
             Achievements(summary)
         }
+    }
+    if (shareOpen && summary != null) {
+        ShareStatsDialog(summary = summary, onDismiss = { shareOpen = false })
+    }
+}
+
+@Composable
+private fun ShareStatsDialog(summary: StatsSummary, onDismiss: () -> Unit) {
+    val graphicsLayer = rememberGraphicsLayer()
+    val scope = rememberCoroutineScope()
+    val copyToClipboard = rememberCopyToClipboard()
+    var status by remember { mutableStateOf<String?>(null) }
+    var pendingPng by remember { mutableStateOf<ByteArray?>(null) }
+    val savePng = rememberPngSaver("baca-stats.png") { sinkFactory ->
+        val bytes = pendingPng
+        pendingPng = null
+        if (sinkFactory != null && bytes != null) {
+            scope.launch {
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        sinkFactory().buffer().use { it.write(bytes) }
+                    }
+                }
+                    .onSuccess { status = "Saved" }
+                    .onFailure { status = "Save failed" }
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Share stats") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .drawWithContent {
+                            graphicsLayer.record {
+                                this@drawWithContent.drawContent()
+                            }
+                            drawLayer(graphicsLayer)
+                        },
+                ) {
+                    ShareableStatsCard(summary)
+                }
+                status?.let {
+                    Text(it, style = Type.caption, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = {
+                    copyToClipboard(formatStatsShareText(summary))
+                    status = "Copied"
+                }) {
+                    Text("Copy text")
+                }
+                TextButton(onClick = {
+                    scope.launch {
+                        runCatching {
+                            val bmp = graphicsLayer.toImageBitmap()
+                            withContext(Dispatchers.Default) { encodePng(bmp) }
+                        }.onSuccess { bytes ->
+                            pendingPng = bytes
+                            savePng()
+                        }.onFailure {
+                            status = "Capture failed"
+                        }
+                    }
+                }) {
+                    Text("Save PNG", fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+    )
+}
+
+@Composable
+private fun ShareableStatsCard(summary: StatsSummary) {
+    val unlocked = summary.achievements.count { it.tier > 0 }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.background)
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column {
+                Text("BACA", style = Type.sectionLabel, color = MaterialTheme.colorScheme.primary)
+                Text("Reading stats", style = Type.cardTitle, fontSize = 18.sp)
+            }
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    "Lv. ${summary.level.number} · ${grouped(summary.xp.toLong())} XP",
+                    style = Type.caption,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ShareStatTile("Streak", days(summary.streak), Modifier.weight(1f))
+            ShareStatTile("Finished", "${summary.booksFinished}", Modifier.weight(1f))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ShareStatTile("Pages", grouped(summary.locations.toLong()), Modifier.weight(1f))
+            ShareStatTile("Time", minutes(summary.seconds), Modifier.weight(1f))
+        }
+        if (summary.week.isNotEmpty()) {
+            val most = summary.week.maxOf { it.second.seconds }.coerceAtLeast(summary.goalMinutes * 60)
+            Row(Modifier.fillMaxWidth().height(42.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom) {
+                summary.week.forEach { (day, record) ->
+                    Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+                            val share = record.seconds / most.toFloat()
+                            if (share > 0f) {
+                                Box(
+                                    Modifier.fillMaxWidth().fillMaxHeight(share.coerceIn(0.08f, 1f))
+                                        .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                                        .background(if (record.goalMet) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
+                                )
+                            }
+                        }
+                        Text(WEEKDAYS[weekdayOf(day)], style = Type.caption, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+        if (summary.achievements.isNotEmpty()) {
+            Text(
+                "$unlocked of ${summary.achievements.size} achievements unlocked",
+                style = Type.caption,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShareStatTile(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Text(label.uppercase(), style = Type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, fontSize = 17.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -156,6 +360,7 @@ private fun HistoryCalendar(history: List<Pair<String, DayRecord>>) {
                                 .height(28.dp)
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(fill)
+                                .semantics { contentDescription = day }
                                 .then(
                                     if (isSelected) Modifier.border(1.5.dp, MaterialTheme.colorScheme.onSurface, RoundedCornerShape(4.dp))
                                     else Modifier,

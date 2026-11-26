@@ -17,7 +17,11 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,7 +69,7 @@ fun ImportProgressSheet(
             Text("Add books", style = Type.cardTitle, fontSize = 18.sp)
             Spacer(Modifier.height(8.dp))
             SheetOption(
-                icon = "⎙",
+                icon = Icons.Outlined.Description,
                 title = "From files",
                 subtitle = "Pick EPUB, FB2, PDF, HTML, Markdown, DOCX, RTF, TXT or CBZ files",
                 onClick = onFromFiles,
@@ -72,7 +77,7 @@ fun ImportProgressSheet(
             )
             if (onFromFolder != null) {
                 SheetOption(
-                    icon = "🗀",
+                    icon = Icons.Outlined.FolderOpen,
                     title = "From a folder",
                     subtitle = "Import every supported file in a folder",
                     onClick = onFromFolder,
@@ -81,13 +86,15 @@ fun ImportProgressSheet(
             }
         } else {
             val processed = items.count { it.status != ImportStatus.PENDING && it.status != ImportStatus.READING }
+            val added = items.count { it.status == ImportStatus.ADDED }
             Text(
                 if (items.size == 1) items.first().name else "Importing ${items.size} files",
                 style = Type.cardTitle,
                 fontSize = 18.sp,
             )
             Text(
-                "Reading metadata…",
+                if (running) "Reading metadata… ($processed of ${items.size})"
+                else "Finished · $added added",
                 style = Type.caption,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
@@ -150,10 +157,10 @@ private fun importRow(item: ImportItem, last: Boolean) {
 }
 
 @Composable
-private fun SheetOption(icon: String, title: String, subtitle: String, onClick: () -> Unit, last: Boolean = false) {
+private fun SheetOption(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit, last: Boolean = false) {
     Column {
         Row(
-            Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp),
+            Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(onClick = onClick).padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -161,7 +168,12 @@ private fun SheetOption(icon: String, title: String, subtitle: String, onClick: 
                     .background(MaterialTheme.colorScheme.background),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(icon, fontSize = 16.sp)
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(20.dp),
+                )
             }
             Spacer(Modifier.size(12.dp))
             Column {

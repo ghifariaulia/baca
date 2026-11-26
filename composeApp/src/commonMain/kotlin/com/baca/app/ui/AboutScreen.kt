@@ -5,8 +5,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,11 +30,22 @@ private const val SOURCE_URL = "github.com/ghifariaulia/baca"
 
 /** The About page's body, shown inside the settings frame. */
 @Composable
-internal fun AboutContent(checkForUpdate: suspend () -> UpdateStatus) {
+internal fun AboutContent(
+    checkForUpdate: suspend () -> UpdateStatus,
+    autoCheckEnabled: Boolean = true,
+    onAutoCheckChange: (Boolean) -> Unit = {},
+) {
     Column {
         SheetSection("VERSION") {
             AboutText("Baca $APP_VERSION")
             UpdateCheck(checkForUpdate)
+            Spacer(Modifier.height(12.dp))
+            AboutText("Automatic update check on launch")
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ChoiceChip("Auto-check: On", autoCheckEnabled) { onAutoCheckChange(true) }
+                ChoiceChip("Off", !autoCheckEnabled) { onAutoCheckChange(false) }
+            }
         }
         SheetSection("SOURCE") { AboutText(SOURCE_URL) }
         SheetSection("ACKNOWLEDGEMENTS") {
@@ -77,4 +90,29 @@ private fun UpdateCheck(checkForUpdate: suspend () -> UpdateStatus) {
             },
         )
     }
+}
+
+/** Popup shown when a newer release is found on startup. */
+@Composable
+internal fun UpdateAvailableDialog(
+    available: UpdateStatus.Available,
+    currentVersion: String = APP_VERSION,
+    onDownload: () -> Unit,
+    onLater: () -> Unit,
+    onSkip: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onLater,
+        title = { Text("Update available") },
+        text = { Text("Baca ${available.version} is available (you have $currentVersion).") },
+        confirmButton = {
+            TextButton(onClick = onDownload) { Text("Download") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onSkip) { Text("Skip this version") }
+                TextButton(onClick = onLater) { Text("Later") }
+            }
+        },
+    )
 }

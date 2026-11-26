@@ -57,6 +57,7 @@ class BookDetailScreenTest {
         rule.onNodeWithText("Continue reading").performClick()
         assertEquals(1, continued)
         rule.onNodeWithText("Remove from library").performScrollTo().performClick()
+        rule.onNodeWithText("Remove").performClick()
         assertEquals(1, removed)
     }
 
