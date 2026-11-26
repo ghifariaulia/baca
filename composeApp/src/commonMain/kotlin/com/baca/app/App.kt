@@ -1,5 +1,11 @@
 package com.baca.app
 
+import com.baca.shared.domain.addShelf
+import com.baca.shared.domain.bookShelves
+import com.baca.shared.domain.loadShelves
+import com.baca.shared.domain.saveShelves
+import com.baca.shared.domain.setBookShelves
+import com.baca.shared.domain.toggleBookShelf
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -137,6 +143,7 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
     fun readingOptions() = store.loadDisplay().let { it.parseOptions(isDarkScheme(ReaderThemes.forTheme(it.theme).background)) }
     var appTheme by remember { mutableStateOf(AppThemeChoice.of(store.getLocal(AppThemeChoice.STORE_KEY))) }
     var librarySort by remember { mutableStateOf(LibrarySort.of(store.getLocal(LibrarySort.STORE_KEY))) }
+    var groupBySeries by remember { mutableStateOf(store.getLocal("group_by_series") == "1") }
     val dark = when (appTheme) {
         AppThemeChoice.SYSTEM -> isSystemInDarkTheme()
         AppThemeChoice.LIGHT -> false
@@ -539,6 +546,22 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                             info = info,
                         )
                     }
+                    val shelves = remember(libraryTick) { store.loadShelves() }
+                    val bookShelves = remember(current.row.bookHash, libraryTick) {
+                        store.bookShelves(current.row.bookHash)
+                    }
+                    val pickCover = com.baca.app.reader.rememberImagePicker { pickedPath ->
+                        if (pickedPath != null) {
+                            scope.launch(Dispatchers.IO) {
+                                val savedCover = importer.saveCoverImage(current.row.bookHash, pickedPath)
+                                if (savedCover != null) {
+                                    booksRepo.updateMetadata(current.row.bookHash, current.row.title, current.row.author, savedCover)
+                                    booksRepo.byHash(current.row.bookHash)?.let { screenState = Screen.Detail(it) }
+                                    libraryTick++
+                                }
+                            }
+                        }
+                    }
                     BookDetailScreen(
                         row = current.row,
                         progress = progress,
@@ -561,6 +584,26 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                             if (finished) store.resetToStart(current.row.bookHash, fixedLayout = current.row.format == "cbz" || current.row.format == "pdf")
                             libraryTick++
                         },
+                        shelves = shelves,
+                        bookShelves = bookShelves,
+                        onToggleShelf = { shelf ->
+                            store.setBookShelves(current.row.bookHash, toggleBookShelf(bookShelves, shelf))
+                            libraryTick++
+                        },
+                        onCreateShelf = { name ->
+                            store.saveShelves(addShelf(shelves, name))
+                            store.setBookShelves(current.row.bookHash, toggleBookShelf(bookShelves, name))
+                            libraryTick++
+                        },
+                        onEditMetadata = { newTitle, newAuthor, newSeries ->
+                            val title = newTitle.ifBlank { current.row.title }
+                            booksRepo.updateMetadata(current.row.bookHash, title, newAuthor, current.row.coverPath)
+                            val baseInfo = booksRepo.info(current.row.bookHash) ?: info ?: com.baca.shared.parser.BookInfo()
+                            booksRepo.setInfo(current.row.bookHash, baseInfo.copy(meta = baseInfo.meta.copy(series = newSeries)))
+                            booksRepo.byHash(current.row.bookHash)?.let { screenState = Screen.Detail(it) }
+                            libraryTick++
+                        },
+                        onChangeCover = pickCover,
                     )
                 }
                 Screen.Notes -> NavShell(NavItem.NOTES, navTo) {
@@ -611,12 +654,15 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                             present == null || libraryFolder?.contains(row.path) != true || row.path in present
                         }
                     }
+                    val shelves = remember(libraryTick) { store.loadShelves() }
                     val library = books.map { row ->
                         LibraryBook(
                             row = row,
                             progress = booksRepo.progressFor(row.bookHash),
                             lastReadAt = booksRepo.lastReadAt(row.bookHash),
                             finished = booksRepo.isFinished(row.bookHash),
+                            series = booksRepo.info(row.bookHash)?.meta?.series.orEmpty(),
+                            shelves = store.bookShelves(row.bookHash),
                         )
                     }
                     Column(Modifier.fillMaxSize()) {
@@ -639,6 +685,16 @@ fun App(db: Baca, initialBookPath: String? = null, openContents: Boolean = false
                             onSortChange = { choice ->
                                 librarySort = choice
                                 store.putLocal(LibrarySort.STORE_KEY, choice.key)
+                            },
+                            shelves = shelves,
+                            onToggleBookShelf = { row, shelf ->
+                                store.setBookShelves(row.bookHash, toggleBookShelf(store.bookShelves(row.bookHash), shelf))
+                                libraryTick++
+                            },
+                            groupBySeries = groupBySeries,
+                            onToggleGroupBySeries = {
+                                groupBySeries = !groupBySeries
+                                store.putLocal("group_by_series", if (groupBySeries) "1" else "0")
                             },
                         )
                         if (addSheetOpen) {

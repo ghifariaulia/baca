@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,9 +20,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -58,6 +61,7 @@ data class BookDetails(
     val highlights: Int = 0,
     val notes: Int = 0,
     val bookmarks: Int = 0,
+    val series: String = "",
     /** what the book says about itself and its length; null while unread */
     val info: BookInfo? = null,
 )
@@ -81,6 +85,12 @@ fun BookDetailScreen(
     onToggleFinished: () -> Unit = {},
     details: BookDetails = BookDetails(),
     exportEntries: List<AnnotationEntry> = emptyList(),
+    shelves: List<String> = emptyList(),
+    bookShelves: List<String> = emptyList(),
+    onToggleShelf: (String) -> Unit = {},
+    onCreateShelf: (String) -> Unit = {},
+    onEditMetadata: (title: String, author: String, series: String) -> Unit = { _, _, _ -> },
+    onChangeCover: () -> Unit = {},
 ) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -181,8 +191,9 @@ fun BookDetailScreen(
                 buildList {
                     val info = details.info
                     val meta = info?.meta
+                    val shownSeries = details.series.ifEmpty { meta?.series.orEmpty() }
                     if (row.author.isNotBlank()) add("Author" to row.author)
-                    if (meta != null && meta.series.isNotEmpty()) add("Series" to meta.series)
+                    if (shownSeries.isNotEmpty()) add("Series" to shownSeries)
                     if (meta != null && meta.publisher.isNotEmpty()) add("Publisher" to meta.publisher)
                     if (meta != null && meta.published.isNotEmpty()) add("Published" to meta.published)
                     if (info != null && info.language.isNotEmpty()) add("Language" to info.language)
@@ -263,6 +274,102 @@ fun BookDetailScreen(
                         Text(it, style = Type.caption, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+            }
+
+            var editOpen by remember { mutableStateOf(false) }
+            var newShelfOpen by remember { mutableStateOf(false) }
+
+            Spacer(Modifier.height(16.dp))
+            Text("SHELVES", style = Type.sectionLabel, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(8.dp))
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+            ) {
+                shelves.forEach { shelf ->
+                    val selected = shelf in bookShelves
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.surface)
+                            .clickable { onToggleShelf(shelf) }
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    ) {
+                        Text(
+                            shelf,
+                            fontSize = 14.sp,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .clickable { newShelfOpen = true }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                ) {
+                    Text("+ New shelf", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                TextButton(onClick = { editOpen = true }) {
+                    Text("Edit details", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                }
+                TextButton(onClick = onChangeCover) {
+                    Text("Change cover", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            if (editOpen) {
+                val initialSeries = details.series.ifEmpty { details.info?.meta?.series.orEmpty() }
+                var titleInput by remember(row) { mutableStateOf(row.title) }
+                var authorInput by remember(row) { mutableStateOf(row.author) }
+                var seriesInput by remember(initialSeries) { mutableStateOf(initialSeries) }
+                AlertDialog(
+                    onDismissRequest = { editOpen = false },
+                    title = { Text("Edit details") },
+                    text = {
+                        Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(value = titleInput, onValueChange = { titleInput = it }, label = { Text("Title") }, singleLine = true)
+                            OutlinedTextField(value = authorInput, onValueChange = { authorInput = it }, label = { Text("Author") }, singleLine = true)
+                            OutlinedTextField(value = seriesInput, onValueChange = { seriesInput = it }, label = { Text("Series") }, singleLine = true)
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            onEditMetadata(titleInput.trim(), authorInput.trim(), seriesInput.trim())
+                            editOpen = false
+                        }) { Text("Save") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { editOpen = false }) { Text("Cancel") }
+                    },
+                )
+            }
+
+            if (newShelfOpen) {
+                var shelfName by remember { mutableStateOf("") }
+                AlertDialog(
+                    onDismissRequest = { newShelfOpen = false },
+                    title = { Text("New shelf") },
+                    text = {
+                        OutlinedTextField(value = shelfName, onValueChange = { shelfName = it }, label = { Text("Shelf name") }, singleLine = true)
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            val trimmed = shelfName.trim()
+                            if (trimmed.isNotEmpty()) onCreateShelf(trimmed)
+                            newShelfOpen = false
+                        }) { Text("Create") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { newShelfOpen = false }) { Text("Cancel") }
+                    },
+                )
             }
 
             Spacer(Modifier.height(24.dp))

@@ -38,3 +38,6 @@ DELETE FROM books;
 -- a library-folder book was moved or renamed
 updateBookPath:
 UPDATE books SET path = ? WHERE book_hash = ?;
+
+updateBookMetadata:
+UPDATE books SET title = ?, author = ?, cover_path = ?, lamport = ? WHERE book_hash = ?;

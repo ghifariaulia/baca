@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -61,16 +62,34 @@ fun StatsScreen(
             if (summary == null) return@Column
             val goalSeconds = summary.goalMinutes * 60
             LevelCard(summary)
-            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Tile("Streak", days(summary.streak), "Best ${days(summary.longestStreak)}", Modifier.weight(1f).fillMaxHeight())
-                Tile(
-                    "Today",
-                    minutes(summary.today.seconds.toLong()),
-                    if (summary.today.goalMet) "Goal met" else "Goal ${minutes(goalSeconds.toLong())}",
-                    Modifier.weight(1f).fillMaxHeight(),
-                    progress = summary.today.seconds / goalSeconds.toFloat(),
-                )
-                Tile("Finished", "${summary.booksFinished}", if (summary.booksFinished == 1) "book" else "books", Modifier.weight(1f).fillMaxHeight())
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (maxWidth < 360.dp) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Tile("Streak", days(summary.streak), "Best ${days(summary.longestStreak)}", Modifier.weight(1f).fillMaxHeight())
+                            Tile(
+                                "Today",
+                                minutes(summary.today.seconds.toLong()),
+                                if (summary.today.goalMet) "Goal met" else "Goal ${minutes(goalSeconds.toLong())}",
+                                Modifier.weight(1f).fillMaxHeight(),
+                                progress = summary.today.seconds / goalSeconds.toFloat(),
+                            )
+                        }
+                        Tile("Finished", "${summary.booksFinished}", if (summary.booksFinished == 1) "book" else "books", Modifier.fillMaxWidth())
+                    }
+                } else {
+                    Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Tile("Streak", days(summary.streak), "Best ${days(summary.longestStreak)}", Modifier.weight(1f).fillMaxHeight())
+                        Tile(
+                            "Today",
+                            minutes(summary.today.seconds.toLong()),
+                            if (summary.today.goalMet) "Goal met" else "Goal ${minutes(goalSeconds.toLong())}",
+                            Modifier.weight(1f).fillMaxHeight(),
+                            progress = summary.today.seconds / goalSeconds.toFloat(),
+                        )
+                        Tile("Finished", "${summary.booksFinished}", if (summary.booksFinished == 1) "book" else "books", Modifier.weight(1f).fillMaxHeight())
+                    }
+                }
             }
             if (onGoalMinutesChange != null) {
                 DailyGoalCard(summary.goalMinutes, onGoalMinutesChange)
@@ -134,7 +153,7 @@ private fun HistoryCalendar(history: List<Pair<String, DayRecord>>) {
                         Box(
                             Modifier
                                 .weight(1f)
-                                .height(22.dp)
+                                .height(28.dp)
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(fill)
                                 .then(

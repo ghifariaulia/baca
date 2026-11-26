@@ -21,3 +21,7 @@ expect fun rememberFolderPicker(onPicked: (List<String>) -> Unit): () -> Unit
 /** Font file picker (.ttf / .otf). [onPicked] receives a local file path (staged copy on Android) or null. */
 @Composable
 expect fun rememberFontPicker(onPicked: (String?) -> Unit): () -> Unit
+
+/** Image file picker (.png / .jpg / .jpeg / .webp) for book covers. */
+@Composable
+expect fun rememberImagePicker(onPicked: (String?) -> Unit): () -> Unit

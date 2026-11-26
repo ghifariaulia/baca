@@ -76,6 +76,22 @@ actual fun rememberFontPicker(onPicked: (String?) -> Unit): () -> Unit {
     }
 }
 
+@Composable
+actual fun rememberImagePicker(onPicked: (String?) -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val scope = remember { CoroutineScope(Dispatchers.Main) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri == null) {
+            onPicked(null)
+        } else {
+            scope.launch { onPicked(withContext(Dispatchers.IO) { copyToCache(context, uri) }) }
+        }
+    }
+    return remember(launcher) {
+        { launcher.launch(arrayOf("image/png", "image/jpeg", "image/webp")) }
+    }
+}
+
 /** Each cache copy of a book sits in a folder of its own, named from this. */
 internal const val STAGED_PREFIX = "open-"
 

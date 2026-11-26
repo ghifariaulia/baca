@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -91,6 +92,9 @@ fun BottomNav(current: NavItem, onNav: (NavItem) -> Unit) {
                 Text(
                     item.label,
                     fontSize = 12.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                     fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
                     color = color,
                 )

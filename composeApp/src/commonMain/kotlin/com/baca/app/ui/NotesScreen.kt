@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -173,7 +174,12 @@ fun NotesScreen(
                     )
                 }
             }
-            Spacer(Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
+        ) {
             listOf(
                 "yellow" to Color(0xFFF6D860),
                 "green" to Color(0xFF9BE7A1),
@@ -183,19 +189,26 @@ fun NotesScreen(
                 val selected = colorFilter == name
                 Box(
                     Modifier
-                        .size(24.dp)
+                        .size(44.dp)
                         .clip(CircleShape)
-                        .background(swatch)
-                        .then(
-                            if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
-                            else Modifier,
-                        )
                         .semantics { contentDescription = "Filter color $name" }
                         .clickable { colorFilter = if (selected) null else name },
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(swatch)
+                            .then(
+                                if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                else Modifier,
+                            ),
+                    )
+                }
             }
         }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
     }
 }
 
@@ -225,7 +238,7 @@ private fun AnnotationGroupsScreen(
     titleAction: @Composable () -> Unit = {},
     header: @Composable () -> Unit = { Spacer(Modifier.height(4.dp)) },
 ) {
-    LazyColumn(Modifier.fillMaxSize().padding(20.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp)) {
         item {
             Row(
                 Modifier.fillMaxWidth(),

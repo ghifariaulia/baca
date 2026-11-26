@@ -46,4 +46,20 @@ class DbBookRepositoryTest {
         assertEquals(0.42f, repo.progressFor("hash1"))
         assertEquals(5L, repo.lastReadAt("hash1"))
     }
+
+    @Test
+    fun updateMetadataUpdatesTitleAuthorCoverAndLamport() {
+        val (db, _) = inMemoryDb()
+        val repo = DbBookRepository(db, now = { 5L })
+        repo.upsert("hash1", "Old Title", "Old Author", "/books/hash1.epub", "epub", "/covers/old.png")
+        val before = assertNotNull(repo.byHash("hash1"))
+
+        repo.updateMetadata("hash1", "New Title", "New Author", "/covers/new.png")
+
+        val after = assertNotNull(repo.byHash("hash1"))
+        assertEquals("New Title", after.title)
+        assertEquals("New Author", after.author)
+        assertEquals("/covers/new.png", after.coverPath)
+        assertTrue(after.lamport > before.lamport)
+    }
 }

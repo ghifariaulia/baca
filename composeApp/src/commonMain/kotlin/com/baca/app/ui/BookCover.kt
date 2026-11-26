@@ -4,6 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -45,23 +46,23 @@ private val fallbackPalette = listOf(
  * fallback with title (serif, bold) and caps author.
  */
 @Composable
-fun BookCover(row: BookRow, width: Dp = 104.dp, modifier: Modifier = Modifier) {
+fun BookCover(row: BookRow, width: Dp = 104.dp, modifier: Modifier = Modifier, fillWidth: Boolean = false) {
     val bitmap: ImageBitmap? = remember(row.coverPath) {
         row.coverPath?.let { runCatching { decodeImageBytes(FileSystem.SYSTEM.read(it.toPath()) { readByteArray() }) }.getOrNull() }
     }
     val height = width * 3 / 2
+    val sizedModifier = if (fillWidth) modifier.fillMaxWidth().aspectRatio(2f / 3f) else modifier.size(width, height)
     if (bitmap != null) {
         Image(
             bitmap = bitmap,
             contentDescription = row.title,
             contentScale = ContentScale.Crop,
-            modifier = modifier.size(width, height).clip(RoundedCornerShape(6.dp)),
+            modifier = sizedModifier.clip(RoundedCornerShape(6.dp)),
         )
     } else {
         val color = fallbackPalette[(row.bookHash.hashCode().let { if (it < 0) -it else it }) % fallbackPalette.size]
         Box(
-            modifier
-                .size(width, height)
+            sizedModifier
                 .clip(RoundedCornerShape(6.dp))
                 .background(color)
                 .padding(10.dp),

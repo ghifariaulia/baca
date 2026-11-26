@@ -301,6 +301,23 @@ class BookImporter(
         return info
     }
 
+    /** Copies a user-picked cover image into the book store directory and returns its path. */
+    fun saveCoverImage(bookHash: String, sourcePath: String): String? = runCatching {
+        val source = sourcePath.toPath()
+        if (!fs.exists(source)) return null
+        val ext = sourcePath.substringAfterLast('.', "").lowercase()
+            .takeIf { it in setOf("png", "jpg", "jpeg", "webp") } ?: "jpg"
+        val dir = storeDir.toPath()
+        fs.createDirectories(dir)
+        val coverFile = dir / "$bookHash-cover.$ext"
+        fs.source(source).use { input ->
+            fs.sink(coverFile).use { output ->
+                output.buffer().use { buffered -> buffered.writeAll(input) }
+            }
+        }
+        coverFile.toString()
+    }.getOrNull()
+
     /**
      * One-time heal: a book imported before the toc/cover parser fix carries a
      * null cover path (or lost toc entries), and one imported before edition

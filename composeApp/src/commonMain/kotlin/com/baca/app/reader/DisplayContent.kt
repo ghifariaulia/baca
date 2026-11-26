@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -104,7 +105,10 @@ internal fun DisplayContent(
                     val swatch = ReaderThemes.forTheme(key).background
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clickable(onClick = { onChange(display.copy(theme = key)) }),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .clickable(onClick = { onChange(display.copy(theme = key)) }),
                     ) {
                         Box(
                             Modifier.size(36.dp).clip(CircleShape)

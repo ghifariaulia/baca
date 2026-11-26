@@ -109,6 +109,11 @@ class DbBookRepository(
         db.booksQueries.updateBookPath(path, bookHash)
     }
 
+    /** Updates local metadata and cover path without modifying the book file on disk. */
+    fun updateMetadata(bookHash: String, title: String, author: String, coverPath: String?) {
+        db.booksQueries.updateBookMetadata(title, author, coverPath, bumpLamport(), bookHash)
+    }
+
     fun isFinished(bookHash: String): Boolean =
         db.settings_localQueries.getLocal(FINISHED_PREFIX + bookHash).executeAsOneOrNull()?.value_ == "true"
 

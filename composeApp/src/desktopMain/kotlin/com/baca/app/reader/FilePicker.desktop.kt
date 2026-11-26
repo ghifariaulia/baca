@@ -80,3 +80,26 @@ actual fun rememberFontPicker(onPicked: (String?) -> Unit): () -> Unit {
         }
     }
 }
+
+@Composable
+actual fun rememberImagePicker(onPicked: (String?) -> Unit): () -> Unit {
+    var busy by remember { mutableStateOf(false) }
+    return {
+        if (!busy) {
+            busy = true
+            try {
+                val dialog = FileDialog(null as Frame?, "Choose cover image", FileDialog.LOAD)
+                dialog.setFilenameFilter { _, name ->
+                    val lower = name.lowercase()
+                    lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp")
+                }
+                dialog.isVisible = true
+                val file = dialog.file
+                val dir = dialog.directory
+                onPicked(if (file != null && dir != null) dir + file else null)
+            } finally {
+                busy = false
+            }
+        }
+    }
+}
